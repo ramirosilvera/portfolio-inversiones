@@ -18,7 +18,11 @@ function normalizarWidget(w: unknown): DashboardWidget | null {
   const o = w as Record<string, unknown>;
   if (typeof o.id !== 'string') return null;
   if (o.kind === 'seccion') {
-    return typeof o.seccion === 'string' ? { id: o.id, kind: 'seccion', seccion: o.seccion as SeccionKey } : null;
+    // Resuelto ACÁ (no solo al renderizar) — así una key vieja fusionada por ALIASES (ej. 'aportes'
+    // → 'rendimiento_por_anio') se canoniza la primera vez que se lee, y el próximo `persist()` ya
+    // graba la key nueva. Sin esto, ALIASES queda cargando esa fila para siempre: si algún día se
+    // borra el alias asumiendo "ya nadie tiene la key vieja", esta fila se rompe igual.
+    return typeof o.seccion === 'string' ? { id: o.id, kind: 'seccion', seccion: resolveKey(o.seccion) as SeccionKey } : null;
   }
   if (o.kind === 'metrica') {
     if (typeof o.viz !== 'string') return null;

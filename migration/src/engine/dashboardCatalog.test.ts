@@ -114,6 +114,25 @@ describe('resolveKey / getMetricDef / getSeccionDef', () => {
     expect(resolveKey('aportes')).toBe('rendimiento_por_anio');
     expect(getSeccionDef('aportes')?.key).toBe('rendimiento_por_anio');
   });
+
+  // ALIASES es un solo namespace compartido entre métricas y secciones (mismo Record) — nada impide
+  // a mano escribir un alias que apunte a una key que no existe en NINGÚN catálogo (typo) o que
+  // "resucite" una key que un día se vuelva a agregar al catálogo (quedaría inalcanzable, oculta
+  // detrás del alias). Este test corre sobre los alias REALES de producción, no sobre mutaciones del
+  // test (por eso no está en el describe de arriba, que restaura `aliasesBase`).
+  it('todo alias apunta a una key que existe en algún catálogo (métrica o sección)', () => {
+    const targets = new Set([...METRIC_CATALOG.map(m => m.key), ...SECCION_CATALOG.map(s => s.key)] as string[]);
+    for (const [origen, destino] of Object.entries(ALIASES)) {
+      expect(targets.has(destino), `ALIASES['${origen}'] apunta a '${destino}', que no existe en ningún catálogo`).toBe(true);
+    }
+  });
+
+  it('ningún alias tiene como origen una key que TAMBIÉN existe hoy en el catálogo (se volvería inalcanzable)', () => {
+    const keys = new Set([...METRIC_CATALOG.map(m => m.key), ...SECCION_CATALOG.map(s => s.key)] as string[]);
+    for (const origen of Object.keys(ALIASES)) {
+      expect(keys.has(origen), `'${origen}' está en ALIASES pero también sigue en el catálogo — quedó inalcanzable`).toBe(false);
+    }
+  });
 });
 
 describe('resolveViz', () => {
