@@ -156,7 +156,8 @@ export type MetricKey =
   | 'radar_compra_agresiva'
   | 'cobros_total' | 'cobros_disponible'
   | 'macro_semaforos'
-  | 'liquidez_fci' | 'liquidez_disponible' | 'liquidez_sin_asignar';
+  | 'liquidez_fci' | 'liquidez_disponible' | 'liquidez_sin_asignar'
+  | 'liquidez_ingresos' | 'liquidez_egresos' | 'liquidez_reserva';
 
 export type DashboardViz = 'stat' | 'donut' | 'bar' | 'table';
 

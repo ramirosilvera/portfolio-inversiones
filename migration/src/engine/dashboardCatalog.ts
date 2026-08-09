@@ -72,9 +72,15 @@ export const METRIC_CATALOG: MetricDef[] = [
   { key: 'cobros_total', categoria: 'Cobros', titulo: 'Cobrado total', descripcion: 'Dividendos + intereses + amortizaciones.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/cupones' },
   { key: 'cobros_disponible', categoria: 'Cobros', titulo: 'Disponible para reinvertir', descripcion: '', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/cupones' },
   { key: 'macro_semaforos', categoria: 'Macro', titulo: 'Semáforos macro', descripcion: 'Cuántos indicadores en verde / atención / estrés.', shape: 'categorico', vizDisponibles: ['donut', 'bar'], vizDefault: 'donut', detalleHref: '/macro' },
-  { key: 'liquidez_fci', categoria: 'Liquidez', titulo: 'FCI + billetera', descripcion: 'En pesos — compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
-  { key: 'liquidez_disponible', categoria: 'Liquidez', titulo: 'Disponible', descripcion: 'En pesos — ingresos menos egresos del flujo de caja, compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
-  { key: 'liquidez_sin_asignar', categoria: 'Liquidez', titulo: 'Sin asignar', descripcion: 'En pesos — disponible que todavía no se colocó en ningún destino, compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
+  // categoria 'Finanzas' (antes 'Liquidez' — renombrada junto con la sección liquidez_fci, que
+  // ahora se llama "Finanzas" en el Dashboard). Las keys NO cambian: un layout ya guardado con
+  // alguna de estas 3 métricas tiene que seguir resolviendo igual.
+  { key: 'liquidez_fci', categoria: 'Finanzas', titulo: 'FCI + billetera', descripcion: 'En pesos — compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
+  { key: 'liquidez_disponible', categoria: 'Finanzas', titulo: 'Disponible', descripcion: 'En pesos — ingresos menos egresos del flujo de caja, compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
+  { key: 'liquidez_sin_asignar', categoria: 'Finanzas', titulo: 'Sin asignar', descripcion: 'En pesos — disponible que todavía no se colocó en ningún destino, compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
+  { key: 'liquidez_ingresos', categoria: 'Finanzas', titulo: 'Ingresos', descripcion: 'En pesos, mensuales según tu flujo de caja — compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
+  { key: 'liquidez_egresos', categoria: 'Finanzas', titulo: 'Egresos', descripcion: 'En pesos, mensuales según tu flujo de caja — compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
+  { key: 'liquidez_reserva', categoria: 'Finanzas', titulo: 'Reserva de liquidez', descripcion: 'En pesos — ya asignado a FCI/CEDEARs/bonos ("Inversiones · asignaciones" en Finanzas), compartido entre todos tus portfolios.', shape: 'scalar', vizDisponibles: ['stat'], vizDefault: 'stat', detalleHref: '/finanzas' },
 ];
 
 // Layout que hoy está hardcodeado en el Dashboard — se usa cuando el usuario todavía no personalizó

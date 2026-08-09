@@ -399,7 +399,7 @@ function MacroSemaforosMetric({ viz, titulo, sub, detalleHref, personalizando }:
   return <MetricShell titulo={titulo} sub={sub} right={right} mv={mv} viz={viz} />;
 }
 
-// ── Liquidez (resumenFlujo, igual que LiquidezFci/finanzas) ───────────────────
+// ── Finanzas (resumenFlujo, igual que FinanzasResumen en DashboardPage.tsx) ────
 function useLiquidezResumenValue() {
   const { data: flujo = [], isLoading } = useFlujo();
   const { data: macro = {} } = useMacro();
@@ -417,7 +417,8 @@ function LiquidezFciMetric({ viz, titulo, sub, detalleHref, personalizando }: { 
 
 function LiquidezDisponibleMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
   const { flujo, resumen, isLoading } = useLiquidezResumenValue();
-  // Mismo sub/tono que la tarjeta "Disponible" de la sección Liquidez & FCI.
+  // Mismo sub/tono que la tarjeta "Disponible" de la vieja sección Liquidez & FCI (ya no existe
+  // como default, pero la métrica atómica sigue disponible para armar una tarjeta a medida).
   const mv: MetricValue = isLoading ? { status: 'loading' }
     : flujo.length === 0 ? { status: 'empty', motivo: 'Sin flujo de caja cargado — cargalo en /finanzas.' }
     : { status: 'ok', shape: 'scalar', value: resumen.disponible, format: 'ars-compact', sub: 'ingresos − egresos', tone: resumen.disponible >= 0 ? 'pos' : 'neg' };
@@ -426,10 +427,38 @@ function LiquidezDisponibleMetric({ viz, titulo, sub, detalleHref, personalizand
 
 function LiquidezSinAsignarMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
   const { flujo, resumen, isLoading } = useLiquidezResumenValue();
-  // Mismo sub/tono que la tarjeta "Sin asignar" de la sección Liquidez & FCI.
+  // Mismo sub/tono que la tarjeta "Sin asignar" de la vieja sección Liquidez & FCI (ídem arriba).
   const mv: MetricValue = isLoading ? { status: 'loading' }
     : flujo.length === 0 ? { status: 'empty', motivo: 'Sin flujo de caja cargado — cargalo en /finanzas.' }
     : { status: 'ok', shape: 'scalar', value: resumen.sinAsignar, format: 'ars-compact', sub: 'sin colocar', tone: resumen.sinAsignar >= 0 ? 'neutral' : 'neg' };
+  return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
+}
+
+// Las 3 métricas que la sección "Finanzas" (antes "Liquidez & FCI") muestra por default — como
+// atómicas, para poder armar una tarjeta a medida con solo una de las tres (o combinarla con otra).
+function LiquidezIngresosMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
+  const { flujo, resumen, isLoading } = useLiquidezResumenValue();
+  const mv: MetricValue = isLoading ? { status: 'loading' }
+    : flujo.length === 0 ? { status: 'empty', motivo: 'Sin flujo de caja cargado — cargalo en /finanzas.' }
+    : { status: 'ok', shape: 'scalar', value: resumen.ingresos, format: 'ars-compact', sub: 'mensuales, según tu flujo', tone: 'pos' };
+  return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
+}
+
+function LiquidezEgresosMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
+  const { flujo, resumen, isLoading } = useLiquidezResumenValue();
+  const mv: MetricValue = isLoading ? { status: 'loading' }
+    : flujo.length === 0 ? { status: 'empty', motivo: 'Sin flujo de caja cargado — cargalo en /finanzas.' }
+    : { status: 'ok', shape: 'scalar', value: resumen.egresos, format: 'ars-compact', sub: 'mensuales, según tu flujo', tone: 'neg' };
+  return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
+}
+
+function LiquidezReservaMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
+  const { flujo, resumen, isLoading } = useLiquidezResumenValue();
+  // resumen.invertido — FinanzasPage.tsx lo llama "Inversiones · asignaciones"; acá "Reserva de
+  // liquidez" (plata YA colocada en FCI/Mercado Pago/CEDEARs/bonos, ver engine/flujo.ts).
+  const mv: MetricValue = isLoading ? { status: 'loading' }
+    : flujo.length === 0 ? { status: 'empty', motivo: 'Sin flujo de caja cargado — cargalo en /finanzas.' }
+    : { status: 'ok', shape: 'scalar', value: resumen.invertido, format: 'ars-compact', sub: 'ya asignado (FCI, CEDEARs, bonos…)', tone: 'neutral' };
   return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
 }
 
@@ -452,6 +481,9 @@ export const METRIC_COMPONENTS: Partial<Record<MetricKey, MetricComponent>> = {
   liquidez_fci: LiquidezFciMetric,
   liquidez_disponible: LiquidezDisponibleMetric,
   liquidez_sin_asignar: LiquidezSinAsignarMetric,
+  liquidez_ingresos: LiquidezIngresosMetric,
+  liquidez_egresos: LiquidezEgresosMetric,
+  liquidez_reserva: LiquidezReservaMetric,
 };
 
 // ── Orquestador: 1 métrica → tarjeta normal; 2+ → combinada ───────────────────
