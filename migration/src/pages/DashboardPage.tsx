@@ -160,7 +160,8 @@ export function DashboardPage() {
     rendimiento_por_anio: <CapitalResumen porAnio={porAnio} anioActual={anioActual} hayDatosRendimiento={hayDatos} aportes={aportes} personalizando={personalizando} />,
     distribucion: <Distribucion alloc={alloc} total={patrimonio} isLoading={qPos.isLoading}
       objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct}
-      setObjetivoFijaPct={objetivoDistribucion.setObjetivoPct} setToleranciaDistribucionPct={objetivoDistribucion.setToleranciaPct} />,
+      setObjetivoFijaPct={objetivoDistribucion.setObjetivoPct} setToleranciaDistribucionPct={objetivoDistribucion.setToleranciaPct}
+      personalizando={personalizando} />,
     cedears: <CedearsResumen personalizando={personalizando} />,
     bonos: <BonosResumen personalizando={personalizando} />,
     radar: <RadarResumen personalizando={personalizando} />,
@@ -423,12 +424,27 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
             {modo === 'ambos' && (
               <p className="px-4 pt-3 text-[10px] uppercase tracking-wide text-ink-600 font-semibold">Aportes — desde el inicio</p>
             )}
+            {/* Tiles locales en vez del <Stat> compartido: éste usa text-xl + truncate, que en las 3
+                columnas angostas de esta tarjeta (más angosta que una página completa) cortaba
+                números normales de 5-6 cifras a "US$1…" — un número que el usuario pidió ver quedaba
+                ilegible sin hacer hover. Con text-base + break-words, un valor grande pasa a la
+                segunda línea en vez de esconderse detrás de "…" (mismo criterio que CobrosResumen/
+                LiquidezFci, que ya usan tiles más chicos que Stat por este mismo motivo). */}
             <div className="grid grid-cols-3 gap-2 p-3">
-              <Stat label="Aportado" value={fmtUsdCompact(aportado)} hint="Suma de todos los aportes (inicial + recurrente + adelanto)" />
-              <Stat label="Retirado" value={fmtUsdCompact(retirado)} hint="Suma de todos los retiros de capital" />
+              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los aportes (inicial + recurrente + adelanto)">
+                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Aportado</p>
+                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 break-words leading-tight">{fmtUsdCompact(aportado)}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los retiros de capital">
+                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Retirado</p>
+                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 break-words leading-tight">{fmtUsdCompact(retirado)}</p>
+              </div>
               {/* Sin color pos/neg: acá no significa ganancia/pérdida (ese semáforo lo usa el resto
                   de la app para P&L) — "positivo" solo dice que aportaste más de lo que retiraste. */}
-              <Stat label="Neto aportado" value={fmtUsdCompact(neto)} />
+              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0">
+                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Neto aportado</p>
+                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 break-words leading-tight">{fmtUsdCompact(neto)}</p>
+              </div>
             </div>
             {/* Visible, no solo tooltip — al lado de un % de rendimiento real (modo "Ambos"), un
                 hover-only "no es rendimiento" no alcanza para evitar la confusión. */}
@@ -679,10 +695,37 @@ function useObjetivoDistribucion(portfolioId: string | undefined) {
   };
 }
 
-function Distribucion({ alloc, total, isLoading, objetivoFijaPct, toleranciaDistribucionPct, setObjetivoFijaPct, setToleranciaDistribucionPct }: {
+// Qué mostrar en la tarjeta — mismo patrón que useModoCapital (preferencia de VISTA por portfolio,
+// en localStorage, no en dashboard_layout).
+type ModoDistribucion = 'distribucion' | 'fija' | 'variable';
+const MODO_DISTRIBUCION_LABEL: Record<ModoDistribucion, string> = { distribucion: 'Distribución', fija: 'Renta fija', variable: 'Renta variable' };
+
+function leerModoDistribucion(key: string | null): ModoDistribucion {
+  try {
+    const raw = key ? localStorage.getItem(key) : null;
+    if (raw === 'distribucion' || raw === 'fija' || raw === 'variable') return raw;
+  } catch { /* */ }
+  return 'distribucion';
+}
+
+function useModoDistribucion(portfolioId: string | undefined) {
+  const key = portfolioId ? `dashboard.modoDistribucion.${portfolioId}` : null;
+  const [modo, setModoState] = useState<ModoDistribucion>(() => leerModoDistribucion(key));
+  useEffect(() => { setModoState(leerModoDistribucion(key)); }, [key]);
+  const setModo = (m: ModoDistribucion) => {
+    setModoState(m);
+    if (key) { try { localStorage.setItem(key, m); } catch { /* */ } }
+  };
+  return { modo, setModo };
+}
+
+function Distribucion({ alloc, total, isLoading, objetivoFijaPct, toleranciaDistribucionPct, setObjetivoFijaPct, setToleranciaDistribucionPct, personalizando }: {
   alloc: { ticker: string; mkt: number; target: number | null; tipo: AssetType }[]; total: number; isLoading: boolean;
   objetivoFijaPct: number; toleranciaDistribucionPct: number; setObjetivoFijaPct: (n: number) => void; setToleranciaDistribucionPct: (n: number) => void;
+  personalizando: boolean;
 }) {
+  const { active } = usePortfolios();
+  const { modo, setModo } = useModoDistribucion(active?.id);
   const chart = useChartTheme();
   if (isLoading) {
     return <Card><CardHeader title="Distribución" /><p className="p-4 text-sm text-ink-600">Cargando…</p></Card>;
@@ -709,10 +752,29 @@ function Distribucion({ alloc, total, isLoading, objetivoFijaPct, toleranciaDist
     .sort((a, b) => b.value - a.value);
   const fijaPct = pctRentaFija(alloc, total);
 
+  const titulo = MODO_DISTRIBUCION_LABEL[modo];
+  const sub = modo === 'distribucion' ? 'Renta fija vs. variable, de un vistazo.'
+    : `Objetivo por ticker dentro de ${modo === 'fija' ? 'renta fija' : 'renta variable'}.`;
+  // Detalle por ticker de la categoría elegida (solo se calcula para 'fija'/'variable' — en
+  // 'distribucion' no se usa, el donut+leyenda alcanzan).
+  const itemsDetalle = modo !== 'distribucion' ? alloc.filter(a => categoriaDe(a.tipo) === modo) : [];
+
   return (
     <Card>
-      <CardHeader title="Distribución" sub="Renta fija vs. variable · objetivo por ticker dentro de cada sección."
-        right={desviados > 0 ? <Badge tone="warn">{desviados} fuera del objetivo</Badge> : undefined} />
+      <CardHeader title={titulo} sub={sub}
+        right={!personalizando && (
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {desviados > 0 && <Badge tone="warn">{desviados} fuera del objetivo</Badge>}
+            <div role="radiogroup" aria-label="Qué mostrar" className="inline-flex rounded-full border border-line divide-x divide-line overflow-hidden text-[11px] font-semibold">
+              {(['distribucion', 'fija', 'variable'] as const).map(m => (
+                <button key={m} type="button" onClick={() => setModo(m)} role="radio" aria-checked={modo === m}
+                  className={`px-3 py-1.5 transition-colors ${modo === m ? 'bg-celeste-700 text-white' : 'bg-surface text-ink-600 hover:bg-canvas'}`}>
+                  {MODO_DISTRIBUCION_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )} />
       <div className="px-4 py-3 flex flex-wrap gap-3 items-end text-sm border-b border-line">
         <Field label="Objetivo renta fija (%)">
           <input type="number" min="0" max="100" step="5" value={objetivoFijaPct}
@@ -732,59 +794,60 @@ function Distribucion({ alloc, total, isLoading, objetivoFijaPct, toleranciaDist
         </Field>
         <p className="text-[11px] text-ink-600 ml-auto">Renta fija actual: <span className="tnum font-semibold text-ink-800">{fijaPct != null ? `${fmtNum(fijaPct, 0)}%` : '—'}</span></p>
       </div>
-      <div className="p-4 grid sm:grid-cols-[minmax(0,180px)_1fr] gap-4 items-center border-b border-line">
-        <div className="h-[160px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={data} dataKey="value" nameKey="cat" cx="50%" cy="50%" innerRadius={44} outerRadius={72} paddingAngle={2} stroke="none">
-                {data.map((c, i) => <Cell key={i} fill={CATEGORIA_COLOR[c.cat]} />)}
-              </Pie>
-              <Tooltip
-                formatter={(v: number, n: string) => [fmtUsd(v, 0), CATEGORIA_LABEL[n as CategoriaPatrimonio]]}
-                contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 12, color: chart.tooltipText, fontSize: 12 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="space-y-1.5">
-          {data.map(c => (
-            <div key={c.cat} className="flex items-center gap-2 text-sm">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CATEGORIA_COLOR[c.cat] }} />
-              <span className="font-semibold text-ink-800 min-w-0 truncate">{CATEGORIA_LABEL[c.cat]}</span>
-              <span className="tnum text-ink-700 ml-auto shrink-0">{fmtPct(total > 0 ? c.value / total : 0, 0)}</span>
-              <span className="tnum text-[11px] text-ink-500 w-16 text-right">{fmtUsdCompact(c.value)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="p-4 space-y-4">
-        {categorias.map(cat => {
-          const items = alloc.filter(a => categoriaDe(a.tipo) === cat);
-          if (items.length === 0) return null;
-          return (
-            <div key={cat}>
-              <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold mb-1.5">{CATEGORIA_LABEL[cat]}</p>
-              <div className="space-y-1">
-                {items.map(a => {
-                  const w = total > 0 ? a.mkt / total : 0;
-                  const off = a.target != null ? w - a.target : null;
-                  return (
-                    <div key={a.ticker} className="flex items-center gap-2 text-sm">
-                      <span className="font-semibold text-ink-800 w-14 truncate">{a.ticker}</span>
-                      <span className="tnum text-ink-700 w-12 text-right">{fmtPct(w, 0)}</span>
-                      {a.target != null
-                        ? <span className="tnum text-[11px] text-ink-500 w-16 text-right">obj {objPct.get(a.ticker) ?? Math.round(a.target * 100)}%</span>
-                        : <span className="w-16" />}
-                      {off != null && Math.abs(off) >= TOLERANCIA_OBJETIVO
-                        ? <span className={`tnum text-[10px] w-10 text-right ${off > 0 ? 'text-warn' : 'text-celeste-600'}`}>{off > 0 ? '+' : ''}{fmtPct(off, 0)}</span>
-                        : <span className="w-10" />}
-                    </div>
-                  );
-                })}
+
+      {modo === 'distribucion' && (
+        <div className="p-4 grid sm:grid-cols-[minmax(0,180px)_1fr] gap-4 items-center">
+          <div className="h-[160px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data} dataKey="value" nameKey="cat" cx="50%" cy="50%" innerRadius={44} outerRadius={72} paddingAngle={2} stroke="none">
+                  {data.map((c, i) => <Cell key={i} fill={CATEGORIA_COLOR[c.cat]} />)}
+                </Pie>
+                <Tooltip
+                  formatter={(v: number, n: string) => [fmtUsd(v, 0), CATEGORIA_LABEL[n as CategoriaPatrimonio]]}
+                  contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 12, color: chart.tooltipText, fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="space-y-1.5">
+            {data.map(c => (
+              <div key={c.cat} className="flex items-center gap-2 text-sm">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CATEGORIA_COLOR[c.cat] }} />
+                <span className="font-semibold text-ink-800 min-w-0 truncate">{CATEGORIA_LABEL[c.cat]}</span>
+                <span className="tnum text-ink-700 ml-auto shrink-0">{fmtPct(total > 0 ? c.value / total : 0, 0)}</span>
+                <span className="tnum text-[11px] text-ink-500 w-16 text-right">{fmtUsdCompact(c.value)}</span>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {modo !== 'distribucion' && (
+        <div className="p-4">
+          {itemsDetalle.length === 0 ? (
+            <p className="text-sm text-ink-600">Sin activos en {modo === 'fija' ? 'renta fija' : 'renta variable'}.</p>
+          ) : (
+            <div className="space-y-1">
+              {itemsDetalle.map(a => {
+                const w = total > 0 ? a.mkt / total : 0;
+                const off = a.target != null ? w - a.target : null;
+                return (
+                  <div key={a.ticker} className="flex items-center gap-2 text-sm">
+                    <span className="font-semibold text-ink-800 w-14 truncate">{a.ticker}</span>
+                    <span className="tnum text-ink-700 w-12 text-right">{fmtPct(w, 0)}</span>
+                    {a.target != null
+                      ? <span className="tnum text-[11px] text-ink-500 w-16 text-right">obj {objPct.get(a.ticker) ?? Math.round(a.target * 100)}%</span>
+                      : <span className="w-16" />}
+                    {off != null && Math.abs(off) >= TOLERANCIA_OBJETIVO
+                      ? <span className={`tnum text-[10px] w-10 text-right ${off > 0 ? 'text-warn' : 'text-celeste-600'}`}>{off > 0 ? '+' : ''}{fmtPct(off, 0)}</span>
+                      : <span className="w-10" />}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
