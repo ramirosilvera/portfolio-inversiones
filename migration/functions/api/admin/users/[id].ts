@@ -32,6 +32,11 @@ export const onRequestPatch = guard(async ({ request, env, params }) => {
   if (idInvalido(targetIdRaw)) return json({ error: 'id-invalido' }, 400);
   const targetId = targetIdRaw.toLowerCase();
   const miId = admin.userId.toLowerCase();
+  // Para que la auditoría registre A QUIÉN se le aplicó la acción (antes solo guardaba el uuid
+  // crudo — "X hizo ban" sin sujeto legible, ver auditoría de backend). Best-effort: si GoTrue no
+  // responde, seguimos igual (el email queda null en el log, no bloquea la acción real).
+  const targetEmail = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${targetId}`, { headers: sbHeaders(env) })
+    .then(r => r.ok ? r.json() as Promise<{ email?: string }> : null).then(u => u?.email ?? null).catch(() => null);
   let body: { action?: string };
   try { body = await request.json(); } catch { return json({ error: 'body-invalido' }, 400); }
   const accion = body.action as Accion;
@@ -97,7 +102,7 @@ export const onRequestPatch = guard(async ({ request, env, params }) => {
     ban: 'banear', unban: 'reactivar', grant_admin: 'otorgar_admin', revoke_admin: 'revocar_admin',
     approve: 'aprobar', revoke_approval: 'revocar_aprobacion',
   };
-  await logAudit(env, { actorId: admin.userId, actorEmail: admin.email, action: ACCION_LOG[accion], targetId });
+  await logAudit(env, { actorId: admin.userId, actorEmail: admin.email, action: ACCION_LOG[accion], targetId, targetEmail });
   return json({ ok: true });
 });
 
@@ -114,9 +119,14 @@ export const onRequestDelete = guard(async ({ request, env, params }) => {
   const targetId = targetIdRaw.toLowerCase();
   if (targetId === admin.userId.toLowerCase()) return json({ error: 'no-permitido', detail: 'No podés eliminar tu propia cuenta desde acá.' }, 400);
 
+  // El email hay que capturarlo ANTES de borrar — una vez eliminada la fila de auth.users, ese id
+  // no se puede volver a resolver a un email nunca más y el log de auditoría queda sin sujeto.
+  const targetEmail = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${targetId}`, { headers: sbHeaders(env) })
+    .then(r => r.ok ? r.json() as Promise<{ email?: string }> : null).then(u => u?.email ?? null).catch(() => null);
+
   const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${targetId}`, { method: 'DELETE', headers: sbHeaders(env) });
   if (!res.ok && res.status !== 404) return json({ error: 'gotrue-error', detail: `No se pudo eliminar (HTTP ${res.status})` }, 502);
 
-  await logAudit(env, { actorId: admin.userId, actorEmail: admin.email, action: 'eliminar', targetId });
+  await logAudit(env, { actorId: admin.userId, actorEmail: admin.email, action: 'eliminar', targetId, targetEmail });
   return json({ ok: true });
 });

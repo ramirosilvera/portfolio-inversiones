@@ -1,6 +1,9 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson, parseTickers } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, missReciente, sbUpsert, fetchJson, parseTickers } from '../_shared';
 
 const TTL = 15 * 60 * 1000; // 15 min
+// Caché negativo: sin esto, un ticker sin cobertura en Finnhub/FMP (ADR chico, delisted) volvía a
+// pegarle a las dos APIs pagas en CADA request, sin límite — hallazgo de la auditoría de backend.
+const NEG_TTL = 10 * 60 * 1000; // 10 min — bastante más corto que TTL: si el proveedor lo suma después, no tarda un día en aparecer.
 
 async function fetchPrice(env: Env, symbol: string): Promise<number | null> {
   // Finnhub primero (free tier generoso), FMP como fallback.
@@ -37,14 +40,26 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
 
   const out: Record<string, number | null> = {};
   const rows: unknown[] = [];
+  const misses: unknown[] = [];
   await Promise.all(tickers.map(async (t) => {
     const cached = await cacheFresh<{ precio: number }>(env, 'precios_cache', 'ticker', t, TTL);
     if (cached) { out[t] = cached.precio; return; }
+    // Miss reciente: ya sabemos que ninguna de las dos APIs tiene este ticker — no volvemos a
+    // gastar cuota, servimos directo el último precio conocido (si hay).
+    if (await missReciente(env, 'precios_cache', 'ticker', t, NEG_TTL)) {
+      out[t] = (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', t))?.precio ?? null;
+      return;
+    }
     const p = await fetchPrice(env, t);
     if (p != null) { out[t] = p; rows.push({ ticker: t, precio: p, moneda: 'USD', updated_at: new Date().toISOString() }); }
-    // Proveedor caído: último precio conocido (aunque vencido) antes que vaciar la cotización.
-    else out[t] = (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', t))?.precio ?? null;
+    else {
+      // Proveedor caído/sin cobertura: último precio conocido (aunque vencido) antes que vaciar la
+      // cotización, y se marca el miss para no reintentar en el corto plazo.
+      out[t] = (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', t))?.precio ?? null;
+      misses.push({ ticker: t, miss_at: new Date().toISOString() });
+    }
   }));
   if (rows.length) await sbUpsert(env, 'precios_cache', rows, 'ticker');
+  if (misses.length) await sbUpsert(env, 'precios_cache', misses, 'ticker');
   return json(out);
 });

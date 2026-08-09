@@ -81,7 +81,12 @@ async function fetchConcept(env: Env, cik: string, taxonomy: string, concept: st
     const data = await res.json() as { units?: Record<string, Raw[]> };
     const units = data.units ?? {};
     const keys = Object.keys(units);
-    const key = keys.find(k => k === 'USD') ?? keys.find(k => k === 'USD/shares') ?? keys.find(k => k === 'shares') ?? keys[0];
+    // Antes, si ninguna de las 3 unidades esperadas estaba, caía a keys[0] — la PRIMERA unidad que
+    // haya, sea cual sea (ej. EUR/JPY en un 20-F/IFRS). Ese valor terminaba mezclado en el DCF como
+    // si fuera USD, sin ninguna señal — un número mal etiquetado que el código trata como confiable
+    // (viola la regla de oro). Mejor "sin dato" (null, mismo criterio que 404/403 más arriba) que un
+    // número en la moneda equivocada disfrazado de bueno.
+    const key = keys.find(k => k === 'USD') ?? keys.find(k => k === 'USD/shares') ?? keys.find(k => k === 'shares');
     return key ? units[key] : null;
   }
   return null; // reintentos agotados
