@@ -53,7 +53,7 @@ export const SECCION_CATALOG: SeccionDef[] = [
   { key: 'radar', titulo: 'Radar', descripcion: 'Tickers en seguimiento y señales de compra agresiva (DCF).' },
   { key: 'patrimonio_broker', titulo: 'Patrimonio por broker', descripcion: 'Dónde está físicamente cada posición.' },
   { key: 'cobros', titulo: 'Cobros', descripcion: 'Dividendos, intereses y amortizaciones cobrados + próximo capital proyectado.' },
-  { key: 'liquidez_fci', titulo: 'Liquidez & FCI', descripcion: 'Fondos y billetera en pesos — compartido entre todos tus portfolios.' },
+  { key: 'liquidez_fci', titulo: 'Finanzas', descripcion: 'Ingresos, egresos y reserva de liquidez ya asignada — compartido entre todos tus portfolios.' },
   { key: 'macro', titulo: 'Contexto macro', descripcion: 'Semáforos de mercado, de un vistazo.' },
 ];
 

@@ -27,7 +27,6 @@ import { resumenAportes } from '../engine/aportes';
 import { capitalCalendar, agruparCuotasPorPosicion, type CapitalBond, type CapitalMonthBucket } from '../engine/coupons';
 import { redondearPct, TOLERANCIA_OBJETIVO } from '../engine/rebalance';
 import { resumenPorBroker } from '../engine/brokers';
-import { portfolioTir } from '../engine/irr';
 import { useRecordSnapshot } from '../hooks/useSnapshots';
 import { useDashboardLayout } from '../hooks/useDashboardLayout';
 import { Card, CardHeader, Stat, Badge, Field, AlertasBanner, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs, fmtArsCompact, colorDeBroker } from '../components/ui';
@@ -49,7 +48,7 @@ export function DashboardPage() {
     posiciones, quotes, aportes, snaps,
     sinPrecio, valuacionDeMercado,
     patrimonio, costo, pnl, alloc,
-    hoy, anioActual, inceptionYear, aportadoNeto, porAnio, hayDatos,
+    hoy, anioActual, aportadoNeto, porAnio, hayDatos,
   } = useRendimientoAnual(active?.id);
   const { data: macro = {} } = useMacro();
   const { data: flujo = [] } = useFlujo();
@@ -79,16 +78,6 @@ export function DashboardPage() {
   // esperando revisión en /cupones.
   const pendientesCount = useMemo(() => cobros.filter(c => c.estado === 'pendiente').length, [cobros]);
 
-  // TIR money-weighted: aportes (capital externo) + patrimonio actual como flujo terminal. Reusa el
-  // `hoy` del hook (antes se calculaba una segunda vez acá con el mismo `new Date()` — un solo
-  // string de fecha por render, no dos).
-  const tir = useMemo(() => portfolioTir({
-    aportes: aportes.map(a => ({ monto: a.monto, fecha: a.fecha, retiro: a.tipo === 'retiro' })),
-    costos: posiciones.filter(p => p.cantidad > 0).map(p => ({ costo: p.precio_compra * p.cantidad, fecha: p.fecha_compra })),
-    valorActual: patrimonio,
-    hoy,
-  }), [aportes, posiciones, patrimonio, hoy]);
-
   const semaforos: Lectura[] = SEMAFOROS.map(s => {
     const v = (macro as Record<string, number | null>)[s.key];
     return { def: s, valor: v ?? null, luz: v != null ? s.evalua(v) : null };
@@ -98,7 +87,6 @@ export function DashboardPage() {
   const mep = (macro as Record<string, number | null>).dolar_mep ?? (macro as Record<string, number | null>).dolar_ccl ?? null;
   const flujoR = resumenFlujo(flujo, mep);
   const objetivo = active?.capital_objetivo ?? null;
-  const rendActual = porAnio.find(r => r.anio === anioActual)?.rendimiento ?? null;
   // Una sola instancia — AlertasResumen (el cartel de arriba) y Distribucion (el campo editable) la
   // necesitan las DOS, y cada una tenía su propia copia de este hook (mismo localStorage, pero
   // useState separado): cambiar el objetivo en Distribucion no actualizaba el cartel de alertas hasta
@@ -167,7 +155,7 @@ export function DashboardPage() {
     radar: <RadarResumen personalizando={personalizando} />,
     patrimonio_broker: <PatrimonioBrokers posiciones={posiciones} quotes={quotes} isLoading={qPos.isLoading} personalizando={personalizando} />,
     cobros: (cobros.length > 0 || proximoCapital) ? <CobrosResumen resumen={resumenCobrado} pendientesCount={pendientesCount} proximoCapital={proximoCapital} personalizando={personalizando} /> : null,
-    liquidez_fci: flujo.length > 0 ? <LiquidezFci resumen={flujoR} mep={mep} personalizando={personalizando} /> : null,
+    liquidez_fci: flujo.length > 0 ? <FinanzasResumen resumen={flujoR} personalizando={personalizando} /> : null,
     macro: <MacroResumen resumen={resumen} personalizando={personalizando} />,
   };
 
@@ -201,15 +189,10 @@ export function DashboardPage() {
           <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold">Patrimonio</p>
           <p className="text-3xl font-bold text-ink-900 tnum mt-1 font-display">{fmtUsdCompact(patrimonio)}</p>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <Stat label="P&L" value={<span className={pnl >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnl)}</span>} delta={costo > 0 ? pnl / costo : undefined} />
-          <Stat label="Rend. total"
-            value={<span className={tir.historica == null ? '' : tir.historica >= 0 ? 'text-pos' : 'text-neg'}>{tir.historica != null ? fmtPct(tir.historica) : '—'}</span>}
-            hint={`rendimiento acumulado desde la creación${tir.aproximada ? ' (aprox., sin aportes cargados)' : ''}`} />
-          <Stat label={`Rend. ${anioActual}`}
-            value={<span className={rendActual == null ? '' : rendActual >= 0 ? 'text-pos' : 'text-neg'}>{rendActual != null ? fmtPct(rendActual) : '—'}</span>}
-            hint={`rendimiento del año en curso${inceptionYear === anioActual ? ' (nació este año)' : ''}`} />
-        </div>
+        {/* Rendimiento total / del año en curso vivían acá antes — se sacaron por redundantes: esa
+            misma info (más completa, por año) ya está en la tarjeta "Rendimiento por año" de abajo.
+            Solo queda P&L, que no se repite en ningún otro lado. */}
+        <Stat label="P&L" value={<span className={pnl >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnl)}</span>} delta={costo > 0 ? pnl / costo : undefined} />
       </div>
 
       {/* Cuerpo personalizable: agregar/quitar/reordenar tarjetas — ver components/dashboard/. El
@@ -898,19 +881,22 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizand
   );
 }
 
-// Liquidez & FCI: la parte del flujo de caja que se muestra en el Dashboard (near-cash sleeve).
+// Resumen del flujo de caja que se muestra en el Dashboard. Antes se llamaba "Liquidez & FCI" y
+// mostraba FCI+billetera / Disponible / Sin asignar; ahora muestra Ingresos / Egresos / "Reserva de
+// liquidez" — esa tercera es la categoría que FinanzasPage.tsx llama "Inversiones · asignaciones"
+// (resumen.invertido: plata YA colocada en FCI, Mercado Pago, CEDEARs, bonos — ver engine/flujo.ts),
+// con un nombre que tiene sentido de un vistazo acá sin conocer la terminología interna de /finanzas.
 // Montos en pesos formateados compactos ($22,9 M) para que no desborden las cajas; el valor exacto
 // queda en el tooltip.
-function LiquidezFci({ resumen, mep, personalizando }: { resumen: ReturnType<typeof resumenFlujo>; mep: number | null; personalizando: boolean }) {
-  const usd = (ars: number) => (mep ? `≈ ${fmtUsd(ars / mep, 0)}` : 'liquidez');
+function FinanzasResumen({ resumen, personalizando }: { resumen: ReturnType<typeof resumenFlujo>; personalizando: boolean }) {
   const tiles = [
-    { label: 'FCI + billetera', val: resumen.fci, sub: usd(resumen.fci), tone: 'text-ink-900' },
-    { label: 'Disponible', val: resumen.disponible, sub: 'ingresos − egresos', tone: resumen.disponible >= 0 ? 'text-pos' : 'text-neg' },
-    { label: 'Sin asignar', val: resumen.sinAsignar, sub: 'sin colocar', tone: resumen.sinAsignar >= 0 ? 'text-ink-900' : 'text-neg' },
+    { label: 'Ingresos', val: resumen.ingresos, sub: 'mensuales, según tu flujo', tone: 'text-pos' },
+    { label: 'Egresos', val: resumen.egresos, sub: 'mensuales, según tu flujo', tone: 'text-neg' },
+    { label: 'Reserva de liquidez', val: resumen.invertido, sub: 'ya asignado (FCI, CEDEARs, bonos…)', tone: 'text-ink-900' },
   ];
   return (
     <Card>
-      <CardHeader title="Liquidez & FCI" sub="Fondos y billetera en pesos, según tu flujo de caja · compartido entre todos tus portfolios."
+      <CardHeader title="Finanzas" sub="Ingresos, egresos y cuánto ya asignaste a inversiones · compartido entre todos tus portfolios."
         right={personalizando ? <span className="text-[11px] text-celeste-600">Editar flujo →</span> : <Link to="/finanzas" className="text-[11px] text-celeste-600 hover:underline">Editar flujo →</Link>} />
       <div className="grid grid-cols-3 gap-2 p-3">
         {tiles.map(t => (
