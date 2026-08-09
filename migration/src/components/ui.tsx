@@ -110,9 +110,13 @@ export function AlertasBanner({ alertas }: { alertas: Alerta[] }) {
 
 export function Stat({ label, value, delta, hint }: { label: string; value: ReactNode; delta?: number; hint?: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-surface shadow-soft px-4 py-3" title={hint}>
-      <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold">{label}</p>
-      <p className="text-xl font-bold text-ink-900 tnum mt-1 font-display">{value}</p>
+    // min-w-0: sin esto, un grid item NO se achica más allá del ancho natural de su contenido — un
+    // valor largo (ej. "US$13,031") empuja el ancho de la columna entera y se sale del borde
+    // redondeado de la tarjeta, en vez de truncarse. `truncate` recién puede hacer algo con min-w-0
+    // puesto. title en el valor: fallback para ver el número completo si quedó cortado.
+    <div className="rounded-2xl border border-line bg-surface shadow-soft px-4 py-3 min-w-0" title={hint}>
+      <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">{label}</p>
+      <p className="text-xl font-bold text-ink-900 tnum mt-1 font-display truncate" title={typeof value === 'string' ? value : undefined}>{value}</p>
       {delta != null && (
         <p className={`text-xs font-semibold tnum mt-0.5 ${delta >= 0 ? 'text-pos' : 'text-neg'}`}>
           {delta >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(delta))}
