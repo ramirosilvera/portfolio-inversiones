@@ -126,7 +126,12 @@ export function Stat({ label, value, delta, hint }: { label: string; value: Reac
   );
 }
 
-export function Badge({ children, tone = 'gray' }: { children: ReactNode; tone?: 'gray' | 'pos' | 'neg' | 'warn' | 'accent' | 'celeste' | 'sol' }) {
+// `wrap`: por default los Badge son de una sola línea (pill, texto corto — tickers, estados) — para
+// texto largo que puede necesitar más de una línea (ej. las alertas de Macro, "Riesgo país: riesgo
+// país alto: financiamiento caro...") un pill nowrap se sale del borde de la Card en mobile (no
+// puede achicarse ni cortar palabras). `wrap` cambia a `whitespace-normal` + esquinas menos
+// redondeadas (rounded-full en una caja multilínea se ve como una cápsula rara, no un pill).
+export function Badge({ children, tone = 'gray', wrap = false }: { children: ReactNode; tone?: 'gray' | 'pos' | 'neg' | 'warn' | 'accent' | 'celeste' | 'sol'; wrap?: boolean }) {
   const m: Record<string, string> = {
     gray: 'bg-canvas text-ink-700 ring-1 ring-line',
     pos: 'bg-pos/10 text-pos ring-1 ring-pos/20',
@@ -136,7 +141,11 @@ export function Badge({ children, tone = 'gray' }: { children: ReactNode; tone?:
     celeste: 'bg-celeste-100 text-celeste-700 ring-1 ring-celeste-200 dark:bg-celeste-500/20 dark:text-celeste-300 dark:ring-celeste-500/30',
     sol: 'bg-sol-soft text-sol-deep ring-1 ring-sol/30 dark:bg-sol/15 dark:text-sol',
   };
-  return <span className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold ${m[tone]}`}>{children}</span>;
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold ${wrap ? 'whitespace-normal text-left rounded-xl' : 'whitespace-nowrap rounded-full'} ${m[tone]}`}>
+      {children}
+    </span>
+  );
 }
 
 export function Button({ children, onClick, variant = 'primary', disabled, type = 'button', className = '' }: {

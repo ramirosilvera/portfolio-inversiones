@@ -99,6 +99,11 @@ export function DashboardPage() {
   const flujoR = resumenFlujo(flujo, mep);
   const objetivo = active?.capital_objetivo ?? null;
   const rendActual = porAnio.find(r => r.anio === anioActual)?.rendimiento ?? null;
+  // Una sola instancia — AlertasResumen (el cartel de arriba) y Distribucion (el campo editable) la
+  // necesitan las DOS, y cada una tenía su propia copia de este hook (mismo localStorage, pero
+  // useState separado): cambiar el objetivo en Distribucion no actualizaba el cartel de alertas hasta
+  // un remount completo. Instanciado acá y pasado por props, quedan sincronizadas siempre.
+  const objetivoDistribucion = useObjetivoDistribucion(active?.id);
 
   const record = useRecordSnapshot();
   const recordedRef = useRef('');
@@ -153,7 +158,9 @@ export function DashboardPage() {
     // elige qué mostrar (selector en el header, persistido por portfolio); por default solo
     // Rendimiento, para no duplicar de entrada lo que ya se ve completo en /aportes.
     rendimiento_por_anio: <CapitalResumen porAnio={porAnio} anioActual={anioActual} hayDatosRendimiento={hayDatos} aportes={aportes} personalizando={personalizando} />,
-    distribucion: <Distribucion alloc={alloc} total={patrimonio} isLoading={qPos.isLoading} />,
+    distribucion: <Distribucion alloc={alloc} total={patrimonio} isLoading={qPos.isLoading}
+      objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct}
+      setObjetivoFijaPct={objetivoDistribucion.setObjetivoPct} setToleranciaDistribucionPct={objetivoDistribucion.setToleranciaPct} />,
     cedears: <CedearsResumen personalizando={personalizando} />,
     bonos: <BonosResumen personalizando={personalizando} />,
     radar: <RadarResumen personalizando={personalizando} />,
@@ -183,7 +190,8 @@ export function DashboardPage() {
         </div>
       )}
 
-      <AlertasResumen alloc={alloc} patrimonio={patrimonio} />
+      <AlertasResumen alloc={alloc} patrimonio={patrimonio}
+        objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct} />
 
       {/* Hero: lo esencial, sin repetir. Patrimonio con más peso visual — es el número más
           decisivo de la página — el resto queda como Stat normal debajo. */}
@@ -250,13 +258,14 @@ export function DashboardPage() {
 // apenas se entra al Dashboard, sin tener que visitar /cedears y /bonos por separado. Misma fuente
 // (alertasCedears/alertasBonos + los hooks que ya usan CedearsResumen/BonosResumen) así la lista acá
 // es EXACTAMENTE la misma que la de cada página — nunca "en el Dashboard no avisa pero en la sección sí".
-function AlertasResumen({ alloc, patrimonio }: { alloc: { mkt: number; tipo: AssetType }[]; patrimonio: number }) {
+function AlertasResumen({ alloc, patrimonio, objetivoFijaPct, toleranciaDistribucionPct }: {
+  alloc: { mkt: number; tipo: AssetType }[]; patrimonio: number; objetivoFijaPct: number; toleranciaDistribucionPct: number;
+}) {
   const { active } = usePortfolios();
   const { cedearsCalc, isLoading: cedearsLoading } = useCedearsCalc(active?.id);
   const { bonosCalc, isLoading: bonosLoading } = useBonosCalc(active?.id);
   const { minGradoInversionPct, maxDuracionAnios } = useObjetivoDuracion(active?.id);
   const { sectorPct: concentracionSectorPct, estiloPct: concentracionEstiloPct } = useObjetivoConcentracion(active?.id);
-  const { objetivoPct: objetivoFijaPct, toleranciaPct: toleranciaDistribucionPct } = useObjetivoDistribucion(active?.id);
   // Mismo risk-free que BonosPage (tasa a 10 años UST) — sin esto, spreadPromedio siempre da null
   // acá y la alerta de "spread negativo" nunca podría aparecer en el Dashboard aunque sí en /bonos.
   const { data: macro = {} } = useMacro();
@@ -462,7 +471,11 @@ function CedearsResumen({ personalizando }: { personalizando: boolean }) {
   const { cedears, cedearsCalc, isLoading } = useCedearsCalc(active?.id);
   const { sectorPct: concentracionSectorPct } = useObjetivoConcentracion(active?.id);
 
-  if (isLoading || cedears.length === 0) return null;
+  // "Cargando…" explícito, no null — con null, WidgetGrid no puede distinguir "todavía no sabemos"
+  // de "genuinamente sin CEDEARs" y muestra el placeholder de "sin datos" en modo Personalizar
+  // apenas se entra a la página, aunque la consulta todavía esté en vuelo.
+  if (isLoading) return <Card><CardHeader title="CEDEARs" /><p className="p-4 text-sm text-ink-600">Cargando…</p></Card>;
+  if (cedears.length === 0) return null;
 
   const { totalMkt, mayorPosicion, nSectores, hhiSector, porSector } = resumenCedears(cedearsCalc);
   const mayorSector = porSector.length > 0 ? porSector[0] : null;
@@ -501,7 +514,8 @@ function BonosResumen({ personalizando }: { personalizando: boolean }) {
   const { bonos, bonosCalc, isLoading } = useBonosCalc(active?.id);
   const { maxDuracionAnios } = useObjetivoDuracion(active?.id);
 
-  if (isLoading || bonos.length === 0) return null;
+  if (isLoading) return <Card><CardHeader title="Bonos" /><p className="p-4 text-sm text-ink-600">Cargando…</p></Card>;
+  if (bonos.length === 0) return null;
 
   // Sin riskFree: esta tarjeta no muestra spreadPromedio (el único campo que ese parámetro afecta —
   // ver AlertasResumen, que sí lo pasa porque alertasBonos() lo necesita para la alerta de spread
@@ -542,17 +556,26 @@ function RadarResumen({ personalizando }: { personalizando: boolean }) {
   const riskFree = ((macro as Record<string, number | null>).dgs10 ?? 4.3) / 100;
   const { map: dcfMap } = useDcfInputs();
   const [agresivos, setAgresivos] = useState<Set<string>>(new Set());
+  // Separado de `agresivos` para distinguir "todavía calculando" de "el resultado es 0 compras
+  // agresivas" — mismo criterio que RadarCompraAgresivaMetric en metrics.tsx. Sin esto, la tarjeta
+  // mostraba "0" (un cero provisorio indistinguible del resultado real) mientras cada probe
+  // (fundamentals/DCF, varios segundos en frío) todavía estaba resolviendo.
+  const [reportados, setReportados] = useState<Set<string>>(new Set());
 
-  const onProbe = useCallback((ticker: string, agresiva: boolean) => {
+  const onProbe = useCallback((ticker: string, agresiva: boolean, listo: boolean) => {
     setAgresivos(prev => {
       if (prev.has(ticker) === agresiva) return prev;
       const next = new Set(prev);
       if (agresiva) next.add(ticker); else next.delete(ticker);
       return next;
     });
+    if (listo) setReportados(prev => (prev.has(ticker) ? prev : new Set(prev).add(ticker)));
   }, []);
 
-  if (isLoading || items.length === 0) return null;
+  if (isLoading) return <Card><CardHeader title="Radar" /><p className="p-4 text-sm text-ink-600">Cargando…</p></Card>;
+  if (items.length === 0) return null;
+
+  const probesListos = items.every(it => reportados.has(it.ticker.toUpperCase()));
 
   return (
     <Card>
@@ -563,6 +586,7 @@ function RadarResumen({ personalizando }: { personalizando: boolean }) {
       })}
       <CardHeader title="Radar" sub={`${items.length} ticker${items.length > 1 ? 's' : ''} en seguimiento.`}
         right={(() => {
+          if (!probesListos) return <span className="text-[11px] text-ink-500">Calculando…</span>;
           const contenido = agresivos.size > 0
             ? <Badge tone="pos"><Flame className="w-3 h-3" /><span className="ml-1">{agresivos.size} compra agresiva{agresivos.size > 1 ? 's' : ''}</span></Badge>
             : <span className="text-[11px] text-celeste-600 hover:underline">Ver radar →</span>;
@@ -570,7 +594,7 @@ function RadarResumen({ personalizando }: { personalizando: boolean }) {
         })()} />
       <div className="grid grid-cols-2 gap-2 p-3">
         <Stat label="En seguimiento" value={items.length} />
-        <Stat label="Compra agresiva" value={agresivos.size} />
+        <Stat label="Compra agresiva" value={probesListos ? agresivos.size : '…'} />
       </div>
     </Card>
   );
@@ -579,13 +603,19 @@ function RadarResumen({ personalizando }: { personalizando: boolean }) {
 function RadarProbe({ ticker, cik, cikLoading, riskFree, saved, onResult }: {
   ticker: string; cik: string | undefined; cikLoading: boolean; riskFree: number;
   saved: StoredDcf | undefined;
-  onResult: (ticker: string, agresiva: boolean) => void;
+  onResult: (ticker: string, agresiva: boolean, listo: boolean) => void;
 }) {
-  const { agresiva } = useRadarTicker(ticker, cik, cikLoading, riskFree, saved);
-  useEffect(() => { onResult(ticker, agresiva); }, [ticker, agresiva, onResult]);
+  const { agresiva, isFetching } = useRadarTicker(ticker, cik, cikLoading, riskFree, saved);
+  // Latcheado (nunca vuelve a false) — un refetch de fondo (window focus, etc.) no debe hacer
+  // "desaparecer" al ticker de `reportados` y reaparecer el "Calculando…" con datos ya mostrados.
+  const [listoAlguna, setListoAlguna] = useState(false);
+  useEffect(() => {
+    if (!cikLoading && !isFetching) setListoAlguna(true);
+  }, [cikLoading, isFetching]);
+  useEffect(() => { onResult(ticker, agresiva, listoAlguna); }, [ticker, agresiva, listoAlguna, onResult]);
   // Si el ticker sale del watchlist este probe se desmonta y ya no vuelve a llamar onResult —
   // sin este cleanup, `agresivos` en el padre lo sigue contando para siempre.
-  useEffect(() => () => onResult(ticker, false), [ticker, onResult]);
+  useEffect(() => () => onResult(ticker, false, false), [ticker, onResult]);
   return null;
 }
 
@@ -649,10 +679,11 @@ function useObjetivoDistribucion(portfolioId: string | undefined) {
   };
 }
 
-function Distribucion({ alloc, total, isLoading }: { alloc: { ticker: string; mkt: number; target: number | null; tipo: AssetType }[]; total: number; isLoading: boolean }) {
+function Distribucion({ alloc, total, isLoading, objetivoFijaPct, toleranciaDistribucionPct, setObjetivoFijaPct, setToleranciaDistribucionPct }: {
+  alloc: { ticker: string; mkt: number; target: number | null; tipo: AssetType }[]; total: number; isLoading: boolean;
+  objetivoFijaPct: number; toleranciaDistribucionPct: number; setObjetivoFijaPct: (n: number) => void; setToleranciaDistribucionPct: (n: number) => void;
+}) {
   const chart = useChartTheme();
-  const { active } = usePortfolios();
-  const { objetivoPct: objetivoFijaPct, toleranciaPct: toleranciaDistribucionPct, setObjetivoPct: setObjetivoFijaPct, setToleranciaPct: setToleranciaDistribucionPct } = useObjetivoDistribucion(active?.id);
   if (isLoading) {
     return <Card><CardHeader title="Distribución" /><p className="p-4 text-sm text-ink-600">Cargando…</p></Card>;
   }
@@ -718,8 +749,8 @@ function Distribucion({ alloc, total, isLoading }: { alloc: { ticker: string; mk
           {data.map(c => (
             <div key={c.cat} className="flex items-center gap-2 text-sm">
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CATEGORIA_COLOR[c.cat] }} />
-              <span className="font-semibold text-ink-800">{CATEGORIA_LABEL[c.cat]}</span>
-              <span className="tnum text-ink-700 ml-auto">{fmtPct(total > 0 ? c.value / total : 0, 0)}</span>
+              <span className="font-semibold text-ink-800 min-w-0 truncate">{CATEGORIA_LABEL[c.cat]}</span>
+              <span className="tnum text-ink-700 ml-auto shrink-0">{fmtPct(total > 0 ? c.value / total : 0, 0)}</span>
               <span className="tnum text-[11px] text-ink-500 w-16 text-right">{fmtUsdCompact(c.value)}</span>
             </div>
           ))}

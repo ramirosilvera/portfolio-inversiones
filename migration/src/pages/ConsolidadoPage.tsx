@@ -102,7 +102,7 @@ export function ConsolidadoPage() {
               <div key={p.id} className="flex items-center gap-2 text-sm">
                 <span className="w-28 font-semibold text-ink-800 truncate">{p.nombre}</span>
                 <div className="flex-1 h-2 rounded-full bg-canvas overflow-hidden"><div className="h-full bg-celeste-500 rounded-full" style={{ width: `${Math.min(100, w * 100)}%` }} /></div>
-                <span className="w-24 text-right tnum text-ink-600">{fmtUsd(v, 0)}</span>
+                <span className="w-24 text-right tnum text-ink-600 truncate" title={fmtUsd(v, 0)}>{fmtUsd(v, 0)}</span>
                 <span className="w-12 text-right tnum">{fmtPct(w, 0)}</span>
               </div>
             );

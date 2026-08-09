@@ -6,7 +6,7 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { useProyeccionInputs, type ProyeccionInputs } from '../hooks/useProyeccionInputs';
 import { project } from '../engine/projection';
 import { marketValueUSD, costUSD } from '../lib/valuation';
-import { Card, CardHeader, Button, Stat, inputCls, fmtUsd, fmtUsdCompact } from '../components/ui';
+import { Card, CardHeader, Button, Stat, inputCls, fmtUsd, fmtUsdCompact, fmtPct } from '../components/ui';
 
 // Año en curso real: si se hardcodea, a partir del año siguiente el eje temporal y las edades
 // quedan desfasados del calendario.
@@ -32,7 +32,7 @@ export function ProyeccionesPage() {
   const [tasaAnual, setTasaAnual] = useState(DEFAULTS.tasaAnual);
   const [anios, setAnios] = useState(DEFAULTS.anios);
   const [edadInicial, setEdadInicial] = useState(DEFAULTS.edadInicial);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<{ text: string; err: boolean } | null>(null);
 
   // Al entrar (o cambiar de portfolio): si hay supuestos guardados para ESTE portfolio, usarlos;
   // si no, los defaults. Solo una vez por portfolio (no pisar lo que el usuario está tipeando).
@@ -53,12 +53,21 @@ export function ProyeccionesPage() {
   const chartData = rows.map(r => ({ anio: r.anio, Patrimonio: Math.round(r.valor), Aportado: Math.round(r.aportadoTotal) }));
 
   const guardar = async () => {
-    try { await saveInputs({ aporteAnual, tasaAnual, anios, edadInicial }); setSaveMsg('Guardado ✓'); }
-    catch (e) { setSaveMsg(`No se pudo guardar: ${e instanceof Error ? e.message : 'error'}`); }
+    try { await saveInputs({ aporteAnual, tasaAnual, anios, edadInicial }); setSaveMsg({ text: 'Guardado ✓', err: false }); }
+    catch (e) { setSaveMsg({ text: `No se pudo guardar: ${e instanceof Error ? e.message : 'error'}`, err: true }); }
   };
   const restablecer = async () => {
     setAporteAnual(DEFAULTS.aporteAnual); setTasaAnual(DEFAULTS.tasaAnual); setAnios(DEFAULTS.anios); setEdadInicial(DEFAULTS.edadInicial);
-    try { await removeInputs(); setSaveMsg('Restablecido a los valores por defecto.'); } catch { /* */ }
+    try {
+      await removeInputs();
+      setSaveMsg({ text: 'Restablecido a los valores por defecto.', err: false });
+    } catch (e) {
+      // Antes: catch vacío — si el borrado fallaba, el mensaje decía "Restablecido" igual (los campos
+      // SÍ volvían al default en pantalla, pero la fila guardada en la base seguía viva; al cambiar
+      // de portfolio y volver, los supuestos viejos reaparecían como si el restablecer nunca hubiera
+      // pasado). Ahora se avisa que el borrado en sí falló, aunque los campos ya se resetearon local.
+      setSaveMsg({ text: `Los campos se restablecieron, pero no se pudo borrar lo guardado: ${e instanceof Error ? e.message : 'error'}`, err: true });
+    }
   };
 
   if (!active) return null;
@@ -69,7 +78,7 @@ export function ProyeccionesPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Stat label="Hoy" value={fmtUsdCompact(valorActual)} hint="patrimonio actual del portfolio" />
-        <Stat label={`En ${anios} años`} value={fmtUsdCompact(fin?.valor)} hint={`al ${tasaAnual * 100}% anual`} />
+        <Stat label={`En ${anios} años`} value={fmtUsdCompact(fin?.valor)} hint={`al ${fmtPct(tasaAnual, 1)} anual`} />
         <Stat label="Aportado total" value={fmtUsdCompact(fin?.aportadoTotal)} />
         <Stat label="Ganancia proyectada" value={fmtUsdCompact(fin?.gananciaAcumulada)} />
       </div>
@@ -86,7 +95,7 @@ export function ProyeccionesPage() {
           <Num l="Años" v={anios} step={5} onChange={setAnios} />
           <Num l="Edad hoy" v={edadInicial} step={1} onChange={setEdadInicial} />
         </div>
-        {saveMsg && <p className="px-4 pb-3 text-[11px] text-ink-600">{saveMsg}</p>}
+        {saveMsg && <p className={`px-4 pb-3 text-[11px] ${saveMsg.err ? 'text-neg' : 'text-ink-600'}`}>{saveMsg.text}</p>}
       </Card>
 
       <Card>
@@ -133,10 +142,26 @@ export function ProyeccionesPage() {
 }
 
 function Num({ l, v, step, onChange }: { l: string; v: number; step: number; onChange: (n: number) => void }) {
+  // Draft de texto propio, no controlado directo por `v` — "Retorno anual (%)" pasa por un
+  // round-trip (fracción → *100 → toFixed(1)) para mostrarse; sin este draft, escribir "8." hacía
+  // Number("8.") === 8, el valor volvía a bajar como "8" y el punto decimal desaparecía en cada
+  // tecla, imposibilitando escribir un decimal. Solo se resincroniza desde `v` cuando CAMBIA por una
+  // razón externa (Restablecer, cambio de portfolio) — no en cada tecla propia (ver el porqué en el
+  // comentario de useEffect).
+  const [draft, setDraft] = useState(String(v));
+  useEffect(() => { setDraft(String(v)); }, [v]);
   return (
     <label className="block">
       <span className="text-[10px] uppercase text-ink-600">{l}</span>
-      <input type="number" step={step} value={v} onChange={e => onChange(Number(e.target.value))}
+      <input type="number" step={step} value={draft}
+        onChange={e => {
+          setDraft(e.target.value);
+          // Vacío: no empuja 0 al padre (eso forzaría un re-sync que borra lo que se está por
+          // escribir) — el campo queda vacío hasta que se tipee un número real.
+          if (e.target.value === '') return;
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange(n);
+        }}
         className={`${inputCls} mt-1 tnum`} />
     </label>
   );

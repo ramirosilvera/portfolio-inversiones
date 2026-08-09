@@ -91,7 +91,7 @@ export function AportesPage() {
             <input type="number" placeholder="Monto USD" value={f.monto} onChange={e => setF({ ...f, monto: e.target.value })} className={inputCls} />
           </Field>
           <Field label="Fecha">
-            <input type="date" value={f.fecha} onChange={e => setF({ ...f, fecha: e.target.value })} className={inputCls} />
+            <input type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)} value={f.fecha} onChange={e => setF({ ...f, fecha: e.target.value })} className={inputCls} />
           </Field>
           <Field label="Tipo">
             <select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value as AporteTipo })} className={inputCls}>
@@ -108,6 +108,11 @@ export function AportesPage() {
               const monto = Number(f.monto);
               if (!(monto > 0)) { setErr('El monto debe ser mayor a 0.'); return; }
               if (f.fecha > new Date().toISOString().slice(0, 10)) { setErr('La fecha no puede ser futura.'); return; }
+              // Sin cota inferior, un typo de año en el date picker nativo (ej. "0202" en vez de
+              // "2026") pasaba silencioso: inceptionYear terminaba en el año 202, y
+              // rendimientoPorAnio() generaba ~1800 filas (todas null) en la tabla de Aportes y en
+              // el "Ver N años más" del Dashboard — visible recién ahí, no acá donde se originó.
+              if (f.fecha < '2000-01-01') { setErr('La fecha no puede ser anterior a 2000.'); return; }
               setBusy(true); setErr(null);
               try {
                 await add({ monto, fecha: f.fecha, tipo: f.tipo, descripcion: f.descripcion || null });
@@ -132,10 +137,13 @@ export function AportesPage() {
           ) : aportes.length === 0 ? (
             <Empty icon={Wallet} title="Sin aportes">Registrá el primer aporte arriba.</Empty>
           ) : aportes.map(a => (
-            <div key={a.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
-              <span className="text-ink-600 tnum w-24">{a.fecha}</span>
+            <div key={a.id} className="px-4 py-2.5 flex items-center gap-3 gap-y-1 flex-wrap text-sm">
+              <span className="text-ink-600 tnum w-24 shrink-0">{a.fecha}</span>
               <Badge tone={TIPO_TONE[a.tipo]}>{a.tipo}</Badge>
-              <span className="flex-1 text-ink-600 truncate">{a.descripcion || '—'}</span>
+              <span className="flex-1 min-w-[80px] text-ink-600 truncate">{a.descripcion || '—'}</span>
+              {/* flex-wrap (no un solo renglón sin quiebre): un monto de 7 cifras + el botón de
+                  borrar podían empujar la fila entera más allá del borde de la Card en mobile —
+                  misma clase de bug que se arregló en Stat (ui.tsx). */}
               <span className={`font-semibold tnum ${a.tipo === 'retiro' ? 'text-neg' : 'text-ink-900'}`}>{a.tipo === 'retiro' ? '−' : ''}{fmtUsd(a.monto, 0)}</span>
               <button onClick={() => borrar(a)} disabled={deletingId === a.id} aria-label="Borrar aporte" title="Borrar aporte" className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9 shrink-0 disabled:opacity-50"><Trash2 className="w-4 h-4" /></button>
             </div>

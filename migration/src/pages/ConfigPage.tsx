@@ -104,7 +104,7 @@ export function ConfigPage() {
                 <p className="text-[11px] text-ink-600 truncate">{p.descripcion || '—'}</p>
               </div>
               <span className="text-xs text-ink-600 tnum">obj: {fmtUsd(p.capital_objetivo, 0)}</span>
-              <button onClick={() => archivar(p)} disabled={archivandoId === p.id} title="Archivar"
+              <button onClick={() => archivar(p)} disabled={archivandoId === p.id} title="Archivar" aria-label={`Archivar ${p.nombre}`}
                 className="text-ink-600 hover:text-warn inline-flex items-center justify-center w-9 h-9 disabled:opacity-50"><Archive className="w-4 h-4" /></button>
             </div>
           ))}
@@ -363,6 +363,22 @@ function EditActive({ nombre, estrategia, capital, onSave }: {
   const [e, setE] = useState(estrategia);
   const [c, setC] = useState(capital?.toString() ?? '');
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const guardar = async () => {
+    // Antes: sin try/catch — igual que "crear" tenía este bug (ver comentario más arriba), un
+    // guardado fallido (offline, RLS) no mostraba nada: el botón simplemente no hacía nada visible.
+    setBusy(true); setErr(null);
+    try {
+      await onSave({ nombre: n, estrategia: e, capital_objetivo: c ? Number(c) : null });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'No se pudo guardar');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Card>
       <CardHeader title="Editar portfolio activo" />
@@ -377,8 +393,9 @@ function EditActive({ nombre, estrategia, capital, onSave }: {
           <textarea value={e} onChange={ev => setE(ev.target.value)} placeholder="Estrategia (texto libre)" rows={3}
             className={inputCls} />
         </Field>
-        <Button variant="ghost" onClick={async () => { await onSave({ nombre: n, estrategia: e, capital_objetivo: c ? Number(c) : null }); setSaved(true); setTimeout(() => setSaved(false), 1500); }}>
-          <Save className="w-4 h-4" /> {saved ? 'Guardado' : 'Guardar cambios'}
+        {err && <p className="text-xs text-neg">{err}</p>}
+        <Button variant="ghost" onClick={guardar} disabled={busy}>
+          <Save className="w-4 h-4" /> {busy ? 'Guardando…' : saved ? 'Guardado' : 'Guardar cambios'}
         </Button>
       </div>
     </Card>

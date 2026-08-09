@@ -57,7 +57,11 @@ export function CedearsPage() {
       <AlertasBanner alertas={alertas} />
       <Card>
         <CardHeader title="Renta variable" sub="Sector y estilo (Peter Lynch) por posición. Editá con el ✏️ para clasificar."
-          right={<span className="text-xs text-ink-600 tnum">Capital {fmtUsdCompact(totalCapital)} · Mercado {fmtUsdCompact(totalMkt)}</span>} />
+          // "Capital" acá (y en la columna de la tabla) es el COSTO — distinto de "Capital" en la
+          // tarjeta "Indicadores clave" de abajo, que es valor de MERCADO (mismo criterio que
+          // CedearsResumen del Dashboard). Etiquetado "Costo" para no repetir la misma palabra con
+          // dos significados distintos en la misma página.
+          right={<span className="text-xs text-ink-600 tnum">Costo {fmtUsdCompact(totalCapital)} · Mercado {fmtUsdCompact(totalMkt)}</span>} />
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[760px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
@@ -66,7 +70,7 @@ export function CedearsPage() {
                 <th className="text-left px-3">Sector</th>
                 <th className="text-left px-3">Estilo (Lynch)</th>
                 <th className="text-right px-3">Nominales</th>
-                <th className="text-right px-3">Capital</th>
+                <th className="text-right px-3">Costo</th>
                 <th className="text-right px-3">Valor mercado</th>
                 <th className="text-right px-3">Resultado</th>
                 <th className="px-2"></th>

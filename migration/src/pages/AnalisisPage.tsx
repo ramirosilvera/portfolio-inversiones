@@ -385,7 +385,7 @@ function GeminiAnalysis({ ticker, portfolioId, context }: { ticker: string; port
 
 function Metric({ l, v, tone, hint }: { l: string; v: string; tone?: 'pos' | 'neg' | 'warn'; hint?: string }) {
   const c = tone === 'pos' ? 'text-pos' : tone === 'neg' ? 'text-neg' : tone === 'warn' ? 'text-warn' : 'text-ink-900';
-  return <div title={hint}><p className="text-[10px] uppercase text-ink-600">{l}{hint && <span className="text-ink-500"> ⓘ</span>}</p><p className={`font-semibold tnum ${c}`}>{v}</p></div>;
+  return <div className="min-w-0" title={hint}><p className="text-[10px] uppercase text-ink-600 truncate">{l}{hint && <span className="text-ink-500"> ⓘ</span>}</p><p className={`font-semibold tnum truncate ${c}`}>{v}</p></div>;
 }
 function NumIn({ l, v, step, onChange, pct }: { l: string; v: number; step: number; onChange: (n: number) => void; pct?: boolean }) {
   return (

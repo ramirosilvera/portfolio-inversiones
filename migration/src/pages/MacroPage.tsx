@@ -93,7 +93,7 @@ export function MacroPage() {
           <div className="px-4 pt-3">
             <p className="text-[10px] uppercase tracking-wide font-semibold text-ink-500 mb-1.5">Focos de atención</p>
             <div className="flex flex-wrap gap-1.5">
-              {resumen.alertas.map(a => <Badge key={a.key} tone={TONE_ALERTA[a.luz]}>{a.label}: {a.msg}</Badge>)}
+              {resumen.alertas.map(a => <Badge key={a.key} tone={TONE_ALERTA[a.luz]} wrap>{a.label}: {a.msg}</Badge>)}
             </div>
           </div>
         )}

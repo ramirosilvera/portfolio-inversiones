@@ -87,10 +87,14 @@ function ResumenFlujoCard({ r }: { r: ResumenFlujo }) {
     <Card>
       <div className="p-4">
         <div className="flex items-end justify-between gap-3 flex-wrap">
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold">Disponible del mes</p>
-            <p className={`text-2xl font-bold font-display tnum ${r.disponible >= 0 ? 'text-ink-900' : 'text-neg'}`}>{fmtArs(r.disponible)}</p>
-            <p className="text-[11px] text-ink-600 tnum">de {fmtArs(I)} de ingresos</p>
+            {/* Único lugar de la app que imprime un monto ARS sin compactar a tamaño hero — con
+                inflación real esto puede llegar a muchas cifras; min-w-0 + truncate (con el valor
+                completo en title) evita que se salga de la Card en mobile, misma clase de bug que
+                se arregló en Stat (ui.tsx). */}
+            <p className={`text-2xl font-bold font-display tnum truncate ${r.disponible >= 0 ? 'text-ink-900' : 'text-neg'}`} title={fmtArs(r.disponible)}>{fmtArs(r.disponible)}</p>
+            <p className="text-[11px] text-ink-600 tnum truncate">de {fmtArs(I)} de ingresos</p>
           </div>
           <div className="text-right">
             {r.tasaAhorro != null && (

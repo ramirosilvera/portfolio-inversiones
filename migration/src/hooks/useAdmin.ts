@@ -8,15 +8,20 @@ import { api, type AdminAccion } from '../lib/api';
 // isApproved gatea la app entera en App.tsx (con "cuenta pendiente" si no). La seguridad real está
 // en que cada endpoint /api/admin/* re-verifica admin por su cuenta, y en que la policy
 // portfolios_insert exige is_approved() en la base — esto nunca es la única barrera.
-export function useEstadoCuenta(): { isAdmin: boolean; isApproved: boolean; isLoading: boolean } {
+export function useEstadoCuenta(): { isAdmin: boolean; isApproved: boolean; isLoading: boolean; isError: boolean; reintentar: () => void } {
   const { session } = useAuth();
   const q = useQuery({
     queryKey: ['admin-whoami', session?.user.id ?? 'anon'],
     enabled: !!session,
     staleTime: 5 * 60_000,
+    retry: 2, // un cold-start de la Function o un hiccup de red no debe leerse como "no aprobado"
     queryFn: () => api.adminWhoAmI(),
   });
-  return { isAdmin: q.data?.isAdmin ?? false, isApproved: q.data?.isApproved ?? false, isLoading: q.isLoading };
+  // `isApproved: false` en el fallback de `??` no distinguía "confirmamos que no está aprobado" de
+  // "no pudimos confirmar nada" — un usuario YA aprobado que entra con la red floja (o el primer
+  // load en un dispositivo nuevo, sin caché) caía en PendingApprovalPage como si un admin todavía no
+  // lo hubiera aprobado. `isError` deja que el caller (App.tsx) muestre un estado distinto.
+  return { isAdmin: q.data?.isAdmin ?? false, isApproved: q.data?.isApproved ?? false, isLoading: q.isLoading, isError: q.isError, reintentar: () => void q.refetch() };
 }
 
 // enabled=false evita pedir /api/admin/users desde lugares que solo quieren mostrar el resumen si

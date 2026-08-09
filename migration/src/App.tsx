@@ -29,7 +29,7 @@ export function App() {
   // Se resuelve server-side (whoami) y es la fuente de la verdad SOLO para decidir qué pantalla
   // mostrar acá — no reemplaza el chequeo real (policy portfolios_insert exige is_approved() en
   // la base), así que aunque este gate se saltee de algún modo, no se puede crear un portfolio.
-  const { isAdmin, isApproved, isLoading: chequeandoCuenta } = useEstadoCuenta();
+  const { isAdmin, isApproved, isLoading: chequeandoCuenta, isError: errorCuenta, reintentar } = useEstadoCuenta();
 
   if (loading) {
     return <div className="h-full grid place-items-center text-ink-600">Cargando…</div>;
@@ -37,6 +37,20 @@ export function App() {
   if (!session) return <LoginPage />;
   if (chequeandoCuenta) {
     return <div className="h-full grid place-items-center text-ink-600">Cargando…</div>;
+  }
+  // Distinto de "no aprobado": un fallo de red/Function acá NO significa que la cuenta esté
+  // pendiente — antes caía en el mismo `!isAdmin && !isApproved` de abajo, y un usuario YA aprobado
+  // con la red floja (o el primer login en un dispositivo nuevo) veía la pantalla de "esperando
+  // aprobación" en vez de un simple "reintentar".
+  if (errorCuenta) {
+    return (
+      <div className="h-full grid place-items-center text-center px-6">
+        <div>
+          <p className="text-ink-700 mb-3">No pudimos verificar tu cuenta. Puede ser un problema de red temporal.</p>
+          <button onClick={reintentar} className="text-celeste-600 font-semibold hover:underline">Reintentar</button>
+        </div>
+      </div>
+    );
   }
   if (!isAdmin && !isApproved) return <PendingApprovalPage />;
 

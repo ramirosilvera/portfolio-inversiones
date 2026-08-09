@@ -433,10 +433,20 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
 
   const guardar = async () => {
     if (tickerEditable && !ticker.trim()) { setErr('Ingresá un ticker.'); return; }
+    // Antes: `Number(cantidad) || 0` — vaciar el campo, o tipear un negativo, guardaba 0 (la
+    // posición "se cierra" sin aviso) o un negativo (peso/valor de mercado negativos, contamina
+    // totalMkt de toda la sección). El formulario de alta SÍ valida esto (ver arriba); acá faltaba.
+    if (!(Number(cantidad) > 0)) { setErr('La cantidad debe ser mayor a 0.'); return; }
+    if (!(Number(precio) > 0)) { setErr('El costo promedio debe ser mayor a 0.'); return; }
+    // Mismo criterio que el alta: un CEDEAR sin ratio se valúa mal (unitValueUSD devuelve null), y
+    // acá era posible VACIAR el ratio de un CEDEAR ya cargado sin ningún aviso.
+    if (pos.tipo === 'cedear' && !(ratio && Number(ratio) > 0)) {
+      setErr('Un CEDEAR necesita su ratio (subyacentes por CEDEAR) — sin eso el valor se calcula mal.'); return;
+    }
     setBusy(true); setErr(null);
     const patch: Partial<Posicion> = {
-      cantidad: Number(cantidad) || 0,
-      precio_compra: Number(precio) || 0,
+      cantidad: Number(cantidad),
+      precio_compra: Number(precio),
       sector: sector || null,
       ratio_cedear: ratio ? Number(ratio) : null,
     };
@@ -515,10 +525,19 @@ function SellModal({ pos, sugerido, onClose, onSell }: {
   const costoProm = pos.precio_compra;
   const resultado = n > 0 ? (p - costoProm) * n : 0;
 
+  const hoyISO = new Date().toISOString().slice(0, 10);
+
   const confirmar = async () => {
     if (!(n > 0)) { setErr('Ingresá una cantidad válida.'); return; }
     if (!(p > 0)) { setErr('Ingresá el precio de venta (no puede ser 0).'); return; }
     if (n > pos.cantidad) { setErr(`No podés vender más de ${fmtNum(pos.cantidad, 0)} que tenés.`); return; }
+    if (fecha > hoyISO) { setErr('La fecha no puede ser futura.'); return; }
+    // Sin esto, una venta con fecha anterior a la compra ordena ANTES en realizedPnl (engine/pnl.ts)
+    // — la venta "sale" con 0 unidades disponibles para vender, así que el P&L realizado se registra
+    // en 0 silenciosamente (las tenencias sí bajan bien, solo el resultado queda mal).
+    if (pos.fecha_compra && fecha < pos.fecha_compra) {
+      setErr(`La fecha de venta no puede ser anterior a la de compra (${pos.fecha_compra}).`); return;
+    }
     setBusy(true); setErr(null);
     try { await onSell(n, p, fecha, retiro); }
     catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo vender'); setBusy(false); }
@@ -538,7 +557,7 @@ function SellModal({ pos, sugerido, onClose, onSell }: {
               <input type="number" value={precio} onChange={e => setPrecio(e.target.value)} className={inputCls} />
             </Field>
             <Field label="Fecha" className="col-span-2">
-              <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputCls} />
+              <input type="date" min={pos.fecha_compra ?? undefined} max={hoyISO} value={fecha} onChange={e => setFecha(e.target.value)} className={inputCls} />
             </Field>
             <button type="button" onClick={() => setQty(String(pos.cantidad))} className="col-span-2 text-left text-[11px] text-celeste-600 hover:underline">Vender todo ({fmtNum(pos.cantidad, 0)})</button>
           </div>
@@ -836,9 +855,9 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
                       <p className="text-xs text-warn flex items-center gap-1.5"><Target className="w-4 h-4 shrink-0" /> {d.ticker || 'El activo'} ya está por encima del objetivo — para llegar deberías vender ~{fmtUsd(Math.abs(monto), 0)}, no comprar.</p>
                     ) : (
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div><p className="text-[10px] uppercase text-ink-600 font-semibold">Cantidad</p><p className="tnum font-bold text-ink-900 mt-0.5">{cantidad > 0 ? fmtNum(cantidad, cantidad < 10 ? 2 : 0) : '—'}</p></div>
-                        <div><p className="text-[10px] uppercase text-ink-600 font-semibold">Costo</p><p className="tnum font-bold text-ink-900 mt-0.5">{costo > 0 ? fmtUsd(costo, 0) : '—'}</p></div>
-                        <div><p className="text-[10px] uppercase text-ink-600 font-semibold">Peso result.</p><p className="tnum font-bold text-celeste-600 mt-0.5">{costo > 0 ? fmtPct(pesoNuevo, 1) : '—'}</p></div>
+                        <div className="min-w-0"><p className="text-[10px] uppercase text-ink-600 font-semibold">Cantidad</p><p className="tnum font-bold text-ink-900 mt-0.5 truncate" title={cantidad > 0 ? fmtNum(cantidad, cantidad < 10 ? 2 : 0) : undefined}>{cantidad > 0 ? fmtNum(cantidad, cantidad < 10 ? 2 : 0) : '—'}</p></div>
+                        <div className="min-w-0"><p className="text-[10px] uppercase text-ink-600 font-semibold">Costo</p><p className="tnum font-bold text-ink-900 mt-0.5 truncate" title={costo > 0 ? fmtUsd(costo, 0) : undefined}>{costo > 0 ? fmtUsd(costo, 0) : '—'}</p></div>
+                        <div className="min-w-0"><p className="text-[10px] uppercase text-ink-600 font-semibold">Peso result.</p><p className="tnum font-bold text-celeste-600 mt-0.5 truncate" title={costo > 0 ? fmtPct(pesoNuevo, 1) : undefined}>{costo > 0 ? fmtPct(pesoNuevo, 1) : '—'}</p></div>
                       </div>
                     )}
                     {!sobreponderada && costo > 0 && (
