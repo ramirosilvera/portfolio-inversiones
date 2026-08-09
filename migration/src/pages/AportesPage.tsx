@@ -10,7 +10,10 @@ import type { Aporte, AporteTipo } from '../types/domain';
 const TIPO_TONE: Record<AporteTipo, 'accent' | 'gray' | 'warn' | 'neg'> = { inicial: 'accent', recurrente: 'gray', adelanto: 'warn', retiro: 'neg' };
 
 type AnioFiltro = 'todos' | 'positivos' | 'negativos' | 'sindatos';
-const FILTRO_LABEL: Record<AnioFiltro, string> = { todos: 'Todos', positivos: 'Positivos', negativos: 'Negativos', sindatos: 'Sin datos' };
+// "Sin datos" → "Sin %": filtra por `rendimiento == null` (ver más abajo), y desde que la tabla
+// también muestra Aportes/P&L un año puede no tener % pero sí tener esas otras dos columnas — el
+// nombre viejo sugería "no hay nada en esta fila", que ya no es necesariamente cierto.
+const FILTRO_LABEL: Record<AnioFiltro, string> = { todos: 'Todos', positivos: 'Positivos', negativos: 'Negativos', sindatos: 'Sin %' };
 type AnioSortKey = 'anio' | 'rendimiento' | 'aportes' | 'pnl';
 
 // Años "sin dato" siempre al final, sea cual sea la dirección — null no es "peor que -100%" ni
@@ -174,18 +177,22 @@ export function AportesPage() {
                       <tr className="border-b border-line">
                         <ThSortAnio label="Año" sortKey="anio" sort={sortAnio} onClick={handleSortAnio} align="left" />
                         <ThSortAnio label="Rendimiento" sortKey="rendimiento" sort={sortAnio} onClick={handleSortAnio} />
-                        <ThSortAnio label="Aportes" sortKey="aportes" sort={sortAnio} onClick={handleSortAnio} />
-                        <ThSortAnio label="P&L" sortKey="pnl" sort={sortAnio} onClick={handleSortAnio} />
+                        <ThSortAnio label="Aportes netos" sortKey="aportes" sort={sortAnio} onClick={handleSortAnio}
+                          title="Aportes − retiros de ESE año, no el acumulado histórico" />
+                        <ThSortAnio label="P&L del año" sortKey="pnl" sort={sortAnio} onClick={handleSortAnio}
+                          title="Ganancia en dólares de ESE año — distinto del P&L del Hero del Dashboard, que es la ganancia no realizada actual sobre las posiciones" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
                       {filasAnio.length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-3 text-ink-600">Sin años que coincidan con el filtro.</td></tr>
+                        <tr><td colSpan={4} className="px-3 py-3 text-ink-600">Sin años que coincidan con el filtro.</td></tr>
                       ) : filasAnio.map(({ anio, rendimiento, aportadoNeto, pnl }) => (
                         <tr key={anio}>
-                          <td className="px-4 py-2 text-left tnum text-ink-800">{anio}{anio === anioActual ? ' · en curso' : ''}</td>
+                          <td className="px-3 py-2 text-left tnum text-ink-800">{anio}{anio === anioActual ? ' · en curso' : ''}</td>
                           <td className={`px-3 py-2 text-right tnum font-semibold ${rendimiento == null ? 'text-ink-600' : rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}
-                            title={rendimiento == null ? 'Sin snapshot de cierre para este año' : undefined}>
+                            title={rendimiento != null ? undefined
+                              : aportadoNeto == null ? 'Sin snapshot de cierre para este año'
+                              : 'Un retiro dejó el capital base en ≤0: el % no es representativo, pero el P&L en dólares sí'}>
                             {rendimiento != null ? fmtPct(rendimiento) : '—'}
                           </td>
                           {/* Sin color pos/neg (a diferencia de Rendimiento/P&L): un aporte neto
@@ -193,7 +200,7 @@ export function AportesPage() {
                               salió ese año — mismo criterio que "Neto aportado" en el Dashboard. */}
                           <td className="px-3 py-2 text-right tnum text-ink-700"
                             title={aportadoNeto == null ? 'Sin snapshot de cierre para este año' : 'Aportes − retiros de ESE año (no acumulado histórico)'}>
-                            {aportadoNeto != null ? fmtUsd(aportadoNeto, 0) : '—'}
+                            {aportadoNeto != null ? fmtUsd(aportadoNeto, 0) : <span className="text-ink-600">—</span>}
                           </td>
                           <td className={`px-3 py-2 text-right tnum font-semibold ${pnl == null ? 'text-ink-600' : pnl >= 0 ? 'text-pos' : 'text-neg'}`}
                             title={pnl == null ? 'Sin snapshot de cierre para este año' : 'Ganancia en dólares del año — Vfin − Vini − aportes netos'}>
@@ -215,19 +222,22 @@ export function AportesPage() {
 }
 
 // Mismo patrón que ThSort en RadarPage.tsx (columna ordenable con click + flecha) — copiado local
-// en vez de compartido porque son columnas/tipos de dato distintos (acá 2 columnas nada más). El
-// padding vive DENTRO del botón (no en el <th>) para que el área clickeable sea todo el label, no
-// solo el texto — un <th className="px-3 py-2"><button>...</button></th> deja un botón de ~16px de
-// alto, bajo el mínimo táctil recomendado de 24px.
-function ThSortAnio({ label, sortKey, sort, onClick, align = 'right' }: {
-  label: string; sortKey: AnioSortKey; sort: { key: AnioSortKey; dir: 'asc' | 'desc' }; onClick: (key: AnioSortKey) => void; align?: 'left' | 'right';
+// en vez de compartido porque son columnas/tipos de dato distintos (acá 4 columnas). El padding vive
+// DENTRO del botón (no en el <th>) para que el área clickeable sea todo el label, no solo el texto —
+// un <th className="px-3 py-2"><button>...</button></th> deja un botón de ~16px de alto, bajo el
+// mínimo táctil recomendado de 24px. `flex-row-reverse` en las columnas right-aligned: sin esto la
+// flecha queda pegada al label (que ya está pegado al borde derecho), separándose visualmente de los
+// números de la columna — con la flecha primero, el LABEL es lo que queda pegado al borde, igual que
+// los valores de abajo.
+function ThSortAnio({ label, sortKey, sort, onClick, align = 'right', title }: {
+  label: string; sortKey: AnioSortKey; sort: { key: AnioSortKey; dir: 'asc' | 'desc' }; onClick: (key: AnioSortKey) => void; align?: 'left' | 'right'; title?: string;
 }) {
   const active = sort.key === sortKey;
   return (
     <th className={align === 'left' ? 'text-left' : 'text-right'}
       aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button onClick={() => onClick(sortKey)}
-        className={`inline-flex items-center gap-1 px-3 py-2 hover:text-ink-900 transition-colors ${align === 'left' ? '' : 'justify-end'} ${active ? 'text-ink-900 font-semibold' : ''}`}>
+      <button onClick={() => onClick(sortKey)} title={title}
+        className={`inline-flex items-center gap-1 px-3 py-2 hover:text-ink-900 transition-colors ${align === 'left' ? '' : 'flex-row-reverse justify-end'} ${active ? 'text-ink-900 font-semibold' : ''}`}>
         {label}
         {active
           ? (sort.dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)

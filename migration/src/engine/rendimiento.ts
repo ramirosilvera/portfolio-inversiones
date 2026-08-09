@@ -14,11 +14,10 @@
 
 export interface Punto { fecha: string; valor: number; aportado: number } // aportado = neto acumulado
 export interface Flujo { fecha: string; monto: number }                   // firmado: aporte +, retiro −
-// `aportadoNeto`/`pnl` viajan junto a `rendimiento` (no hay que recalcularlos aparte): son el mismo
-// numerador/flujo que ya arma el cálculo del % — aportadoNeto = aportes − retiros DEL AÑO (no
-// acumulado histórico), pnl = ganancia en dólares del año (Vfin − Vini − aportadoNeto), el mismo
-// numerador tanto si el % se calculó con Dietz como con el método simple. Pueden ser no-nulos aunque
-// `rendimiento` sí sea null (un retiro que deja la base en ≤0 invalida el %, no el monto en dólares).
+// `aportadoNeto` = aportes − retiros DEL AÑO (no acumulado histórico); `pnl` = ganancia en dólares
+// del año (Vfin − Vini − aportadoNeto). Pueden ser no-nulos aunque `rendimiento` sí sea null (un
+// retiro que deja la base en ≤0 invalida el %, no el monto en dólares) — ver abajo de dónde sale
+// cada uno según el método usado para el %.
 export interface RendAnio { anio: number; rendimiento: number | null; aportadoNeto: number | null; pnl: number | null }
 
 const DIA = 86_400_000;
@@ -28,9 +27,12 @@ const dias = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / DIA;
 // R = (Vfin − Vini − ΣF) / (Vini + Σ w_i·F_i),  w_i = (T − t_i)/T
 // Sin esto, un aporte grande en diciembre entra al denominador como si hubiera estado todo el año
 // y hunde el rendimiento (o lo infla, si fue un retiro).
-function dietz(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta: string): number | null {
+// Devuelve `sumF` (el total de flujos SIN ponderar) además del %: es el numerador real del año según
+// los flujos fechados — más preciso que el delta de `aportado` entre snapshots (ver el llamador),
+// así el caller puede armar aportadoNeto/pnl con el mismo dato que usó para el %, sin inventar un
+// segundo cálculo que podría no coincidir.
+function dietz(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta: string): { rendimiento: number | null; sumF: number } {
   const T = dias(desde, hasta);
-  if (!(T > 0)) return null;
   let sumF = 0, sumPond = 0;
   for (const f of flujos) {
     const t = dias(desde, f.fecha);
@@ -38,8 +40,9 @@ function dietz(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta
     sumF += f.monto;
     sumPond += w * f.monto;
   }
+  if (!(T > 0)) return { rendimiento: null, sumF };
   const base = vIni + sumPond;
-  return base > 1e-9 ? (vFin - vIni - sumF) / base : null;
+  return { rendimiento: base > 1e-9 ? (vFin - vIni - sumF) / base : null, sumF };
 }
 
 // `flujos` (aportes/retiros fechados) es opcional: si se pasan, el rendimiento del año se calcula
@@ -68,22 +71,28 @@ export function rendimientoPorAnio(puntos: Punto[], inceptionYear: number, hoy: 
 
     if (vIni == null || aIni == null || !fin) { out.push({ anio: y, rendimiento: null, aportadoNeto: null, pnl: null }); continue; }
 
-    // Aportes netos y ganancia en dólares DEL AÑO — independientes de qué método calcule el %
-    // (Dietz solo cambia cómo se pondera el denominador; el numerador Vfin−Vini−aportadoNeto es el
-    // mismo en los dos casos, porque en ambos `delAnio`/`fNeto` cubren exactamente los flujos del año).
-    const fNeto = fin.aportado - aIni;
-    const pnl = fin.valor - vIni - fNeto;
-
     // Con flujos fechados dentro del año usamos Modified Dietz (ponderado por tiempo).
     const delAnio = flujos.filter(f => f.fecha >= yStart && f.fecha <= fin.fecha && !Number.isNaN(Date.parse(f.fecha)));
     if (delAnio.length) {
       // El período arranca en el 1-ene, salvo el año de creación (ahí, en el primer flujo real).
       const desde = y === inceptionYear ? delAnio.map(f => f.fecha).sort()[0] : yStart;
-      const r = dietz(vIni, fin.valor, delAnio.filter(f => f.fecha >= desde), desde, fin.fecha);
-      out.push({ anio: y, rendimiento: r, aportadoNeto: fNeto, pnl });
+      const { rendimiento: r, sumF } = dietz(vIni, fin.valor, delAnio.filter(f => f.fecha >= desde), desde, fin.fecha);
+      // aportadoNeto/pnl acá SALEN DE `sumF` (los flujos fechados que ya usó Dietz para el %), NO del
+      // delta `fin.aportado - aIni` entre snapshots. Son dos fuentes de datos distintas: los flujos
+      // vienen de la tabla `aportes` (siempre al día); el `aportado` de un snapshot es una FOTO fija
+      // del día que se grabó, que nunca se reescribe — si después se carga/edita/borra un aporte con
+      // fecha pasada, o el snapshot simplemente no cayó justo el 31-dic, el delta de snapshots queda
+      // desalineado con lo que el % realmente usó. Usar `sumF` mantiene el $ coherente con el % de
+      // ESTA fila, en vez de una segunda fuente que puede contradecirlo.
+      out.push({ anio: y, rendimiento: r, aportadoNeto: sumF, pnl: fin.valor - vIni - sumF });
       continue;
     }
 
+    // Sin flujos fechados en el año: no hay con qué armar Dietz, así que tanto el % como el $ caen al
+    // delta de `aportado` entre snapshots (menos preciso, pero es lo único disponible — y % y $ usan
+    // la MISMA fuente acá, así que no pueden contradecirse entre sí).
+    const fNeto = fin.aportado - aIni;
+    const pnl = fin.valor - vIni - fNeto;
     const base = vIni + fNeto;             // capital que estuvo trabajando
     // base > 0: si un retiro deja la base ≤ 0, el % no es representativo → null (no un número raro).
     // El $ (pnl) sigue siendo válido igual — no depende de la base, solo el %.

@@ -74,12 +74,27 @@ describe('rendimientoPorAnio — aportadoNeto y pnl (por año, no acumulado hist
     expect(r.pnl).toBe(5 - 100 - (-150)); // 55
   });
 
-  it('con flujos (rama Dietz): pnl coincide con el numerador simple, mismo año', () => {
+  it('con flujos (rama Dietz), snapshot y flujos de acuerdo: aportadoNeto/pnl coinciden con el delta de snapshots', () => {
     const pts = [p('2025-12-31', 100, 100), p('2026-12-31', 1015, 1000)];
     const flujos = [{ fecha: '2026-12-20', monto: 900 }];
     const r = rendimientoPorAnio(pts, 2025, '2026-12-31', flujos)[1];
-    expect(r.aportadoNeto).toBe(900); // 1000 - 100
+    expect(r.aportadoNeto).toBe(900); // sumF de los flujos del año — acá coincide con 1000-100 (fNeto)
     expect(r.pnl).toBe(1015 - 100 - 900); // 15 — ganancia real en dólares, sea cual sea el % (Dietz)
+  });
+
+  // Caso real que motivó separar aportadoNeto/pnl de fNeto: un snapshot es una FOTO del día que se
+  // grabó (whenever el usuario abrió el Dashboard) — si después se carga (o edita, o borra) un
+  // aporte con fecha pasada, el snapshot NUNCA se reescribe retroactivamente. `fin.aportado - aIni`
+  // (el delta entre snapshots) queda desactualizado, pero la tabla `aportes` (de donde salen los
+  // `flujos`) siempre está al día — por eso aportadoNeto/pnl usan `sumF` (los flujos), no el delta.
+  it('aporte cargado DESPUÉS de grabarse el snapshot: aportadoNeto/pnl usan los flujos, no el delta de snapshots (que lo "perdería")', () => {
+    // El snapshot de cierre 2026 no refleja el aporte (fin.aportado === aIni → fNeto sería 0), pero
+    // el aporte SÍ está en la tabla de aportes.
+    const pts = [p('2025-12-31', 10000, 10000), p('2026-12-31', 12000, 10000)];
+    const flujos = [{ fecha: '2026-06-01', monto: 1500 }];
+    const r = rendimientoPorAnio(pts, 2025, '2026-12-31', flujos)[1];
+    expect(r.aportadoNeto).toBe(1500); // NO 0 (lo que daría el delta de snapshots)
+    expect(r.pnl).toBe(12000 - 10000 - 1500); // 500, no 2000
   });
 });
 
