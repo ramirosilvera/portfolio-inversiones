@@ -36,9 +36,50 @@ describe('rendimientoPorAnio — corte por año calendario (pasado, no anualizad
     expect(r[0].rendimiento!).toBeCloseTo((4400 - 4000) / 4000, 6);
   });
 
-  it('sin puntos → todos los años null', () => {
+  it('sin puntos → todos los años null (rendimiento, aportadoNeto y pnl)', () => {
     const r = rendimientoPorAnio([], 2026, '2026-01-01');
-    expect(r).toEqual([{ anio: 2026, rendimiento: null }]);
+    expect(r).toEqual([{ anio: 2026, rendimiento: null, aportadoNeto: null, pnl: null }]);
+  });
+});
+
+describe('rendimientoPorAnio — aportadoNeto y pnl (por año, no acumulado histórico)', () => {
+  it('año de creación: aportadoNeto = lo aportado ese año, pnl = ganancia en dólares', () => {
+    const r = rendimientoPorAnio([p('2026-07-24', 3245, 3000)], 2026, '2026-07-24')[0];
+    expect(r.aportadoNeto).toBe(3000);
+    expect(r.pnl).toBe(245); // 3245 - 0 - 3000
+  });
+
+  it('segundo año: aportadoNeto es SOLO lo que se movió ESE año, no el acumulado histórico', () => {
+    const pts = [
+      p('2025-12-31', 11000, 10000),
+      p('2026-12-31', 14300, 12000), // aportado acumulado pasa de 10000 a 12000 → 2000 netos en 2026
+    ];
+    const r = rendimientoPorAnio(pts, 2025, '2026-12-31');
+    expect(r[1].aportadoNeto).toBe(2000);           // no 12000 (el acumulado)
+    expect(r[1].pnl).toBe(14300 - 11000 - 2000);     // 1300
+  });
+
+  it('retiro: aportadoNeto negativo', () => {
+    const r = rendimientoPorAnio([p('2026-12-31', 4400, 4000)], 2026, '2026-12-31')[0];
+    expect(r.aportadoNeto).toBe(4000);
+  });
+
+  it('base ≤ 0 invalida el %, pero pnl (dólares) sigue siendo un número real', () => {
+    // Vini 100, retiro neto de 150 en el año (base = 100 - 150 = -50 ≤ 0) → rendimiento null,
+    // pero la ganancia en dólares (Vfin - Vini - aportadoNeto) sigue teniendo sentido.
+    const pts = [p('2025-12-31', 100, 1000), p('2026-06-30', 5, 850)]; // aportadoNeto del año = 850-1000 = -150
+    const r = rendimientoPorAnio(pts, 2025, '2026-06-30')[1];
+    expect(r.rendimiento).toBeNull();
+    expect(r.aportadoNeto).toBe(-150);
+    expect(r.pnl).toBe(5 - 100 - (-150)); // 55
+  });
+
+  it('con flujos (rama Dietz): pnl coincide con el numerador simple, mismo año', () => {
+    const pts = [p('2025-12-31', 100, 100), p('2026-12-31', 1015, 1000)];
+    const flujos = [{ fecha: '2026-12-20', monto: 900 }];
+    const r = rendimientoPorAnio(pts, 2025, '2026-12-31', flujos)[1];
+    expect(r.aportadoNeto).toBe(900); // 1000 - 100
+    expect(r.pnl).toBe(1015 - 100 - 900); // 15 — ganancia real en dólares, sea cual sea el % (Dietz)
   });
 });
 

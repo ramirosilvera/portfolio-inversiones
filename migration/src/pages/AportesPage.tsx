@@ -11,7 +11,18 @@ const TIPO_TONE: Record<AporteTipo, 'accent' | 'gray' | 'warn' | 'neg'> = { inic
 
 type AnioFiltro = 'todos' | 'positivos' | 'negativos' | 'sindatos';
 const FILTRO_LABEL: Record<AnioFiltro, string> = { todos: 'Todos', positivos: 'Positivos', negativos: 'Negativos', sindatos: 'Sin datos' };
-type AnioSortKey = 'anio' | 'rendimiento';
+type AnioSortKey = 'anio' | 'rendimiento' | 'aportes' | 'pnl';
+
+// Años "sin dato" siempre al final, sea cual sea la dirección — null no es "peor que -100%" ni
+// "peor que -$1000", es una pregunta sin respuesta todavía. Compartido por las 3 columnas numéricas
+// (Rendimiento, Aportes, P&L) — cada una puede ser null independientemente de las otras (ej. un
+// retiro que deja la base ≤0 invalida el %, pero el P&L en dólares sigue siendo un número real).
+function compararConNulls(a: number | null, b: number | null, dir: 'asc' | 'desc'): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return dir === 'asc' ? a - b : b - a;
+}
 
 export function AportesPage() {
   const { active } = usePortfolios();
@@ -50,12 +61,9 @@ export function AportesPage() {
     else if (filtroAnio === 'sindatos') filas = filas.filter(r => r.rendimiento == null);
     return [...filas].sort((a, b) => {
       if (sortAnio.key === 'anio') return sortAnio.dir === 'asc' ? a.anio - b.anio : b.anio - a.anio;
-      // Rendimiento: los años "sin datos" siempre al final, sea cual sea la dirección — null no es
-      // "peor que -100%", es una pregunta sin respuesta todavía.
-      if (a.rendimiento == null && b.rendimiento == null) return 0;
-      if (a.rendimiento == null) return 1;
-      if (b.rendimiento == null) return -1;
-      return sortAnio.dir === 'asc' ? a.rendimiento - b.rendimiento : b.rendimiento - a.rendimiento;
+      if (sortAnio.key === 'rendimiento') return compararConNulls(a.rendimiento, b.rendimiento, sortAnio.dir);
+      if (sortAnio.key === 'aportes') return compararConNulls(a.aportadoNeto, b.aportadoNeto, sortAnio.dir);
+      return compararConNulls(a.pnl, b.pnl, sortAnio.dir);
     });
   }, [porAnio, filtroAnio, sortAnio]);
 
@@ -136,7 +144,7 @@ export function AportesPage() {
         <div id="rendimiento-anual" className="scroll-mt-4">
           <Card>
             <CardHeader title="Rendimiento por año"
-              sub="Detalle completo, año por año — % sobre el capital invertido, no montos. Mismo cálculo que el resumen del Dashboard." />
+              sub="Detalle completo, año por año — rendimiento (%), aportes netos y ganancia en dólares (P&L). Mismo cálculo que el resumen del Dashboard." />
             {cargando ? (
               <p className="p-4 text-sm text-ink-600">Cargando…</p>
             ) : (
@@ -166,17 +174,30 @@ export function AportesPage() {
                       <tr className="border-b border-line">
                         <ThSortAnio label="Año" sortKey="anio" sort={sortAnio} onClick={handleSortAnio} align="left" />
                         <ThSortAnio label="Rendimiento" sortKey="rendimiento" sort={sortAnio} onClick={handleSortAnio} />
+                        <ThSortAnio label="Aportes" sortKey="aportes" sort={sortAnio} onClick={handleSortAnio} />
+                        <ThSortAnio label="P&L" sortKey="pnl" sort={sortAnio} onClick={handleSortAnio} />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
                       {filasAnio.length === 0 ? (
-                        <tr><td colSpan={2} className="px-4 py-3 text-ink-600">Sin años que coincidan con el filtro.</td></tr>
-                      ) : filasAnio.map(({ anio, rendimiento }) => (
+                        <tr><td colSpan={4} className="px-4 py-3 text-ink-600">Sin años que coincidan con el filtro.</td></tr>
+                      ) : filasAnio.map(({ anio, rendimiento, aportadoNeto, pnl }) => (
                         <tr key={anio}>
                           <td className="px-4 py-2 text-left tnum text-ink-800">{anio}{anio === anioActual ? ' · en curso' : ''}</td>
                           <td className={`px-3 py-2 text-right tnum font-semibold ${rendimiento == null ? 'text-ink-600' : rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}
                             title={rendimiento == null ? 'Sin snapshot de cierre para este año' : undefined}>
                             {rendimiento != null ? fmtPct(rendimiento) : '—'}
+                          </td>
+                          {/* Sin color pos/neg (a diferencia de Rendimiento/P&L): un aporte neto
+                              positivo no es una ganancia, solo dice que entró más capital del que
+                              salió ese año — mismo criterio que "Neto aportado" en el Dashboard. */}
+                          <td className="px-3 py-2 text-right tnum text-ink-700"
+                            title={aportadoNeto == null ? 'Sin snapshot de cierre para este año' : 'Aportes − retiros de ESE año (no acumulado histórico)'}>
+                            {aportadoNeto != null ? fmtUsd(aportadoNeto, 0) : '—'}
+                          </td>
+                          <td className={`px-3 py-2 text-right tnum font-semibold ${pnl == null ? 'text-ink-600' : pnl >= 0 ? 'text-pos' : 'text-neg'}`}
+                            title={pnl == null ? 'Sin snapshot de cierre para este año' : 'Ganancia en dólares del año — Vfin − Vini − aportes netos'}>
+                            {pnl != null ? fmtUsd(pnl, 0) : '—'}
                           </td>
                         </tr>
                       ))}
