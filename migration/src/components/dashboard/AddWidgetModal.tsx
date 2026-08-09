@@ -148,9 +148,12 @@ export function AddWidgetModal({
             <div className="space-y-3 pt-1">
               {seleccion.length === 1 && viz && (
                 <Field label="Visualización">
-                  <div className="flex flex-wrap gap-2">
+                  {/* Selección única entre varias opciones → radiogroup/radio (no aria-pressed, que es
+                      para toggles independientes) — mismo patrón que el filtro de años en AportesPage
+                      y el selector Rendimiento/Aportes/Ambos en DashboardPage. */}
+                  <div role="radiogroup" aria-label="Visualización" className="flex flex-wrap gap-2">
                     {defsSeleccionados[0]!.vizDisponibles.map(v => (
-                      <button key={v} disabled={busy} onClick={() => setViz(v)} aria-pressed={viz === v}
+                      <button key={v} type="button" disabled={busy} onClick={() => setViz(v)} role="radio" aria-checked={viz === v}
                         className={`px-3 py-1.5 rounded-full text-sm font-semibold border disabled:opacity-50 ${viz === v ? 'bg-celeste-500 text-white border-celeste-500' : 'border-line bg-surface text-ink-800 hover:bg-canvas hover:border-celeste-300'}`}>
                         {VIZ_LABEL[v]}
                       </button>

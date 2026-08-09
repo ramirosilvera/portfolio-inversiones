@@ -9,7 +9,7 @@ import { CONCENTRACION_POSICION_ALERTA } from '../engine/bonos';
 import { CALIFICADORAS, CALIFICADORAS_CLASIFICABLES, ETIQUETA_GRADO, ETIQUETA_ESCALA, type GradoCredito, type EscalaRating } from '../engine/rating';
 import { Card, CardHeader, Button, Badge, Stat, Field, Empty, inputCls, fmtUsdCompact, fmtNum, fmtPct, AlertasBanner } from '../components/ui';
 import { useEscapeClose } from '../hooks/useEscapeClose';
-import { useChartTheme, useIsDark } from '../hooks/usePrefs';
+import { useChartTheme } from '../hooks/usePrefs';
 import type { Posicion, AmortizacionProgramada } from '../types/domain';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -71,7 +71,6 @@ export function BonosPage() {
     minGradoInversionPct, maxDuracionAnios, setMinGradoInversionPct, setMaxDuracionAnios,
   } = useObjetivoDuracion(active?.id);
   const chart = useChartTheme();
-  const dark = useIsDark();
   const { data: macro = {} } = useMacro();
   const riskFree = (macro as Record<string, number | null>).dgs10 != null ? (macro as Record<string, number | null>).dgs10! / 100 : null;
 
@@ -94,9 +93,11 @@ export function BonosPage() {
   const sinDuracionIncompletos = sinDuracion.filter(b => !(b.pos.vencimiento != null && b.pos.vencimiento <= hoy));
   const cumpleObjetivo = duracionPromedio != null && duracionPromedio <= maxDuracionAnios;
 
-  const posColor = dark ? '#15A34A' : '#15803D';
-  const accentColor = '#4F97D4';
-  const warnColor = dark ? '#E0952B' : '#B45309';
+  // pos/warn ya salen de chart (useChartTheme) — antes se reconstruían acá con los mismos hex a
+  // mano, duplicado que podía desalinearse si el tema cambiaba en un solo lugar.
+  const posColor = chart.pos;
+  const accentColor = '#4F97D4'; // = accent/celeste-500 (tailwind.config.ts) — fijo, no varía por tema.
+  const warnColor = chart.warn;
 
   return (
     <div className="space-y-4">

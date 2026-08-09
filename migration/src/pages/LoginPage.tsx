@@ -83,9 +83,9 @@ export function LoginPage() {
           </div>
 
           {/* Toggle */}
-          <div className="grid grid-cols-2 gap-1 rounded-full bg-canvas border border-line p-1">
+          <div role="radiogroup" aria-label="Modo" className="grid grid-cols-2 gap-1 rounded-full bg-canvas border border-line p-1">
             {(['ingresar', 'registrar'] as Modo[]).map(m => (
-              <button key={m} type="button" onClick={() => { setModo(m); setMsg(null); }}
+              <button key={m} type="button" onClick={() => { setModo(m); setMsg(null); }} role="radio" aria-checked={modo === m}
                 className={`py-2 rounded-full text-xs font-semibold transition-all ${modo === m ? 'bg-celeste-500 text-white shadow-glow' : 'text-ink-600 hover:text-ink-800'}`}>
                 {m === 'ingresar' ? 'Ingresar' : 'Registrarme'}
               </button>

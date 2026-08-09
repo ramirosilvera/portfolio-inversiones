@@ -794,7 +794,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
               const disponibles = comprables.filter(r => !usadasPorOtras(s.key).has(r.p.id) || (s.modo === 'existente' && r.p.id === s.selId));
 
               const tabBtn = (k: SimDraft['metodo'], label: string) =>
-                <button type="button" onClick={() => patchSim(s.key, { metodo: k })}
+                <button type="button" onClick={() => patchSim(s.key, { metodo: k })} role="radio" aria-checked={s.metodo === k}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${s.metodo === k ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>{label}</button>;
 
               return (
@@ -807,10 +807,10 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
                   )}
 
                   {/* Activo */}
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => elegirExistente(s.key)} disabled={disponibles.length === 0}
+                  <div role="radiogroup" aria-label="Activo a simular" className="flex items-center gap-2">
+                    <button type="button" onClick={() => elegirExistente(s.key)} disabled={disponibles.length === 0} role="radio" aria-checked={s.modo === 'existente'}
                       className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold ${s.modo === 'existente' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600'} disabled:opacity-40`}>Activo existente</button>
-                    <button type="button" onClick={() => elegirNuevo(s.key)}
+                    <button type="button" onClick={() => elegirNuevo(s.key)} role="radio" aria-checked={s.modo === 'nuevo'}
                       className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold ${s.modo === 'nuevo' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600'}`}>Nuevo activo</button>
                   </div>
 
@@ -838,7 +838,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
 
                   <div>
                     <span className="block text-[11px] font-semibold text-ink-600 mb-1">Método</span>
-                    <div className="flex flex-wrap items-center gap-1.5">{tabBtn('objetivo', 'Llegar al objetivo')}{tabBtn('monto', 'Por monto')}{tabBtn('cantidad', 'Por cantidad')}</div>
+                    <div role="radiogroup" aria-label="Método" className="flex flex-wrap items-center gap-1.5">{tabBtn('objetivo', 'Llegar al objetivo')}{tabBtn('monto', 'Por monto')}{tabBtn('cantidad', 'Por cantidad')}</div>
                   </div>
 
                   {s.metodo === 'monto' && <Field label="Monto a invertir (USD)"><input type="number" value={s.montoStr} onChange={e => patchSim(s.key, { montoStr: e.target.value })} className={inputCls} placeholder="USD" /></Field>}

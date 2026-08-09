@@ -164,10 +164,10 @@ export function DashboardPage() {
     cedears: <CedearsResumen personalizando={personalizando} />,
     bonos: <BonosResumen personalizando={personalizando} />,
     radar: <RadarResumen personalizando={personalizando} />,
-    patrimonio_broker: <PatrimonioBrokers posiciones={posiciones} quotes={quotes} isLoading={qPos.isLoading} />,
-    cobros: (cobros.length > 0 || proximoCapital) ? <CobrosResumen resumen={resumenCobrado} pendientesCount={pendientesCount} proximoCapital={proximoCapital} /> : null,
-    liquidez_fci: flujo.length > 0 ? <LiquidezFci resumen={flujoR} mep={mep} /> : null,
-    macro: <MacroResumen resumen={resumen} />,
+    patrimonio_broker: <PatrimonioBrokers posiciones={posiciones} quotes={quotes} isLoading={qPos.isLoading} personalizando={personalizando} />,
+    cobros: (cobros.length > 0 || proximoCapital) ? <CobrosResumen resumen={resumenCobrado} pendientesCount={pendientesCount} proximoCapital={proximoCapital} personalizando={personalizando} /> : null,
+    liquidez_fci: flujo.length > 0 ? <LiquidezFci resumen={flujoR} mep={mep} personalizando={personalizando} /> : null,
+    macro: <MacroResumen resumen={resumen} personalizando={personalizando} />,
   };
 
   if (!active) return null;
@@ -796,13 +796,17 @@ const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 's
 // "Renta" (es devolución de capital, no ganancia). Las 3 tarjetas son SIEMPRE plata ya cobrada — el
 // aviso de "próximo capital" de abajo es lo único proyectado acá, separado a propósito (mismo
 // criterio que "Capital a cobrar 12m" en /cupones: nunca se mezcla lo realizado con lo estimado).
-function CobrosResumen({ resumen, pendientesCount, proximoCapital }: { resumen: ReturnType<typeof resumenCobros>; pendientesCount: number; proximoCapital: CapitalMonthBucket | null }) {
+function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizando }: { resumen: ReturnType<typeof resumenCobros>; pendientesCount: number; proximoCapital: CapitalMonthBucket | null; personalizando: boolean }) {
+  // En modo Personalizar, los links del header/cuerpo se apagan (mismo criterio que Cedears/Bonos/
+  // Radar) — un click cerca de un badge o de la frase de próximo capital no debería sacar al usuario
+  // de la pantalla de edición sin querer.
+  const rightContent = pendientesCount > 0
+    ? <Badge tone="warn">{pendientesCount} por confirmar</Badge>
+    : <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
   return (
     <Card>
       <CardHeader title="Cobros" sub="Dividendos, intereses y amortizaciones efectivamente cobrados."
-        right={pendientesCount > 0
-          ? <Link to="/cupones" className="inline-flex items-center gap-1.5"><Badge tone="warn">{pendientesCount} por confirmar</Badge></Link>
-          : <Link to="/cupones" className="text-[11px] text-celeste-600 hover:underline">Ver detalle →</Link>} />
+        right={personalizando ? rightContent : <Link to="/cupones" className="inline-flex items-center gap-1.5">{rightContent}</Link>} />
       <div className="grid grid-cols-3 gap-2 p-3">
         <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-3 min-w-0">
           <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Cobrado total</p>
@@ -823,7 +827,8 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital }: { resumen: 
       {proximoCapital && (
         <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
           title="Devolución de capital (amortización + rescate al vencimiento) de todos los bonos, ventana de 12 meses — NO es renta. Bonos amortizables sin cronograma cargado se estiman con su valor residual, todo junto al vencimiento.">
-          Próximo mes con capital <span className="italic">proyectado</span> (amortización o rescate al vencimiento, no es renta): <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(proximoCapital.total)}</span> en {MESES_CORTOS[proximoCapital.month - 1]} {proximoCapital.year} — <Link to="/cupones" className="text-celeste-600 hover:underline">detalle en Cupones →</Link>
+          Próximo mes con capital <span className="italic">proyectado</span> (amortización o rescate al vencimiento, no es renta): <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(proximoCapital.total)}</span> en {MESES_CORTOS[proximoCapital.month - 1]} {proximoCapital.year}
+          {personalizando ? ' — detalle en Cupones' : <> — <Link to="/cupones" className="text-celeste-600 hover:underline">detalle en Cupones →</Link></>}
         </p>
       )}
     </Card>
@@ -833,7 +838,7 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital }: { resumen: 
 // Liquidez & FCI: la parte del flujo de caja que se muestra en el Dashboard (near-cash sleeve).
 // Montos en pesos formateados compactos ($22,9 M) para que no desborden las cajas; el valor exacto
 // queda en el tooltip.
-function LiquidezFci({ resumen, mep }: { resumen: ReturnType<typeof resumenFlujo>; mep: number | null }) {
+function LiquidezFci({ resumen, mep, personalizando }: { resumen: ReturnType<typeof resumenFlujo>; mep: number | null; personalizando: boolean }) {
   const usd = (ars: number) => (mep ? `≈ ${fmtUsd(ars / mep, 0)}` : 'liquidez');
   const tiles = [
     { label: 'FCI + billetera', val: resumen.fci, sub: usd(resumen.fci), tone: 'text-ink-900' },
@@ -843,7 +848,7 @@ function LiquidezFci({ resumen, mep }: { resumen: ReturnType<typeof resumenFlujo
   return (
     <Card>
       <CardHeader title="Liquidez & FCI" sub="Fondos y billetera en pesos, según tu flujo de caja · compartido entre todos tus portfolios."
-        right={<Link to="/finanzas" className="text-[11px] text-celeste-600 hover:underline">Editar flujo →</Link>} />
+        right={personalizando ? <span className="text-[11px] text-celeste-600">Editar flujo →</span> : <Link to="/finanzas" className="text-[11px] text-celeste-600 hover:underline">Editar flujo →</Link>} />
       <div className="grid grid-cols-3 gap-2 p-3">
         {tiles.map(t => (
           <div key={t.label} className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-3 min-w-0" title={fmtArs(t.val)}>
@@ -858,8 +863,8 @@ function LiquidezFci({ resumen, mep }: { resumen: ReturnType<typeof resumenFlujo
 }
 
 // Patrimonio por broker: mismo cálculo y donut que BrokersPage, resumido para el Dashboard.
-function PatrimonioBrokers({ posiciones, quotes, isLoading }: {
-  posiciones: Posicion[]; quotes: Record<string, number | null>; isLoading: boolean;
+function PatrimonioBrokers({ posiciones, quotes, isLoading, personalizando }: {
+  posiciones: Posicion[]; quotes: Record<string, number | null>; isLoading: boolean; personalizando: boolean;
 }) {
   const chart = useChartTheme();
   const { data: brokers = [], isLoading: brokersLoading } = useBrokers();
@@ -880,7 +885,7 @@ function PatrimonioBrokers({ posiciones, quotes, isLoading }: {
   const resumen = useMemo(() => resumenPorBroker(posValuadas, asignaciones, brokers), [posValuadas, asignaciones, brokers]);
 
   const cargando = isLoading || brokersLoading || asigLoading;
-  const right = <Link to="/brokers" className="text-[11px] text-celeste-600 hover:underline">Ver detalle →</Link>;
+  const right = personalizando ? <span className="text-[11px] text-celeste-600">Ver detalle →</span> : <Link to="/brokers" className="text-[11px] text-celeste-600 hover:underline">Ver detalle →</Link>;
   if (cargando) {
     return <Card><CardHeader title="Patrimonio por broker" right={right} /><p className="p-4 text-sm text-ink-600">Cargando…</p></Card>;
   }
@@ -920,7 +925,7 @@ function PatrimonioBrokers({ posiciones, quotes, isLoading }: {
 // Contexto macro resumido: título + distancia a máximos + barra de salud. El detalle completo
 // (focos de atención, indicadores agrupados, lectura ejecutiva por IA) vive en /macro — acá solo
 // el vistazo rápido, con un link al detalle.
-function MacroResumen({ resumen }: { resumen: ResumenMacro }) {
+function MacroResumen({ resumen, personalizando }: { resumen: ResumenMacro; personalizando: boolean }) {
   const { data: dd = {} } = useDrawdowns();
   const tone = resumen.luz === 'rojo' ? 'neg' : resumen.luz === 'amarillo' ? 'warn' : 'pos';
   const { verdes, amarillos, rojos, total } = resumen.conteo;
@@ -952,7 +957,9 @@ function MacroResumen({ resumen }: { resumen: ResumenMacro }) {
       )}
 
       <div className="px-4 pb-3.5 pt-1 border-t border-line">
-        <Link to="/macro" className="text-[11px] text-celeste-600 hover:underline">Ver contexto macro completo →</Link>
+        {personalizando
+          ? <span className="text-[11px] text-celeste-600">Ver contexto macro completo →</span>
+          : <Link to="/macro" className="text-[11px] text-celeste-600 hover:underline">Ver contexto macro completo →</Link>}
       </div>
     </Card>
   );

@@ -92,9 +92,9 @@ export function WidgetGrid({
           // comportamiento que antes de que existiera el Dashboard personalizable.
           if (!personalizando) return null;
           return (
-            <div key={w.id} className="relative group">
-              <Card><CardHeader title={titulo} sub="Sin datos en este portfolio — se mostrará cuando los haya." /></Card>
+            <div key={w.id}>
               <Controles i={i} total={layout.length} onMover={dir => onMover(w.id, dir)} onEliminar={() => onEliminar(w.id)} />
+              <Card><CardHeader title={titulo} sub="Sin datos en este portfolio — se mostrará cuando los haya." /></Card>
             </div>
           );
         }
@@ -106,8 +106,7 @@ export function WidgetGrid({
         if (!personalizando) return <div key={w.id}>{cuerpo}</div>;
 
         return (
-          <div key={w.id} className="relative group">
-            {cuerpo}
+          <div key={w.id}>
             <Controles i={i} total={layout.length} onMover={dir => onMover(w.id, dir)}
               // Resolver alias ACÁ también (no solo al renderizar, arriba) — si no, el modal de edición
               // arranca con las keys viejas sin resolver, el chip de la métrica renombrada aparece
@@ -115,6 +114,7 @@ export function WidgetGrid({
               // en vez de deseleccionarla.
               onEditar={w.kind === 'metrica' ? () => onEditar({ ...w, metricas: w.metricas.map(m => resolveKey(m) as MetricKey) }) : undefined}
               onEliminar={() => onEliminar(w.id)} />
+            {cuerpo}
           </div>
         );
       })}
@@ -122,14 +122,17 @@ export function WidgetGrid({
   );
 }
 
-// Cluster de controles del modo Personalizar — posicionado AFUERA del borde de la tarjeta (no
-// "absolute top-3 right-3" hacia adentro) para no tapar el slot `right` del CardHeader (badges de
-// concentración, links "Ver más", etc.), que vive exactamente ahí.
+// Cluster de controles del modo Personalizar. Antes flotaba "absolute -top-2 -right-2" sobre la
+// esquina de la tarjeta para no tapar el slot `right` del CardHeader — pero eso solo funcionaba
+// cuando `right` era chico: con badges que envuelven a dos líneas o contenido ancho (varias
+// secciones tienen eso), el cluster igual lo tapaba parcialmente. En vez de perseguir cada caso,
+// va en su propia fila ARRIBA de la tarjeta (flujo normal, no absolute) — cero superposición
+// posible con nada del contenido, para cualquier `right` que tenga la sección.
 function Controles({ i, total, onMover, onEditar, onEliminar }: {
   i: number; total: number; onMover: (dir: 'arriba' | 'abajo') => void; onEditar?: () => void; onEliminar: () => void;
 }) {
   return (
-    <div className="absolute -top-2 -right-2 flex items-center gap-0.5 bg-surface/95 backdrop-blur rounded-full border border-line shadow-soft px-1 py-0.5 z-10">
+    <div className="flex items-center justify-end gap-0.5 mb-1.5">
       <button onClick={() => onMover('arriba')} disabled={i === 0} className={ctrlBtn} aria-label="Mover arriba"><ChevronUp className="w-4 h-4" /></button>
       <button onClick={() => onMover('abajo')} disabled={i === total - 1} className={ctrlBtn} aria-label="Mover abajo"><ChevronDown className="w-4 h-4" /></button>
       {onEditar && <button onClick={onEditar} className={ctrlBtn} aria-label="Editar tarjeta"><Pencil className="w-4 h-4" /></button>}

@@ -158,8 +158,13 @@ function ThSort({ label, sortKey, sort, onClick, align = 'right' }: {
 }) {
   const active = sort?.key === sortKey;
   return (
-    <th className={align === 'left' ? 'text-left px-4 py-2' : 'text-right px-3'}>
-      <button onClick={() => onClick(sortKey)} className={`inline-flex items-center gap-1 hover:text-ink-900 transition-colors ${active ? 'text-ink-900 font-semibold' : ''}`}>
+    <th className={align === 'left' ? 'text-left' : 'text-right'}
+      aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      {/* Padding DENTRO del botón (no en el <th>): el área clickeable es todo el label, no solo el
+          texto — con el padding afuera el botón queda de ~16px de alto, bajo el mínimo táctil de 24px.
+          Mismo patrón que ThSortAnio en AportesPage.tsx. */}
+      <button onClick={() => onClick(sortKey)}
+        className={`inline-flex items-center gap-1 py-2 hover:text-ink-900 transition-colors ${align === 'left' ? 'px-4' : 'px-3 flex-row-reverse justify-end'} ${active ? 'text-ink-900 font-semibold' : ''}`}>
         {label}
         {active
           ? (sort!.dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)

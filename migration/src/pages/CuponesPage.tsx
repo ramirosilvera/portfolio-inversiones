@@ -27,9 +27,9 @@ export function CuponesPage() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <h1 className="text-2xl font-bold text-ink-900 font-display">Cobros · {active.nombre}</h1>
-        <div className="flex items-center gap-1.5 ml-auto">
-          <button onClick={() => setTab('cobrado')} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${tab === 'cobrado' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>Cobrado</button>
-          <button onClick={() => setTab('proyectado')} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${tab === 'proyectado' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>Proyectado</button>
+        <div role="radiogroup" aria-label="Vista" className="flex items-center gap-1.5 ml-auto">
+          <button type="button" onClick={() => setTab('cobrado')} role="radio" aria-checked={tab === 'cobrado'} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${tab === 'cobrado' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>Cobrado</button>
+          <button type="button" onClick={() => setTab('proyectado')} role="radio" aria-checked={tab === 'proyectado'} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${tab === 'proyectado' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>Proyectado</button>
         </div>
       </div>
       {tab === 'cobrado' ? <CobradoTab portfolioId={active.id} /> : <ProyectadoTab portfolioId={active.id} />}
@@ -135,10 +135,10 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
       <Card>
         <CardHeader title="Registrar un cobro" sub="Dividendo/interés no tocan la posición. Amortización cambia la posición de una de dos formas — elegí según lo que muestre tu bróker." />
         <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <div className="col-span-2 sm:col-span-2 flex items-center gap-2">
-            <button type="button" onClick={() => setModo('existente')} disabled={opcionesPosicion.length === 0}
+          <div role="radiogroup" aria-label="Origen del cobro" className="col-span-2 sm:col-span-2 flex items-center gap-2">
+            <button type="button" onClick={() => setModo('existente')} disabled={opcionesPosicion.length === 0} role="radio" aria-checked={modo === 'existente'}
               className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold ${modo === 'existente' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600'} disabled:opacity-40`}>Posición existente</button>
-            <button type="button" onClick={() => setModo('otro')} disabled={tipo === 'amortizacion'}
+            <button type="button" onClick={() => setModo('otro')} disabled={tipo === 'amortizacion'} role="radio" aria-checked={modo === 'otro'}
               className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold ${modo === 'otro' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600'} disabled:opacity-40`}>Otro ticker</button>
           </div>
           <Field label="Tipo">
@@ -169,10 +169,10 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
           {tipo === 'amortizacion' && (
             <>
               <Field label="¿Qué cambió en tu bróker?" className="col-span-2 sm:col-span-4">
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setModoAmort('nominales')}
+                <div role="radiogroup" aria-label="¿Qué cambió en tu bróker?" className="flex items-center gap-2">
+                  <button type="button" onClick={() => setModoAmort('nominales')} role="radio" aria-checked={modoAmort === 'nominales'}
                     className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold ${modoAmort === 'nominales' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600'}`}>Bajaron mis nominales</button>
-                  <button type="button" onClick={() => setModoAmort('valorResidual')}
+                  <button type="button" onClick={() => setModoAmort('valorResidual')} role="radio" aria-checked={modoAmort === 'valorResidual'}
                     className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold ${modoAmort === 'valorResidual' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600'}`}>Nominales iguales, bajó el valor residual</button>
                 </div>
               </Field>
