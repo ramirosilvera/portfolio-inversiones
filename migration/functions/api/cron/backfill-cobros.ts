@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guard, sbSelect, sbRpc, cacheFresh, cacheLast, sbUpsert } from '../_shared';
+import { type Env, json, preflight, guard, sbSelect, sbRpc, cacheFresh, cacheLast, sbUpsert, requireCronSecret } from '../_shared';
 import { fetchDividendos, type DividendEvent } from '../_dividendos';
 import { sugerirDividendosHistoricos, sugerirCuponesHistoricos, type PosicionParaCobro } from '../_cobros_pendientes';
 
@@ -14,11 +14,10 @@ const TTL = 24 * 60 * 60 * 1000; // 24h, igual que /api/market/dividendos
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
 export const onRequestGet = guard(async ({ request, env }) => {
-  // Mismo criterio que refresh-all.ts: si CRON_SECRET está configurado, solo quien lo mande puede
-  // dispararlo; sin el secret configurado sigue abierto (compatibilidad).
-  if (env.CRON_SECRET && request.headers.get('X-Cron-Secret') !== env.CRON_SECRET) {
-    return json({ error: 'no autorizado' }, 401);
-  }
+  // Mismo criterio que refresh-all.ts (ver requireCronSecret en _shared.ts): sin CRON_SECRET
+  // configurado, el endpoint se niega a correr en vez de quedar abierto a cualquiera.
+  const authErr = requireCronSecret(env, request);
+  if (authErr) return authErr;
 
   const url = new URL(request.url);
   const hoy = new Date().toISOString().slice(0, 10);

@@ -2,7 +2,7 @@
 // (PATCH), eliminar definitivamente (DELETE). Mismo guard que users.ts: requireAdmin() en cada
 // request. Ningún admin puede aplicarse estas acciones a sí mismo — evita quedarse afuera por
 // error (auto-banearse) o dejar la cuenta sin ningún admin (auto-revocarse/auto-eliminarse).
-import { type Env, json, preflight, guard, sbHeaders } from '../../_shared';
+import { type Env, json, preflight, guard, sbHeaders, sbSelect } from '../../_shared';
 import { requireAdmin, logAudit } from '../_guard';
 
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
@@ -40,12 +40,35 @@ export const onRequestPatch = guard(async ({ request, env, params }) => {
     return json({ error: 'no-permitido', detail: 'No podés aplicarte esta acción a vos mismo.' }, 400);
   }
 
+  // Si la acción le puede sacar la autoridad de admin a `target` (ban o revoke_admin), y ese target
+  // hoy ES admin, hay que verificar ANTES de tocar nada que no sea el último — sin esto, banear o
+  // revocarle el admin a la única otra cuenta admin deja la app sin ningún admin usable (nadie
+  // puede volver a otorgar admin desde el panel, porque el panel exige serlo).
+  if (accion === 'ban' || accion === 'revoke_admin') {
+    const [adminRows, targetEsAdmin] = await Promise.all([
+      sbSelect<{ user_id: string }>(env, 'admin_users', 'select=user_id'),
+      sbSelect<{ user_id: string }>(env, 'admin_users', `user_id=eq.${targetId}&select=user_id`),
+    ]);
+    if (targetEsAdmin.length > 0 && adminRows.length <= 1) {
+      return json({ error: 'ultimo-admin', detail: 'No podés sacarle el admin a la única cuenta administradora — la app quedaría sin nadie que pueda volver a otorgarlo.' }, 400);
+    }
+  }
+
   if (accion === 'ban' || accion === 'unban') {
     const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${targetId}`, {
       method: 'PUT', headers: sbHeaders(env),
       body: JSON.stringify({ ban_duration: accion === 'ban' ? BAN_LARGO : 'none' }),
     });
     if (!res.ok) return json({ error: 'gotrue-error', detail: `No se pudo ${accion === 'ban' ? 'banear' : 'reactivar'} (HTTP ${res.status})` }, 502);
+    // Banear a un admin dejaba `admin_users` intacto: desbanearlo (o el JWT vigente hasta que
+    // expire) le restauraba la autoridad completa sin que nadie la haya vuelto a otorgar. El ban
+    // ahora también revoca el admin — reactivar (`unban`) no lo devuelve solo, hace falta un
+    // grant_admin explícito después.
+    if (accion === 'ban') {
+      await fetch(`${env.SUPABASE_URL}/rest/v1/admin_users?user_id=eq.${targetId}`, {
+        method: 'DELETE', headers: sbHeaders(env, { Prefer: 'return=minimal' }),
+      });
+    }
   } else if (accion === 'grant_admin') {
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/admin_users`, {
       method: 'POST', headers: sbHeaders(env, { Prefer: 'resolution=merge-duplicates,return=minimal' }),

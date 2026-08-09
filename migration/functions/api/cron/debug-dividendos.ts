@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guard } from '../_shared';
+import { type Env, json, preflight, guard, requireCronSecret } from '../_shared';
 
 // GET /api/cron/debug-dividendos?ticker=MSFT — diagnóstico de UNA SOLA VEZ: llama directo a Twelve
 // Data (sin pasar por fetchDividendos, que traga errores a propósito para no romper el flujo
@@ -9,9 +9,8 @@ import { type Env, json, preflight, guard } from '../_shared';
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
 export const onRequestGet = guard(async ({ request, env }) => {
-  if (env.CRON_SECRET && request.headers.get('X-Cron-Secret') !== env.CRON_SECRET) {
-    return json({ error: 'no autorizado' }, 401);
-  }
+  const authErr = requireCronSecret(env, request);
+  if (authErr) return authErr;
   const ticker = (new URL(request.url).searchParams.get('ticker') || 'MSFT').toUpperCase();
   const out: Record<string, unknown> = { ticker };
 

@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson, TICKER_RE } from '../_shared';
 
 // Beta cambia poco — TTL largo. Y si el proveedor falla, un beta de hace meses sigue siendo mucho
 // mejor que el default fijo de 1.0 (que no dice nada de la volatilidad REAL de la empresa).
@@ -38,6 +38,7 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   const url = new URL(request.url);
   const ticker = (url.searchParams.get('ticker') || '').toUpperCase().trim();
   if (!ticker) return json({ error: 'ticker requerido' }, 400);
+  if (!TICKER_RE.test(ticker)) return json({ error: 'ticker-invalido' }, 400);
 
   const cached = await cacheFresh<BetaRow>(env, 'beta_cache', 'ticker', ticker, TTL);
   if (cached) return json({ beta: cached.beta, fuente: cached.fuente, cached: true });

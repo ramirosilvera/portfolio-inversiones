@@ -1,4 +1,4 @@
-import { type Env, json, preflight, safe, usuarioAutenticado, usuarioAprobado, sbSelect, sbUpsert } from '../_shared';
+import { type Env, json, preflight, safe, usuarioAutenticado, usuarioAprobado, usuarioId, sbSelect, sbUpsert, TICKER_RE } from '../_shared';
 
 // La IA opina sobre lo CUALITATIVO. Los números los calcula el código y se le pasan
 // como contexto para que razone sobre datos reales — nunca que Gemini calcule un ratio.
@@ -33,6 +33,25 @@ export const onRequestPost = safe(async ({ request, env }) => {
   const body = await request.json().catch(() => ({})) as { ticker?: string; portfolio_id?: string | null; context?: unknown };
   const ticker = (body.ticker || '').toUpperCase();
   if (!ticker) return json({ error: 'ticker requerido' }, 400);
+  // Sin este chequeo, un ticker con "#"/"&" truncaba o alteraba el filtro PostgREST de acá abajo
+  // (?ticker=eq.X#... corta la query en el "#") — devolvía el análisis cacheado de OTRO ticker
+  // (posiblemente de otro usuario, ver ownership check de portfolio_id más abajo). Ver auditoría de
+  // backend.
+  if (!TICKER_RE.test(ticker)) return json({ error: 'ticker-invalido' }, 400);
+
+  // Si viene portfolio_id, tiene que ser un portfolio del usuario que llama — sin este chequeo,
+  // cualquier cuenta aprobada podía mandar el portfolio_id de OTRO usuario y la fila de análisis
+  // quedaba tageada como si fuera de ese portfolio ajeno (contaminación de caché, no lectura: este
+  // endpoint nunca lee datos de un portfolio, todo el contexto lo manda el cliente).
+  let portfolioId: string | null = null;
+  if (body.portfolio_id) {
+    const userId = await usuarioId(env, request);
+    const propio = userId
+      ? await sbSelect<{ id: string }>(env, 'portfolios', `id=eq.${encodeURIComponent(body.portfolio_id)}&user_id=eq.${userId}&select=id`)
+      : [];
+    if (!propio.length) return json({ error: 'portfolio-ajeno' }, 403);
+    portfolioId = body.portfolio_id;
+  }
 
   // v3: formato bullet ejecutivo (antes: prosa de 4-6 frases). El bump cambia el hash → regenera.
   const input = JSON.stringify({ v: 3, ticker, context: body.context });
@@ -42,7 +61,7 @@ export const onRequestPost = safe(async ({ request, env }) => {
 
   // Cache: misma empresa + mismos números → misma respuesta.
   const cached = await sbSelect<{ respuesta: string }>(env, 'analisis_ia',
-    `ticker=eq.${ticker}&tipo=eq.empresa&input_hash=eq.${inputHash}&order=created_at.desc&limit=1`);
+    `ticker=eq.${encodeURIComponent(ticker)}&tipo=eq.empresa&input_hash=eq.${inputHash}&order=created_at.desc&limit=1`);
   if (cached[0]) return json({ analisis: cached[0].respuesta, cached: true });
 
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -69,7 +88,7 @@ export const onRequestPost = safe(async ({ request, env }) => {
   if (!text) return json({ error: 'gemini-sin-respuesta' }, 502);
 
   await sbUpsert(env, 'analisis_ia', [{
-    portfolio_id: body.portfolio_id ?? null, ticker, tipo: 'empresa', input_hash: inputHash,
+    portfolio_id: portfolioId, ticker, tipo: 'empresa', input_hash: inputHash,
     respuesta: text, modelo: model, created_at: new Date().toISOString(),
   }], 'id');
 

@@ -1,7 +1,17 @@
 -- ===========================================================================
 -- Re-asegura las policies RLS (idempotente y auto-reparadora). Si alguna faltaba o
--- quedó mal, esto la deja correcta. Seguro de correr las veces que quieras.
--- Ejecutar en Supabase → SQL editor.
+-- quedó mal, esto la deja correcta.
+--
+-- ADVERTENCIA (post-auditoría de backend): este archivo YA CORRIÓ contra la base de producción,
+-- una sola vez, en su momento. NO es seguro volver a correrlo tal cual hoy: originalmente recreaba
+-- `portfolios_own` (una sola policy "for all", sin chequeo de aprobación) y `ia_own` (permitía
+-- escritura del cliente en analisis_ia). Migraciones POSTERIORES reemplazaron esas dos por versiones
+-- más estrictas — `portfolios_own` → 4 policies separadas por comando con gate de aprobación en el
+-- insert (0021_aprobacion_cuentas.sql), `ia_own` → solo lectura para el cliente
+-- (0022_analisis_ia_select_only.sql). Por eso esas dos policies se sacaron de este archivo (ver
+-- abajo): recrearlas acá reabriría los dos huecos que esas migraciones cerraron. El resto del
+-- archivo (helper + RLS on + policies de profiles/cik_map/posiciones/aportes/dcf_analisis/caches)
+-- sigue siendo seguro de re-correr.
 -- ===========================================================================
 
 -- helper (por si no existe)
@@ -27,9 +37,8 @@ drop policy if exists profiles_own on public.profiles;
 create policy profiles_own on public.profiles for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
-drop policy if exists portfolios_own on public.portfolios;
-create policy portfolios_own on public.portfolios for all to authenticated
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- portfolios_own: SACADA de acá — ver advertencia arriba. Su versión vigente es el set de 4
+-- policies por comando de 0021_aprobacion_cuentas.sql (portfolios_select/insert/update/delete).
 
 drop policy if exists cik_map_own on public.cik_map;
 create policy cik_map_own on public.cik_map for all to authenticated
@@ -48,10 +57,8 @@ drop policy if exists dcf_own on public.dcf_analisis;
 create policy dcf_own on public.dcf_analisis for all to authenticated
   using (public.owns_portfolio(portfolio_id)) with check (public.owns_portfolio(portfolio_id));
 
-drop policy if exists ia_own on public.analisis_ia;
-create policy ia_own on public.analisis_ia for all to authenticated
-  using (portfolio_id is null or public.owns_portfolio(portfolio_id))
-  with check (portfolio_id is null or public.owns_portfolio(portfolio_id));
+-- ia_own: SACADA de acá — ver advertencia arriba. Su versión vigente es ia_select (solo lectura
+-- para el cliente) de 0022_analisis_ia_select_only.sql.
 
 -- caches de mercado → lectura para autenticados (escribe el service-role)
 drop policy if exists fund_read on public.fundamentals_cache;

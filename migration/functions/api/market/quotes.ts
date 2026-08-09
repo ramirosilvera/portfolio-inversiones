@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson, parseTickers } from '../_shared';
 
 const TTL = 15 * 60 * 1000; // 15 min
 
@@ -28,9 +28,12 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   // mismo ticker). Sin esto se pedía/escribía el precio dos veces por nada — y si el batch de
   // sbUpsert llegaba a tener el mismo ticker repetido, Postgres rechazaba TODO el lote (ver
   // dedupeByConflictKey en _shared.ts, ya blindado ahí también — esto es la segunda capa).
-  const tickers = [...new Set((url.searchParams.get('tickers') || url.searchParams.get('ticker') || '')
-    .toUpperCase().split(',').map(s => s.trim()).filter(Boolean))];
+  // parseTickers también descarta cualquier valor con formato inválido (ver TICKER_RE).
+  const tickers = parseTickers(url, 'tickers', 'ticker');
   if (!tickers.length) return json({ error: 'tickers requerido' }, 400);
+  // Tope defensivo: sin esto, una lista arbitrariamente larga dispara un fetch a un proveedor PAGO
+  // por cada ticker (Promise.all sin límite) — una cartera real nunca tiene tantos activos.
+  if (tickers.length > 60) return json({ error: 'demasiados tickers (máx 60)' }, 413);
 
   const out: Record<string, number | null> = {};
   const rows: unknown[] = [];

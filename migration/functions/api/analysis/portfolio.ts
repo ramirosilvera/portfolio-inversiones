@@ -1,15 +1,22 @@
 import { type Env, json, preflight, safe, usuarioAutenticado, usuarioAprobado, sbSelect, sbUpsert } from '../_shared';
 
+// v4: antes le pedía al modelo caracterizar "concentración" y "diversificación sectorial" en
+// abstracto — para eso hace falta SUMAR pesos por sector o comparar el top-N contra el resto,
+// aritmética que el modelo tiene que inventarse (viola la regla de oro: los números los calcula el
+// código, la IA solo interpreta). Ahora el prompt prohíbe explícitamente sumar/calcular y pide citar
+// SOLO los pesos individuales que ya vienen en los datos — la agregación real, si hace falta, tiene
+// que salir de un cálculo hecho en el código, no de esta respuesta.
 const SYSTEM = `Sos un risk officer / especialista en construcción de cartera (portfolio
 construction, perfil value de largo plazo estilo Munger/Buffett) escribiendo el brief ejecutivo de
 riesgo de una cartera para su dueño, que necesita ver los focos de riesgo de un vistazo. Te paso la
 lista de posiciones (ticker, sector, rol, peso actual y peso objetivo) de un portfolio. NO inventes
-precios ni números que no estén.
+precios ni números que no estén, y NO sumes ni calcules pesos vos — los números los calcula el
+código; citá únicamente los pesos individuales que ya vienen en los datos, en prosa cualitativa.
 
 Formato OBLIGATORIO — bullets cortos, para decidir rápido:
-- Concentración: <si hay 1-2 posiciones que dominan el riesgo, usando los pesos reales — o "sin concentración relevante">
+- Concentración: <qué posiciones llaman la atención por su peso individual YA DADO (sin sumarlas entre sí) — o "sin concentración relevante">
 - Correlación: <posiciones que son la misma apuesta — mismo sector/driver macro — o "sin solapamiento relevante">
-- Diversificación sectorial: <balanceada o sesgada, y hacia dónde>
+- Diversificación sectorial: <qué sectores se repiten entre las posiciones, en términos cualitativos, SIN inventar un % agregado — o "sin sesgo sectorial evidente">
 - Coherencia con la estrategia: <la mezcla es consistente con calidad de largo plazo, sí/no y por qué>
 
 Cada bullet: 1 frase, máximo ~25 palabras, español rioplatense, sin sub-viñetas ni títulos extra. No
@@ -33,8 +40,9 @@ export const onRequestPost = safe(async ({ request, env }) => {
   const body = await request.json().catch(() => ({})) as { posiciones?: unknown };
   if (!body.posiciones) return json({ error: 'posiciones requeridas' }, 400);
 
-  // v3: formato bullet ejecutivo (antes: prosa de 5-8 frases). El bump cambia el hash → regenera.
-  const input = JSON.stringify({ v: 3, posiciones: body.posiciones });
+  // v4 (ver comentario en SYSTEM) — el bump cambia el hash → invalida las respuestas cacheadas con
+  // el prompt viejo, que sí le pedía calcular agregados al modelo.
+  const input = JSON.stringify({ v: 4, posiciones: body.posiciones });
   if (input.length > 12_000) return json({ error: 'cartera demasiado grande para analizar' }, 413);
   const inputHash = hash(input);
 

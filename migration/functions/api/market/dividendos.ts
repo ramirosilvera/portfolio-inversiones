@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, parseTickers } from '../_shared';
 import { fetchDividendos, proyectarDividendo, type DividendEvent, type DividendoInfo } from '../_dividendos';
 
 const TTL = 24 * 60 * 60 * 1000; // 24h — calendario de dividendos no cambia minuto a minuto
@@ -12,9 +12,9 @@ export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 // "sin dato" (dividendos de CEDEARs/acciones no tienen fuente automática hoy sin esas keys).
 export const onRequestGet = guardAuth(async ({ request, env }) => {
   const url = new URL(request.url);
-  const tickers = (url.searchParams.get('tickers') || url.searchParams.get('ticker') || '')
-    .toUpperCase().split(',').map(s => s.trim()).filter(Boolean);
+  const tickers = parseTickers(url, 'tickers', 'ticker');
   if (!tickers.length) return json({ error: 'tickers requerido' }, 400);
+  if (tickers.length > 60) return json({ error: 'demasiados tickers (máx 60)' }, 413);
 
   const hoy = new Date().toISOString().slice(0, 10);
   const out: Record<string, DividendoInfo | null> = {};

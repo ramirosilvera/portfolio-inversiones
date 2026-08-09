@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, TICKER_RE, CIK_RE } from '../_shared';
 import { DEFAULT_CIK, fetchFundamentals } from '../_edgar';
 
 const TTL = 12 * 60 * 60 * 1000; // 12h
@@ -19,7 +19,9 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   const force = url.searchParams.get('fresh') === '1';
 
   if (!ticker) return json({ error: 'ticker requerido' }, 400);
+  if (!TICKER_RE.test(ticker)) return json({ error: 'ticker-invalido' }, 400);
   if (!cik) return json({ error: `sin CIK para ${ticker} — cargá el par ticker/CIK en Configuración` }, 400);
+  if (!CIK_RE.test(cik)) return json({ error: 'cik-invalido', detail: 'El CIK debe ser 10 dígitos.' }, 400);
   // (El modo debug que probaba variantes contra el proxy se eliminó tras encontrar la causa raíz:
   // era un amplificador de requests públicos sin autenticación.)
 

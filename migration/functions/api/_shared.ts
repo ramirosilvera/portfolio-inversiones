@@ -76,6 +76,43 @@ export async function usuarioAprobado(env: Env, request: Request): Promise<boole
   } catch { return false; }
 }
 
+// Id del usuario del JWT en Authorization (null si no hay sesión o el token es inválido) — para
+// los pocos endpoints que necesitan saber QUIÉN llama, no solo SI hay sesión (ej. verificar que un
+// portfolio_id que mandó el cliente le pertenece antes de escribir una fila con él).
+export async function usuarioId(env: Env, request: Request): Promise<string | null> {
+  const auth = request.headers.get('Authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token || !env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY },
+    });
+    if (!res.ok) return null;
+    const user = await res.json() as { id?: string };
+    return user?.id ?? null;
+  } catch { return null; }
+}
+
+// Ticker válido para interpolar en una URL de proveedor externo o un filtro PostgREST: letras,
+// dígitos, punto y guion, 1-10 caracteres (cubre CEDEARs/ONs con sufijo tipo "BPOD" y ADRs con
+// clase tipo "BRK.B"). Sin este chequeo, un ticker con "#"/"&"/"/" podía truncar un filtro
+// PostgREST (?ticker=eq.X#... corta la query ahí) o inyectar parámetros/path en la URL de un
+// proveedor — ver auditoría de backend.
+export const TICKER_RE = /^[A-Z0-9.\-]{1,10}$/;
+
+// CIK de EDGAR: siempre 10 dígitos (con ceros a la izquierda, ver DEFAULT_CIK en _edgar.ts). Un
+// ?cik= con otro formato no es un CIK real y, sin validar, se interpola tal cual en el path de la
+// URL del proxy SEC (ver _edgar.ts fetchConcept) — mismo riesgo que un ticker sin validar.
+export const CIK_RE = /^\d{10}$/;
+
+// Parsea una lista "tickers=A,B,C" (o "ticker=A" single) y descarta cualquier valor que no matchee
+// TICKER_RE — sin esto, un ticker con caracteres fuera de lo esperado llegaba tal cual a una URL de
+// proveedor externo o a un filtro PostgREST (ver TICKER_RE, ver auditoría de backend).
+export function parseTickers(url: URL, ...params: string[]): string[] {
+  const raw = params.map(p => url.searchParams.get(p)).find(v => v) || '';
+  return [...new Set(raw.toUpperCase().split(',').map(s => s.trim()).filter(s => TICKER_RE.test(s)))];
+}
+
 // Envuelve un handler exigiendo sesión válida. Devuelve 401 si no la hay.
 export function authed(handler: (ctx: Ctx) => Promise<Response>): PagesFunction<Env> {
   return async (ctx) => {
@@ -141,6 +178,23 @@ export function guardAuth(handler: (ctx: Ctx) => Promise<Response>): PagesFuncti
     }
     return inner(ctx);
   };
+}
+
+// Para los endpoints de /api/cron/* (server-to-server, sin JWT de usuario): a diferencia de
+// guardAuth (donde el chequeo de CRON_SECRET es solo UNA de varias formas válidas de autenticarse,
+// con el JWT de usuario como alternativa), acá es la ÚNICA puerta — si CRON_SECRET no está
+// configurado, el endpoint tiene que negarse a operar, no quedar abierto a cualquiera que conozca
+// la URL. Antes, sin el secret seteado, estos 3 endpoints aceptaban cualquier request sin
+// autenticación: escritura en cobros_pendientes de TODOS los portfolios, o proxy gratis a APIs
+// pagas (debug-dividendos), a disposición de cualquiera en internet.
+export function requireCronSecret(env: Env, request: Request): Response | null {
+  if (!env.CRON_SECRET) {
+    return json({ error: 'config-cron-secret', detail: 'CRON_SECRET no está configurado en esta Function — sin él, este endpoint no puede operar (quedaría abierto a cualquiera).' }, 500);
+  }
+  if (request.headers.get('X-Cron-Secret') !== env.CRON_SECRET) {
+    return json({ error: 'no autorizado' }, 401);
+  }
+  return null;
 }
 
 // Como guard() pero sin exigir Supabase: solo atrapa excepciones y las devuelve como JSON 500

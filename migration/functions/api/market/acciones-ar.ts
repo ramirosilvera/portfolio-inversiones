@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson, parseTickers, TICKER_RE } from '../_shared';
 
 const TTL = 20 * 60 * 1000; // 20 min
 
@@ -24,7 +24,8 @@ export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 // GET /api/market/acciones-ar?tickers=YPFD,GGAL,PAMP  → { YPFD: <usd>, ... }
 export const onRequestGet = guardAuth(async ({ request, env }) => {
   const url = new URL(request.url);
-  const tickers = (url.searchParams.get('tickers') || '').toUpperCase().split(',').map(s => s.trim()).filter(Boolean);
+  const tickers = parseTickers(url, 'tickers');
+  if (tickers.length > 60) return json({ error: 'demasiados tickers (máx 60)' }, 413);
 
   // MEP para pasar ARS → USD. TTL 30 min (igual que fx.ts): con 6h, en días volátiles la
   // conversión podía usar un MEP viejo y desviar la valuación.
@@ -48,12 +49,20 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   const wanted = tickers.length ? tickers : Object.keys(arsMap);
   for (const t of wanted) {
     const ars = arsMap[t];
-    let usd = ars != null && mep ? +(ars / mep).toFixed(4) : null;
+    const usdFresco = ars != null && mep ? +(ars / mep).toFixed(4) : null;
+    if (usdFresco != null) {
+      out[t] = usdFresco;
+      rows.push({ ticker: t, precio: usdFresco, moneda: 'USD', updated_at: new Date().toISOString() });
+      continue;
+    }
     // data912 caído (o sin MEP) devolvía 200 con el mapa vacío → el front valuaba a COSTO sin
-    // ninguna señal. Servimos el último precio conocido, como ya hace quotes.ts.
-    if (usd == null) usd = (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', t))?.precio ?? null;
-    out[t] = usd;
-    if (usd != null) rows.push({ ticker: t, precio: usd, moneda: 'USD', updated_at: new Date().toISOString() });
+    // ninguna señal. Servimos el último precio conocido, como ya hace quotes.ts — pero SIN volver a
+    // subirlo a la cache: antes esto re-upseteaba el precio viejo con `updated_at: ahora`, lo que
+    // "lavaba" un precio de hasta 7 días (MAX_STALE_MS) como si fuera fresco — cada llamada más
+    // renovaba el timestamp de nuevo, así que un precio viejo nunca volvía a marcarse como stale ni
+    // se reintentaba de verdad. Sin re-upsert, el `updated_at` real queda intacto y cacheFresh/
+    // cacheLast lo siguen viendo como lo que es: un dato viejo, no uno nuevo.
+    out[t] = (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', t))?.precio ?? null;
   }
   if (rows.length) await sbUpsert(env, 'precios_cache', rows, 'ticker');
   return json({ mep, precios: out });

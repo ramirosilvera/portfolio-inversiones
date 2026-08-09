@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guard, sbSelect, sbRpc, tokenInterno } from '../_shared';
+import { type Env, json, preflight, guard, sbSelect, sbRpc, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
 import { sugerirDividendoPendiente, sugerirCuponPendiente, type PosicionParaCobro } from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
@@ -14,17 +14,13 @@ import type { DividendoInfo } from '../_dividendos';
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
 export const onRequestGet = guard(async ({ request, env }) => {
-  // Si CRON_SECRET está configurado, solo el workflow (que manda X-Cron-Secret) puede dispararlo.
-  // Sin el secret configurado sigue abierto (compatibilidad), pero se recomienda setearlo.
-  if (env.CRON_SECRET && request.headers.get('X-Cron-Secret') !== env.CRON_SECRET) {
-    return json({ error: 'no autorizado' }, 401);
-  }
+  // Solo el workflow (que manda X-Cron-Secret) puede dispararlo — sin CRON_SECRET configurado el
+  // endpoint se niega a correr (ver requireCronSecret en _shared.ts).
+  const authErr = requireCronSecret(env, request);
+  if (authErr) return authErr;
   const origin = new URL(request.url).origin;
 
-  // Los endpoints de mercado exigen sesión; el cron se identifica con su token interno (derivado de
-  // un secret que siempre existe), así el refresco funciona aunque CRON_SECRET no esté configurado.
-  const headers: Record<string, string> = { 'X-Internal-Refresh': await tokenInterno(env) };
-  if (env.CRON_SECRET) headers['X-Cron-Secret'] = env.CRON_SECRET;
+  const headers: Record<string, string> = { 'X-Internal-Refresh': await tokenInterno(env), 'X-Cron-Secret': env.CRON_SECRET! };
   const hit = async (path: string) => {
     try {
       const r = await fetch(`${origin}${path}`, { headers });
@@ -81,11 +77,27 @@ export const onRequestGet = guard(async ({ request, env }) => {
     }
   } catch { /* sin dividendos disponibles (sin key, proveedor caído): los cupones de bonos siguen */ }
 
+  // Mismo guard ±10 días que backfill-cobros.ts (ver su comentario): el índice de dedupe de la RPC
+  // solo detecta fecha EXACTA, pero `sugerirDividendoPendiente` puede devolver una fecha ESTIMADA
+  // (cadencia histórica, sin declaración del proveedor todavía) que se corre unos días entre
+  // corridas del cron (cada 30 min) a medida que el proveedor actualiza su estimación — sin este
+  // filtro, cada corrida con una fecha distinta insertaba una fila 'pendiente' nueva del mismo pago.
+  const posIds = pos.map(p => p.id);
+  const existentes = posIds.length
+    ? await sbSelect<{ posicion_id: string; tipo: string; fecha: string }>(env, 'cobros',
+        `select=posicion_id,tipo,fecha&posicion_id=in.(${posIds.join(',')})`)
+    : [];
+  const DIEZ_DIAS_MS = 10 * 24 * 60 * 60 * 1000;
+  const yaCubierto = (posicionId: string, tipo: string, fecha: string) => {
+    const t = Date.parse(fecha);
+    return existentes.some(e => e.posicion_id === posicionId && e.tipo === tipo && Math.abs(Date.parse(e.fecha) - t) <= DIEZ_DIAS_MS);
+  };
+
   for (const p of pos) {
     const sug = p.tipo === 'bono'
       ? sugerirCuponPendiente(p, hoy)
       : sugerirDividendoPendiente(p, divPorTicker[p.ticker.toUpperCase()] ?? null, hoy);
-    if (!sug) continue;
+    if (!sug || yaCubierto(sug.posicion_id, sug.tipo, sug.fecha)) continue;
     try {
       await sbRpc(env, 'insertar_cobro_pendiente_cron', {
         p_portfolio_id: sug.portfolio_id, p_posicion_id: sug.posicion_id, p_ticker: sug.ticker,
