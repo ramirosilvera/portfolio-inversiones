@@ -519,30 +519,46 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
 }) {
   useEscapeClose(onClose);
   const [qty, setQty] = useState<string>(String(pos.cantidad));
-  const [precio, setPrecio] = useState<string>(sugerido != null ? String(+sugerido.toFixed(2)) : '');
-  // Precargado junto con el USD (ver arsFromUsd) — "si ambos vienen precargados, se mantiene el USD
-  // y se muestra su equivalente en ARS".
-  const [precioArs, setPrecioArs] = useState<string>(sugerido != null ? arsFromUsd(sugerido, mep) : '');
+  // precioStr (no .toFixed(2) fijo) — un bono/ON con precio < 1 USD (ej. 0,0034) truncaba a "0" con
+  // 2 decimales fijos, y el ARS (calculado del `sugerido` SIN truncar) mostraba un valor distinto de
+  // cero: dos campos "vinculados" en desacuerdo, y la venta rechazada por "no puede ser 0" sin que
+  // se entendiera por qué. Con precioStr los dos parten del MISMO número redondeado.
+  const precioIni = sugerido != null ? precioStr(sugerido) : '';
+  const [precio, setPrecio] = useState<string>(precioIni);
+  // Precargado junto con el USD ya redondeado (no el `sugerido` crudo) — "si ambos vienen
+  // precargados, se mantiene el USD y se muestra su equivalente en ARS" con los DOS de acuerdo.
+  const [precioArs, setPrecioArs] = useState<string>(precioIni ? arsFromUsd(Number(precioIni), mep) : '');
   const [fecha, setFecha] = useState<string>(new Date().toISOString().slice(0, 10));
   const [retiro, setRetiro] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Si el modal se abre ANTES de que useMacro() resuelva el MEP (mep null al montar), el campo ARS
+  // arranca deshabilitado y vacío; cuando el MEP llega unos instantes después, sin este efecto el
+  // campo se HABILITA pero se queda vacío al lado de un USD ya precargado — parece "0 ARS" en vez
+  // de mostrar el equivalente. Solo completa si sigue vacío (no pisa nada que el usuario ya tipeó).
+  useEffect(() => {
+    if (!mep || precioArs !== '') return;
+    const n = Number(precio);
+    if (Number.isFinite(n) && n > 0) setPrecioArs(arsFromUsd(n, mep));
+  }, [mep]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Bidireccional: tipear en un campo recalcula el otro con el MEP vigente. Cada campo conserva SU
   // PROPIO string tal cual se tipeó (no se reformatea a sí mismo en cada tecla) — evita el bug de
   // "se pierde el punto decimal al tipear" que ya se resolvió una vez en ProyeccionesPage con el
   // mismo patrón. El USD (`precio`) es el que de verdad se manda a onSell — el ARS es solo vista.
+  // Un valor no positivo (0, negativo, a medio tipear) LIMPIA el otro campo en vez de dejarlo con un
+  // número viejo que ya no corresponde — dos campos vinculados nunca deberían mostrar valores que
+  // se contradicen entre sí.
   const onUsdChange = (raw: string) => {
     setPrecio(raw);
     const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) setPrecioArs(arsFromUsd(n, mep));
-    else if (raw === '') setPrecioArs('');
+    setPrecioArs(Number.isFinite(n) && n > 0 ? arsFromUsd(n, mep) : '');
   };
   const onArsChange = (raw: string) => {
     setPrecioArs(raw);
     const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) setPrecio(usdFromArs(n, mep));
-    else if (raw === '') setPrecio('');
+    setPrecio(Number.isFinite(n) && n > 0 ? usdFromArs(n, mep) : '');
   };
 
   const n = Number(qty) || 0;
@@ -693,21 +709,28 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, mep, initial, in
   const patchSim = (key: string, patch: Partial<SimDraft>) => setSims(prev => prev.map(s => s.key === key ? { ...s, ...patch } : s));
 
   // Precio USD↔ARS vinculado, por fila — mismo criterio que SellModal (onUsdChange/onArsChange):
-  // cada campo conserva lo que se tipeó EN ÉL, el otro se deriva con el MEP vigente.
+  // cada campo conserva lo que se tipeó EN ÉL, el otro se deriva con el MEP vigente. Un valor no
+  // positivo LIMPIA el otro campo (no lo deja con un número viejo que ya no corresponde).
   const patchPrecioUsd = (key: string, raw: string) => {
     const n = Number(raw);
-    patchSim(key, {
-      precio: raw,
-      precioArs: Number.isFinite(n) && n > 0 ? arsFromUsd(n, mep) : (raw === '' ? '' : sims.find(s => s.key === key)?.precioArs ?? ''),
-    });
+    patchSim(key, { precio: raw, precioArs: Number.isFinite(n) && n > 0 ? arsFromUsd(n, mep) : '' });
   };
   const patchPrecioArs = (key: string, raw: string) => {
     const n = Number(raw);
-    patchSim(key, {
-      precioArs: raw,
-      precio: Number.isFinite(n) && n > 0 ? usdFromArs(n, mep) : (raw === '' ? '' : sims.find(s => s.key === key)?.precio ?? ''),
-    });
+    patchSim(key, { precioArs: raw, precio: Number.isFinite(n) && n > 0 ? usdFromArs(n, mep) : '' });
   };
+
+  // Mismo caso que en SellModal: si el modal se abre antes de que useMacro() resuelva el MEP, cada
+  // fila arranca con precioArs vacío aunque tenga un precio USD precargado — cuando el MEP llega,
+  // se completa (sin pisar lo que el usuario ya haya tipeado en alguna fila).
+  useEffect(() => {
+    if (!mep) return;
+    setSims(prev => prev.map(s => {
+      if (s.precioArs !== '') return s;
+      const n = Number(s.precio);
+      return Number.isFinite(n) && n > 0 ? { ...s, precioArs: arsFromUsd(n, mep) } : s;
+    }));
+  }, [mep]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Elegir una posición puntual del <select>: precarga precio y objetivo de ESE activo.
   const elegirPosicion = (key: string, selId: string) => {
