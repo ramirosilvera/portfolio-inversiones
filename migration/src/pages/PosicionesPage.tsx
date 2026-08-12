@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff, Pencil, ShoppingCart, Target } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos } from '../hooks/usePosiciones';
+import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro } from '../hooks/usePosiciones';
 import { useCedearRatios } from '../hooks/useCedearRatios';
 import { useCikMap } from '../hooks/useCikMap';
 import { useAporteMutations } from '../hooks/useAportes';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { PortfolioReview } from '../components/PortfolioReview';
-import { Card, CardHeader, Button, Badge, Stat, Field, inputCls, Empty, fmtUsd, fmtUsdCompact, fmtNum, fmtPct } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Stat, Field, inputCls, Empty, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs } from '../components/ui';
 import { realizedPnl } from '../engine/pnl';
 import { cantidadPorMonto, aplicarObjetivo, redondearPct, resolverObjetivosSimultaneos, pesoResultanteConjunto, TOLERANCIA_OBJETIVO, type SimTarget } from '../engine/rebalance';
 import { UpdatedAt } from '../components/UpdatedAt';
@@ -28,6 +28,11 @@ export function PosicionesPage() {
   const bonds = posiciones.filter(p => p.tipo === 'bono').map(p => p.ticker);
   const arStocks = posiciones.filter(p => p.tipo === 'accion_ar').map(p => p.ticker);
   const { data: quotes = {} } = useQuotes(equity, bonds, arStocks);
+  // MEP para el campo ARS vinculado de Comprar/Vender (mismo criterio que DashboardPage/
+  // acciones-ar.ts: MEP con fallback a CCL). El USD sigue siendo el valor que se guarda — el ARS es
+  // solo una vista de conversión para tipear más cómodo.
+  const { data: macro = {} } = useMacro();
+  const mep = (macro as Record<string, number | null>).dolar_mep ?? (macro as Record<string, number | null>).dolar_ccl ?? null;
 
   const rows = useMemo(() => posiciones.map(p => {
     const live = quotes[p.ticker] ?? null;
@@ -345,7 +350,7 @@ export function PosicionesPage() {
       )}
 
       {histTicker && <MovimientosModal portfolioId={active.id} ticker={histTicker} onClose={() => setHistTicker(null)} />}
-      {sellData && <SellModal pos={sellData.pos} sugerido={sellData.sugerido}
+      {sellData && <SellModal pos={sellData.pos} sugerido={sellData.sugerido} mep={mep}
         onClose={() => setSellData(null)}
         onSell={async (qty, precio, fecha, retiro) => {
           await sell(sellData.pos, qty, precio, fecha);
@@ -363,7 +368,7 @@ export function PosicionesPage() {
         }} />}
       {editPos && <EditModal pos={editPos} onClose={() => setEditPos(null)}
         onSave={async (patch) => { await update(editPos.id, patch); setEditPos(null); }} />}
-      {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios}
+      {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios} mep={mep}
         initial={simular.pos} initialTicker={simular.ticker} onClose={() => setSimular(null)}
         onEjecutar={async (payload) => { await add(payload); }} />}
     </div>
@@ -508,17 +513,37 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
   );
 }
 
-function SellModal({ pos, sugerido, onClose, onSell }: {
-  pos: Posicion; sugerido: number | null; onClose: () => void;
+function SellModal({ pos, sugerido, mep, onClose, onSell }: {
+  pos: Posicion; sugerido: number | null; mep: number | null; onClose: () => void;
   onSell: (qty: number, precio: number, fecha: string, retiro: boolean) => Promise<void>;
 }) {
   useEscapeClose(onClose);
   const [qty, setQty] = useState<string>(String(pos.cantidad));
   const [precio, setPrecio] = useState<string>(sugerido != null ? String(+sugerido.toFixed(2)) : '');
+  // Precargado junto con el USD (ver arsFromUsd) — "si ambos vienen precargados, se mantiene el USD
+  // y se muestra su equivalente en ARS".
+  const [precioArs, setPrecioArs] = useState<string>(sugerido != null ? arsFromUsd(sugerido, mep) : '');
   const [fecha, setFecha] = useState<string>(new Date().toISOString().slice(0, 10));
   const [retiro, setRetiro] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Bidireccional: tipear en un campo recalcula el otro con el MEP vigente. Cada campo conserva SU
+  // PROPIO string tal cual se tipeó (no se reformatea a sí mismo en cada tecla) — evita el bug de
+  // "se pierde el punto decimal al tipear" que ya se resolvió una vez en ProyeccionesPage con el
+  // mismo patrón. El USD (`precio`) es el que de verdad se manda a onSell — el ARS es solo vista.
+  const onUsdChange = (raw: string) => {
+    setPrecio(raw);
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) setPrecioArs(arsFromUsd(n, mep));
+    else if (raw === '') setPrecioArs('');
+  };
+  const onArsChange = (raw: string) => {
+    setPrecioArs(raw);
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) setPrecio(usdFromArs(n, mep));
+    else if (raw === '') setPrecio('');
+  };
 
   const n = Number(qty) || 0;
   const p = Number(precio) || 0;
@@ -550,11 +575,15 @@ function SellModal({ pos, sugerido, onClose, onSell }: {
           <CardHeader title={`Vender · ${pos.ticker}`} sub={`Tenés ${fmtNum(pos.cantidad, 0)} un. · costo prom. ${fmtUsd(pos.precio_compra)}`}
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 grid grid-cols-2 gap-3">
-            <Field label="Cantidad a vender">
+            <Field label="Cantidad a vender" className="col-span-2">
               <input type="number" value={qty} onChange={e => setQty(e.target.value)} className={inputCls} />
             </Field>
             <Field label="Precio de venta (USD)">
-              <input type="number" value={precio} onChange={e => setPrecio(e.target.value)} className={inputCls} />
+              <input type="number" value={precio} onChange={e => onUsdChange(e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="Precio de venta (ARS)" hint={mep ? `MEP ${fmtArs(mep)}` : 'MEP no disponible'}>
+              <input type="number" value={precioArs} onChange={e => onArsChange(e.target.value)} disabled={!mep}
+                className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} placeholder={mep ? undefined : '—'} />
             </Field>
             <Field label="Fecha" className="col-span-2">
               <input type="date" min={pos.fecha_compra ?? undefined} max={hoyISO} value={fecha} onChange={e => setFecha(e.target.value)} className={inputCls} />
@@ -600,6 +629,7 @@ interface SimDraft {
   nTipo: Posicion['tipo'];
   nRatio: string;
   precio: string;
+  precioArs: string;
   metodo: 'monto' | 'cantidad' | 'objetivo';
   montoStr: string;
   cantStr: string;
@@ -611,22 +641,32 @@ interface SimDraft {
 // inejecutable sin que se entendiera por qué.
 const precioStr = (v: number) => String(+v.toFixed(v < 1 ? 4 : 2));
 
-function nuevaSim(usadas: Set<string>, comprables: Row[]): SimDraft {
+// Conversión USD↔ARS con el MEP vigente, para el campo ARS vinculado de Comprar/Vender. El USD
+// sigue siendo el valor que de verdad se guarda (ver Field "Precio... (USD)" en SellModal/
+// SimularCompraModal) — esto solo alimenta la VISTA en pesos, nunca al revés: si no hay MEP
+// (todavía cargando, o la Function cayó), devuelve '' y el campo ARS queda deshabilitado, el USD
+// sigue funcionando exactamente igual que antes de que este campo existiera.
+const arsFromUsd = (usd: number, mep: number | null): string => (mep && usd > 0 ? String(+(usd * mep).toFixed(2)) : '');
+const usdFromArs = (ars: number, mep: number | null): string => (mep && ars > 0 ? precioStr(ars / mep) : '');
+
+function nuevaSim(usadas: Set<string>, comprables: Row[], mep: number | null): SimDraft {
   const disponibles = comprables.filter(r => !usadas.has(r.p.id));
   const sel = disponibles[0];
+  const precioIni = sel ? (sel.unit ?? sel.p.precio_compra) : null;
   return {
     key: crypto.randomUUID(),
     modo: disponibles.length > 0 ? 'existente' : 'nuevo',
     selId: sel?.p.id ?? '',
     nTicker: '', nTipo: 'cedear', nRatio: '',
-    precio: sel ? precioStr(sel.unit ?? sel.p.precio_compra) : '',
+    precio: precioIni != null ? precioStr(precioIni) : '',
+    precioArs: precioIni != null ? arsFromUsd(precioIni, mep) : '',
     metodo: 'objetivo', montoStr: '', cantStr: '',
     objStr: sel?.p.peso_objetivo != null ? String(Math.round(sel.p.peso_objetivo * 100)) : '',
   };
 }
 
-function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initialTicker, onClose, onEjecutar }: {
-  openRows: Row[]; totalMkt: number; cedearRatios: Record<string, number>;
+function SimularCompraModal({ openRows, totalMkt, cedearRatios, mep, initial, initialTicker, onClose, onEjecutar }: {
+  openRows: Row[]; totalMkt: number; cedearRatios: Record<string, number>; mep: number | null;
   initial?: Posicion; initialTicker?: string; onClose: () => void; onEjecutar: (payload: Partial<Posicion>) => Promise<void>;
 }) {
   useEscapeClose(onClose);
@@ -634,13 +674,15 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
   const [sims, setSims] = useState<SimDraft[]>(() => {
     // Deep-link con ticker (sin posición existente elegida): arranca en modo "nuevo" con ese
     // ticker precargado — mismo shape que el fallback de nuevaSim() cuando no hay comprables.
-    if (!initial && initialTicker) return [{ ...nuevaSim(new Set(), []), nTicker: initialTicker }];
-    if (!initial) return [nuevaSim(new Set(), comprables)];
+    if (!initial && initialTicker) return [{ ...nuevaSim(new Set(), [], mep), nTicker: initialTicker }];
+    if (!initial) return [nuevaSim(new Set(), comprables, mep)];
     const selInicial = comprables.find(r => r.p.id === initial.id);
+    const precioIni = selInicial?.unit ?? initial.precio_compra;
     return [{
       key: crypto.randomUUID(), modo: 'existente', selId: initial.id,
       nTicker: '', nTipo: 'cedear', nRatio: '',
-      precio: precioStr(selInicial?.unit ?? initial.precio_compra),
+      precio: precioStr(precioIni),
+      precioArs: arsFromUsd(precioIni, mep),
       metodo: 'objetivo', montoStr: '', cantStr: '',
       objStr: initial.peso_objetivo != null ? String(Math.round(initial.peso_objetivo * 100)) : '',
     }];
@@ -650,12 +692,31 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
 
   const patchSim = (key: string, patch: Partial<SimDraft>) => setSims(prev => prev.map(s => s.key === key ? { ...s, ...patch } : s));
 
+  // Precio USD↔ARS vinculado, por fila — mismo criterio que SellModal (onUsdChange/onArsChange):
+  // cada campo conserva lo que se tipeó EN ÉL, el otro se deriva con el MEP vigente.
+  const patchPrecioUsd = (key: string, raw: string) => {
+    const n = Number(raw);
+    patchSim(key, {
+      precio: raw,
+      precioArs: Number.isFinite(n) && n > 0 ? arsFromUsd(n, mep) : (raw === '' ? '' : sims.find(s => s.key === key)?.precioArs ?? ''),
+    });
+  };
+  const patchPrecioArs = (key: string, raw: string) => {
+    const n = Number(raw);
+    patchSim(key, {
+      precioArs: raw,
+      precio: Number.isFinite(n) && n > 0 ? usdFromArs(n, mep) : (raw === '' ? '' : sims.find(s => s.key === key)?.precio ?? ''),
+    });
+  };
+
   // Elegir una posición puntual del <select>: precarga precio y objetivo de ESE activo.
   const elegirPosicion = (key: string, selId: string) => {
     const sel = comprables.find(r => r.p.id === selId);
+    const precioIni = sel ? (sel.unit ?? sel.p.precio_compra) : null;
     patchSim(key, {
       modo: 'existente', selId,
-      precio: sel ? precioStr(sel.unit ?? sel.p.precio_compra) : '',
+      precio: precioIni != null ? precioStr(precioIni) : '',
+      precioArs: precioIni != null ? arsFromUsd(precioIni, mep) : '',
       objStr: sel?.p.peso_objetivo != null ? String(Math.round(sel.p.peso_objetivo * 100)) : '',
     });
   };
@@ -666,15 +727,17 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
     if (s.key !== key || s.modo === 'existente') return s;
     const usadas = new Set(prev.filter(o => o.key !== key && o.modo === 'existente').map(o => o.selId));
     const sel = comprables.find(r => !usadas.has(r.p.id));
+    const precioIni = sel ? (sel.unit ?? sel.p.precio_compra) : null;
     return {
       ...s, modo: 'existente', selId: sel?.p.id ?? '',
-      precio: sel ? precioStr(sel.unit ?? sel.p.precio_compra) : '',
+      precio: precioIni != null ? precioStr(precioIni) : '',
+      precioArs: precioIni != null ? arsFromUsd(precioIni, mep) : '',
       objStr: sel?.p.peso_objetivo != null ? String(Math.round(sel.p.peso_objetivo * 100)) : '',
     };
   }));
   // Igual criterio para "Nuevo activo": un reclick sobre el modo ya activo no debe borrar lo tipeado.
   const elegirNuevo = (key: string) => setSims(prev => prev.map(s =>
-    s.key === key && s.modo !== 'nuevo' ? { ...s, modo: 'nuevo', precio: '', objStr: '' } : s));
+    s.key === key && s.modo !== 'nuevo' ? { ...s, modo: 'nuevo', precio: '', precioArs: '', objStr: '' } : s));
   const cambiarTicker = (key: string, nTicker: string) => {
     const upper = nTicker.toUpperCase();
     setSims(prev => prev.map(s => {
@@ -687,7 +750,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
   // Solo las filas EN modo "existente" bloquean su posición para las demás — una fila que pasó a
   // "nuevo" libera la que tenía elegida antes, aunque su selId interno quede como resto.
   const usadasPorOtras = (key: string) => new Set(sims.filter(s => s.key !== key && s.modo === 'existente').map(s => s.selId));
-  const agregarSim = () => setSims(prev => [...prev, nuevaSim(new Set(prev.filter(s => s.modo === 'existente').map(s => s.selId)), comprables)]);
+  const agregarSim = () => setSims(prev => [...prev, nuevaSim(new Set(prev.filter(s => s.modo === 'existente').map(s => s.selId)), comprables, mep)]);
   const quitarSim = (key: string) => setSims(prev => prev.length > 1 ? prev.filter(s => s.key !== key) : prev);
 
   // Paso 1: por fila, valores independientes del resto (posición, precio, tipo, y el monto si el
@@ -832,9 +895,15 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, initial, initial
                     </div>
                   )}
 
-                  <Field label="Precio unitario (USD)" hint={d.sel?.unit != null ? `valuación viva ${fmtUsd(d.sel.unit)}` : undefined}>
-                    <input type="number" value={s.precio} onChange={e => patchSim(s.key, { precio: e.target.value })} className={inputCls} placeholder="USD por unidad" />
-                  </Field>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Precio unitario (USD)" hint={d.sel?.unit != null ? `valuación viva ${fmtUsd(d.sel.unit)}` : undefined}>
+                      <input type="number" value={s.precio} onChange={e => patchPrecioUsd(s.key, e.target.value)} className={inputCls} placeholder="USD por unidad" />
+                    </Field>
+                    <Field label="Precio unitario (ARS)" hint={mep ? `MEP ${fmtArs(mep)}` : 'MEP no disponible'}>
+                      <input type="number" value={s.precioArs} onChange={e => patchPrecioArs(s.key, e.target.value)} disabled={!mep}
+                        className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} placeholder={mep ? undefined : '—'} />
+                    </Field>
+                  </div>
 
                   <div>
                     <span className="block text-[11px] font-semibold text-ink-600 mb-1">Método</span>
