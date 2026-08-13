@@ -22,8 +22,8 @@ export interface BonoReferencia {
   moneda: 'USD';
   nombre: string | null;
   // Emisor estructurado (ej. "YPF", "República Argentina", "BCRA") — derivado de `nombre` al
-  // cargar, no texto libre a mostrar. Puede faltar (54 de 91 al momento de escribir esto): son
-  // notas cortas de emisores chicos que no llegamos a identificar todavía.
+  // cargar, no texto libre a mostrar. Puede faltar: notas cortas de emisores chicos que la carga
+  // automática todavía no identificó.
   emisor: string | null;
   emision: string | null;
   vencimiento: string;
