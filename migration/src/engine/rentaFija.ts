@@ -14,7 +14,11 @@ export interface BonoReferencia {
   ticker: string;
   tipo: 'soberano' | 'on';
   instrumento: 'BOND' | 'NOTE';
-  moneda: 'USD' | 'ARS';
+  // Solo USD por ahora (ver CHECK de la migración 0034): el cronograma es una fracción 0..1
+  // currency-agnostic del nominal, pero valuarlo en USD para una especie que en los hechos paga en
+  // PESOS requeriría un supuesto de tipo de cambio futuro que este motor no modela — mejor no
+  // ofrecer el catálogo para esas especies que dar una TIR en USD que asume un MEP constante.
+  moneda: 'USD';
   nombre: string | null;
   emision: string | null;
   vencimiento: string;

@@ -9,7 +9,7 @@ import { useRadarTicker } from '../hooks/useRadarTicker';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
 import type { Rating } from '../engine/score';
-import { calcularBonoReferencia, type BonoReferencia } from '../engine/rentaFija';
+import { calcularBonoReferencia } from '../engine/rentaFija';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
 import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct } from '../components/ui';
 import { UpdatedAt } from '../components/UpdatedAt';
@@ -77,7 +77,7 @@ export function RadarPage() {
   const riskFree = ((macro as Record<string, number | null>).dgs10 ?? 4.3) / 100;
   const { map: dcfMap } = useDcfInputs();
 
-  const { data: bonosRef = [], isLoading: bonosRefLoading } = useBonosReferencia();
+  const { data: bonosRef = [], isLoading: bonosRefLoading, isError: bonosRefError } = useBonosReferencia();
   const { data: bonosPrecios = {} } = useBonosPrecios();
   const hoy = new Date().toISOString().slice(0, 10);
   const bonosCalc = useMemo(
@@ -95,7 +95,7 @@ export function RadarPage() {
       if (key === 'precio') return b.px;
       if (key === 'paridad') return b.paridad;
       if (key === 'tir') return b.tir;
-      if (key === 'duracion') return b.duracion?.macaulay ?? null;
+      if (key === 'duracion') { const m = b.duracion?.macaulay; return m != null && Number.isFinite(m) ? m : null; }
       return b.ref.vencimiento;
     };
     return [...bonosCalc].sort((a, b) => {
@@ -207,9 +207,12 @@ export function RadarPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {bonosOrdenados.map(b => <RentaFijaRow key={b.ref.ticker} calc={b} />)}
-              {!bonosRefLoading && bonosRef.length === 0 && (
-                <tr><td colSpan={7}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
+              {bonosOrdenados.map(b => <RentaFijaRow key={b.ref.ticker} calc={b} hoy={hoy} />)}
+              {bonosRefError && (
+                <tr><td colSpan={8}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
+              )}
+              {!bonosRefLoading && !bonosRefError && bonosRef.length === 0 && (
+                <tr><td colSpan={8}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
               )}
             </tbody>
           </table>
@@ -219,14 +222,19 @@ export function RadarPage() {
   );
 }
 
-function RentaFijaRow({ calc }: { calc: ReturnType<typeof calcularBonoReferencia> }) {
+function RentaFijaRow({ calc, hoy }: { calc: ReturnType<typeof calcularBonoReferencia>; hoy: string }) {
   const { ref, px, paridad, tir, duracion } = calc;
+  const vencido = ref.vencimiento < hoy;
   return (
     <tr className="hover:bg-canvas">
       <td className="px-4 py-2">
-        <div className="flex items-center gap-2">
+        {/* title con la fecha de actualización del catálogo — mismo criterio que UpdatedAt en el
+            resto de la app: no hay columna dedicada (11 tickers no la justifican), pero el dato
+            queda a un hover de distancia en vez de escondido solo en el detalle. */}
+        <div className="flex items-center gap-2" title={`Catálogo actualizado ${ref.actualizado_en.slice(0, 10)}`}>
           <span className="font-semibold text-ink-900">{ref.ticker}</span>
           {ref.amortizable && <span title="Amortiza en cuotas, no todo al vencimiento"><Badge tone="warn">amort.</Badge></span>}
+          {vencido && <Badge tone="gray">vencido</Badge>}
         </div>
       </td>
       <td className="text-right px-3"><Badge tone={ref.tipo === 'soberano' ? 'accent' : 'gray'}>{ref.tipo === 'soberano' ? 'Soberano' : 'ON'}</Badge></td>

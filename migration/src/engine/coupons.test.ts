@@ -299,6 +299,43 @@ describe('ytmFromCronograma / bondDurationFromCronograma — cronograma explíci
     expect(bondDurationFromCronograma([], 0.08, '2026-07-24')).toBeNull();
     expect(bondDurationFromCronograma(bulletEquivalente, 0.08, '2035-01-01')).toBeNull();
   });
+
+  // Hallazgos de la revisión adversarial: bonos_referencia se puebla a mano (no hay UI con
+  // validación de forma) — un `cronograma` corrupto (jsonb `null`, no-array, fecha o monto no
+  // numérico) NO debe crashear ni devolver un número armado con menos flujos de los que el bono
+  // paga en realidad. Mejor "sin dato" (null) que un número silenciosamente mal.
+  describe('cronograma corrupto — nunca crashea, nunca inventa un número con menos flujos', () => {
+    it('cronograma null o no-array (jsonb mal cargado) → null, no TypeError', () => {
+      expect(ytmFromCronograma(0.9, null, '2026-07-24')).toBeNull();
+      expect(ytmFromCronograma(0.9, undefined, '2026-07-24')).toBeNull();
+      expect(ytmFromCronograma(0.9, {} as unknown as CronogramaItem[], '2026-07-24')).toBeNull();
+      expect(bondDurationFromCronograma(null, 0.08, '2026-07-24')).toBeNull();
+      expect(bondDurationFromCronograma({} as unknown as CronogramaItem[], 0.08, '2026-07-24')).toBeNull();
+    });
+
+    it('una fecha inválida en CUALQUIER flujo anula el cronograma entero (no lo descarta en silencio)', () => {
+      const conFechaRota: CronogramaItem[] = [...bulletEquivalente.slice(0, -1), { ...bulletEquivalente.at(-1)!, fecha: 'no-es-una-fecha' }];
+      expect(ytmFromCronograma(0.9, conFechaRota, '2026-07-24')).toBeNull();
+      const tir = ytmFromCronograma(0.9, bulletEquivalente, '2026-07-24')!;
+      expect(bondDurationFromCronograma(conFechaRota, tir, '2026-07-24')).toBeNull();
+    });
+
+    it('interés/amortización no numérico (NaN) anula el cronograma — no se lo trata como cupón cero', () => {
+      const conNaN: CronogramaItem[] = [...bulletEquivalente.slice(0, -1), { ...bulletEquivalente.at(-1)!, interes: NaN }];
+      expect(ytmFromCronograma(0.9, conNaN, '2026-07-24')).toBeNull();
+    });
+
+    it('fecha con timestamp ISO completo (formato real de IOL, no solo YYYY-MM-DD) — TIR y duración dan el mismo resultado que con fecha corta', () => {
+      const conTimestamp: CronogramaItem[] = bulletEquivalente.map(f => ({ ...f, fecha: f.fecha + 'T00:00:00' }));
+      const tirCorta = ytmFromCronograma(0.9, bulletEquivalente, '2026-07-24')!;
+      const tirLarga = ytmFromCronograma(0.9, conTimestamp, '2026-07-24')!;
+      expect(tirLarga).toBeCloseTo(tirCorta, 6);
+      const durCorta = bondDurationFromCronograma(bulletEquivalente, tirCorta, '2026-07-24')!;
+      const durLarga = bondDurationFromCronograma(conTimestamp, tirLarga, '2026-07-24')!;
+      expect(durLarga.macaulay).toBeCloseTo(durCorta.macaulay, 6);
+      expect(Number.isFinite(durLarga.macaulay)).toBe(true);
+    });
+  });
 });
 
 describe('bondDuration — Macaulay y modificada', () => {

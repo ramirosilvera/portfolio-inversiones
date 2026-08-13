@@ -12,7 +12,7 @@ import { Card, CardHeader, Stat, Badge, Empty, fmtUsd, fmtNum, fmtPct } from '..
 export function AnalisisBonoPage() {
   const { ticker = '' } = useParams();
   const T = ticker.toUpperCase();
-  const { data: catalogo = [], isLoading } = useBonosReferencia();
+  const { data: catalogo = [], isLoading, isError } = useBonosReferencia();
   const { data: precios = {} } = useBonosPrecios();
   const hoy = new Date().toISOString().slice(0, 10);
 
@@ -37,7 +37,13 @@ export function AnalisisBonoPage() {
         {ref?.amortizable && <Badge tone="warn">amortizable</Badge>}
       </div>
 
-      {!isLoading && !ref && (
+      {isError && (
+        <Card><Empty icon={LineChart} title="No se pudo cargar el catálogo">
+          Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.
+        </Empty></Card>
+      )}
+
+      {!isLoading && !isError && !ref && (
         <Card><Empty icon={LineChart} title="No está en el catálogo de referencia">
           Todavía no cargamos el cronograma de {T}. El catálogo se actualiza periódicamente — si es un bono/ON líquido, puede sumarse en la próxima actualización.
         </Empty></Card>
@@ -72,8 +78,11 @@ export function AnalisisBonoPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {ref.cronograma.map(f => (
-                    <tr key={f.fecha} className={f.fecha <= hoy ? 'opacity-40' : ''}>
+                  {ref.cronograma.map((f, i) => (
+                    // key con índice, no solo `f.fecha`: IOL suele traer interés y amortización de
+                    // la misma fecha como registros separados en el cronograma original — la fecha
+                    // sola no es única.
+                    <tr key={`${f.fecha}-${i}`} className={f.fecha <= hoy ? 'opacity-40' : ''}>
                       <td className="px-4 py-2">{f.fecha}</td>
                       <td className="text-right px-3 tnum">{fmtNum(f.interes * 100, 3)}%</td>
                       <td className="text-right px-3 tnum">{f.amortizacion > 0 ? `${fmtNum(f.amortizacion * 100, 1)}%` : '—'}</td>

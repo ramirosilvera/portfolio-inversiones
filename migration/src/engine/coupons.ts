@@ -297,8 +297,18 @@ export interface CronogramaItem {
   saldo_residual: number;  // fracción 0..1 del nominal original, DESPUÉS de este pago
 }
 
-export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[], hoy: string): number | null {
-  if (!(precio > 0) || !cronograma.length) return null;
+// Un solo flujo con `interes`/`amortizacion` no-numérico (NaN, o un string mal cargado que escapó
+// al tipo) invalida TODO el cronograma — nunca se descarta en silencio, porque filtrar el flujo
+// corrupto (en vez de anular el cálculo entero) da una TIR sesgada que PARECE válida. Mismo criterio
+// para una fecha que Date.parse no entiende: mejor `null` (el motor no sabe) que un número armado
+// con menos flujos de los que el bono realmente paga.
+function cronogramaValido(cronograma: CronogramaItem[] | null | undefined): cronograma is CronogramaItem[] {
+  return Array.isArray(cronograma) && cronograma.length > 0
+    && cronograma.every(f => Number.isFinite(f.interes) && Number.isFinite(f.amortizacion) && !Number.isNaN(Date.parse(f.fecha)));
+}
+
+export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[] | null | undefined, hoy: string): number | null {
+  if (!(precio > 0) || !cronogramaValido(cronograma)) return null;
   const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
   if (!futuros.length) return null;
   const flows = [
@@ -311,22 +321,25 @@ export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[], 
 // Misma lógica de descuento que bondDuration(): se descuenta a la TIR ya calculada con
 // ytmFromCronograma() (consistencia entre ambas cuentas, nunca un supuesto de tasa nuevo).
 export function bondDurationFromCronograma(
-  cronograma: CronogramaItem[], ytmAnual: number, hoy: string,
+  cronograma: CronogramaItem[] | null | undefined, ytmAnual: number, hoy: string,
 ): { macaulay: number; modified: number } | null {
-  if (!Number.isFinite(ytmAnual) || ytmAnual <= -1) return null;
+  if (!Number.isFinite(ytmAnual) || ytmAnual <= -1 || !cronogramaValido(cronograma)) return null;
   const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
   if (!futuros.length) return null;
-  const hoyMs = new Date(hoy + 'T00:00:00Z').getTime();
+  // Date.parse(f.fecha) directo (no concatenar 'T00:00:00Z'): el cronograma de IOL a veces trae
+  // timestamp completo ('2027-01-24T00:00:00'), y concatenar un sufijo de zona horaria a ESO da
+  // Invalid Date en vez de la fecha esperada — Date.parse ya entiende ambos formatos.
+  const hoyMs = Date.parse(hoy + 'T00:00:00Z');
   const DAY = 24 * 60 * 60 * 1000;
   let sumPv = 0, sumTPv = 0;
   for (const f of futuros) {
-    const t = (new Date(f.fecha + 'T00:00:00Z').getTime() - hoyMs) / (365 * DAY);
-    if (t <= 0) continue;
+    const t = (Date.parse(f.fecha) - hoyMs) / (365 * DAY);
+    if (!(t > 0)) continue;
     const monto = f.interes + f.amortizacion;
     const pv = monto / Math.pow(1 + ytmAnual, t);
     sumPv += pv; sumTPv += t * pv;
   }
-  if (sumPv <= 0) return null;
+  if (!(sumPv > 0)) return null;
   const macaulay = sumTPv / sumPv;
   return { macaulay, modified: macaulay / (1 + ytmAnual) };
 }
