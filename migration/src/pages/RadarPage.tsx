@@ -277,8 +277,8 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
 }
 
 // ── Renta fija: catálogo de referencia, búsqueda/filtro + curva TIR-duración ──────────────────
-type SortKeyRF = 'ticker' | 'precio' | 'paridad' | 'tir' | 'duracion' | 'vencimiento';
-const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', precio: 'desc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
+type SortKeyRF = 'ticker' | 'paridad' | 'tir' | 'duracion' | 'vencimiento';
+const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
 type FiltroGrado = 'todos' | GradoCredito | 'sin_calificar';
 const ON_COLOR = '#B08BD6'; // PIE_COLORS[3] (ui.tsx) — categórico, no compite con accent (soberano) ni pos/warn/neg (rating)
 const SIN_CALIFICAR_COLOR = '#8B96A5'; // mismo gris que RatingBadge/BonosPage para "sin calificar"
@@ -316,7 +316,6 @@ function RadarFija() {
     const factor = dir === 'asc' ? 1 : -1;
     const val = (b: typeof filtrados[number]): number | string | null => {
       if (key === 'ticker') return b.ref.ticker;
-      if (key === 'precio') return b.px;
       if (key === 'paridad') return b.paridad;
       if (key === 'tir') return b.tir;
       if (key === 'duracion') { const m = b.duracion?.macaulay; return m != null && Number.isFinite(m) ? m : null; }
@@ -377,7 +376,7 @@ function RadarFija() {
       </Card>
 
       <Card>
-        <CardHeader title="Curva TIR / duración" sub="Cada punto es un bono u ON — eje X duración modificada (años), eje Y TIR. Calculado por el código a partir del cronograma real (fuente: IOL)."
+        <CardHeader title="Curva TIR / duración" sub="Cada punto es un bono u ON — eje X duración (Macaulay, años, sensibilidad a la tasa), eje Y TIR. Calculado por el código a partir del cronograma real (fuente: IOL)."
           right={<div className="flex items-center gap-1.5">
             <span className="text-[11px] text-ink-600 mr-1">Colorear por</span>
             <ViewToggle value={colorPor} onChange={setColorPor} label="Colorear por"
@@ -434,7 +433,6 @@ function RadarFija() {
                 <th className="text-left px-3">Emisor</th>
                 <th className="text-right px-3">Tipo</th>
                 <th className="text-left px-3">Rating</th>
-                <ThSort<SortKeyRF> label="Precio" sortKey="precio" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Paridad" sortKey="paridad" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="TIR" sortKey="tir" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Duración" sortKey="duracion" sort={sortRF} onClick={handleSortRF} />
@@ -467,7 +465,7 @@ function RadarFija() {
 }
 
 function RentaFijaRow({ calc, hoy, onEditarRating }: { calc: ReturnType<typeof calcularBonoReferencia>; hoy: string; onEditarRating: () => void }) {
-  const { ref, px, paridad, tir, duracion, grado, escalaGrado } = calc;
+  const { ref, paridad, tir, duracion, grado, escalaGrado } = calc;
   const vencido = ref.vencimiento < hoy;
   return (
     <tr className="hover:bg-canvas">
@@ -487,7 +485,6 @@ function RentaFijaRow({ calc, hoy, onEditarRating }: { calc: ReturnType<typeof c
           <RatingBadge calificadora={ref.calificadora} calificacion={ref.calificacion} grado={grado} escala={escalaGrado} />
         </button>
       </td>
-      <td className="text-right px-3 tnum">{fmtUsd(px)}</td>
       <td className="text-right px-3 tnum">{paridad != null ? `${fmtNum(paridad, 1)}%` : '—'}</td>
       <td className="text-right px-3 tnum">{tir != null ? fmtPct(tir) : '—'}</td>
       <td className="text-right px-3 tnum">{duracion ? `${fmtNum(duracion.macaulay, 1)}a` : '—'}</td>
