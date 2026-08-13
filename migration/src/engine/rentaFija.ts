@@ -13,7 +13,7 @@ import { clasificarRating, type GradoCredito, type EscalaRating } from './rating
 // bonos_referencia (snake_case) — sin capa de mapeo entre la fila de Supabase y el tipo de TS.
 export interface BonoReferencia {
   ticker: string;
-  tipo: 'soberano' | 'on';
+  tipo: 'soberano' | 'on' | 'subsoberano';
   instrumento: 'BOND' | 'NOTE';
   // Solo USD por ahora (ver CHECK de la migración 0034): el cronograma es una fracción 0..1
   // currency-agnostic del nominal, pero valuarlo en USD para una especie que en los hechos paga en
@@ -39,6 +39,12 @@ export interface BonoReferencia {
   calificadora: string | null;
   calificacion: string | null;
 }
+
+export const TIPO_LABEL: Record<BonoReferencia['tipo'], string> = {
+  soberano: 'Soberano',
+  subsoberano: 'Subsoberano',
+  on: 'ON',
+};
 
 export interface BonoReferenciaCalc {
   ref: BonoReferencia;
