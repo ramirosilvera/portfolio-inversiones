@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { ytmFromCronograma, bondDurationFromCronograma, type CronogramaItem } from './coupons';
+import { clasificarRating, type GradoCredito, type EscalaRating } from './rating';
 
 // Mismo criterio que Posicion en types/domain.ts: los campos mirror 1:1 las columnas de
 // bonos_referencia (snake_case) — sin capa de mapeo entre la fila de Supabase y el tipo de TS.
@@ -20,6 +21,10 @@ export interface BonoReferencia {
   // ofrecer el catálogo para esas especies que dar una TIR en USD que asume un MEP constante.
   moneda: 'USD';
   nombre: string | null;
+  // Emisor estructurado (ej. "YPF", "República Argentina", "BCRA") — derivado de `nombre` al
+  // cargar, no texto libre a mostrar. Puede faltar (54 de 91 al momento de escribir esto): son
+  // notas cortas de emisores chicos que no llegamos a identificar todavía.
+  emisor: string | null;
   emision: string | null;
   vencimiento: string;
   amortizable: boolean;
@@ -27,6 +32,12 @@ export interface BonoReferencia {
   cronograma: CronogramaItem[];
   fuente: string;
   actualizado_en: string;
+  // Cargada A MANO por el usuario (no hay API gratuita que la dé, ver engine/rating.ts) — a
+  // diferencia del resto de la fila, que solo puebla el proceso de actualización desde IOL. Mismos
+  // dos campos y mismo criterio de clasificación que Posicion.calificadora/calificacion — reusar
+  // clasificarRating() de engine/rating.ts, no reinventar la escala acá.
+  calificadora: string | null;
+  calificacion: string | null;
 }
 
 export interface BonoReferenciaCalc {
@@ -35,6 +46,10 @@ export interface BonoReferenciaCalc {
   paridad: number | null;   // px * 100
   tir: number | null;
   duracion: { macaulay: number; modified: number } | null;
+  // null = sin calificar, calificadora 'Otra' (notación desconocida), o nota que no matchea
+  // ninguna escala conocida — nunca "adivina" un grado (ver clasificarRating).
+  grado: GradoCredito | null;
+  escalaGrado: EscalaRating | null;
 }
 
 // `px` es SIEMPRE en USD (misma convención que el resto de la app — ver esHardDollar en
@@ -45,5 +60,6 @@ export function calcularBonoReferencia(ref: BonoReferencia, px: number | null, h
   const paridad = px != null ? px * 100 : null;
   const tir = px != null ? ytmFromCronograma(px, ref.cronograma, hoy) : null;
   const duracion = tir != null ? bondDurationFromCronograma(ref.cronograma, tir, hoy) : null;
-  return { ref, px, paridad, tir, duracion };
+  const clasif = clasificarRating(ref.calificadora, ref.calificacion);
+  return { ref, px, paridad, tir, duracion, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null };
 }

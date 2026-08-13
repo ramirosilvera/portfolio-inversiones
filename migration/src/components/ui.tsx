@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { AlertTriangle } from 'lucide-react';
 import type { Alerta } from '../engine/alertas';
+import { CALIFICADORAS_CLASIFICABLES, ETIQUETA_GRADO, ETIQUETA_ESCALA, type GradoCredito, type EscalaRating } from '../engine/rating';
 
 // Paleta categórica para gráficos de torta/donut — estable, funciona en claro y oscuro. Un solo
 // lugar para que Dashboard/Brokers/Consolidado (o cualquier otro donut futuro) usen los mismos
@@ -145,6 +146,54 @@ export function Badge({ children, tone = 'gray', wrap = false }: { children: Rea
     <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold ${wrap ? 'whitespace-normal text-left rounded-xl' : 'whitespace-nowrap rounded-full'} ${m[tone]}`}>
       {children}
     </span>
+  );
+}
+
+// Badge de rating: tono por grado (pos=grado de inversión, warn=especulativo, neg=default,
+// gris=sin calificar o 'Otra' calificadora). Nunca inventa un grado que el motor no dio.
+// `grado === null` puede ser por 3 motivos DISTINTOS — mezclarlos en un solo mensaje genérico le
+// mentiría al usuario en 2 de los 3 casos (ej. decirle "notación desconocida" a un S&P sin nota
+// cargada). Cuando SÍ hay grado, el hint siempre aclara la escala (global vs. nacional Arg.) —
+// nunca deja que un "grado de inversión" nacional se lea como si fuera comparable al global.
+// Extraído de BonosPage (que la usaba solo para bonos en cartera) para reusarla también en el
+// Radar de renta fija (catálogo de referencia, no solo lo que tenés).
+export function RatingBadge({ calificadora, calificacion, grado, escala }: {
+  calificadora: string | null; calificacion: string | null; grado: GradoCredito | null; escala: EscalaRating | null;
+}) {
+  if (!calificadora && !calificacion) return <span className="text-ink-500 text-[11px]">—</span>;
+  const tone = grado === 'grado_inversion' ? 'pos' : grado === 'especulativo' ? 'warn' : grado === 'default' ? 'neg' : 'gray';
+  const clasificable = calificadora != null && (CALIFICADORAS_CLASIFICABLES as readonly string[]).includes(calificadora);
+  const hint = grado != null && escala != null
+    ? `${calificadora}: ${ETIQUETA_GRADO[grado]} (${ETIQUETA_ESCALA[escala]})`
+    : !calificadora ? 'Sin calificadora cargada'
+    : !clasificable ? `${calificadora} — notación desconocida, no se clasifica automático`
+    : !calificacion ? `${calificadora} — falta cargar la nota`
+    : `${calificadora} — "${calificacion}" no matchea ninguna nota conocida de esta escala (¿typo?)`;
+  return (
+    <span title={hint}>
+      <Badge tone={tone}>{calificacion || '—'}{calificadora && <span className="ml-1 text-[9px] opacity-70">{calificadora}</span>}</Badge>
+    </span>
+  );
+}
+
+// Segmented control tipo "pills" para elegir entre 2-4 vistas mutuamente excluyentes (no filtros
+// independientes — para eso es un checkbox/Badge toggle, no esto). Extraído del patrón que ya
+// usaba CuponesPage (Cobrado/Proyectado) para reusarlo en Radar/Análisis (Renta variable/Renta
+// fija) sin duplicar el JSX. `role="radiogroup"`/`role="radio"`: es una selección única entre
+// opciones, no varios toggles independientes — mismo criterio que el selector de visualización en
+// AddWidgetModal.
+export function ViewToggle<T extends string>({ value, onChange, options, label = 'Vista' }: {
+  value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label?: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex items-center gap-1.5">
+      {options.map(o => (
+        <button key={o.value} type="button" onClick={() => onChange(o.value)} role="radio" aria-checked={value === o.value}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${value === o.value ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

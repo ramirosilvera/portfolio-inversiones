@@ -13,6 +13,7 @@ const ref: BonoReferencia = {
   instrumento: 'BOND',
   moneda: 'USD',
   nombre: 'Test bond',
+  emisor: 'Test Corp',
   emision: '2020-01-01',
   vencimiento: '2027-07-24',
   amortizable: false,
@@ -20,6 +21,8 @@ const ref: BonoReferencia = {
   cronograma,
   fuente: 'IOL',
   actualizado_en: '2026-08-01T00:00:00Z',
+  calificadora: 'S&P',
+  calificacion: 'BB+',
 };
 
 describe('calcularBonoReferencia', () => {
@@ -46,5 +49,18 @@ describe('calcularBonoReferencia', () => {
     const r = calcularBonoReferencia(ref, 0.9, '2030-01-01');
     expect(r.tir).toBeNull();
     expect(r.duracion).toBeNull();
+  });
+
+  it('reusa clasificarRating: BB+ (S&P) es especulativo, escala global', () => {
+    const r = calcularBonoReferencia(ref, 0.9, '2026-07-24');
+    expect(r.grado).toBe('especulativo');
+    expect(r.escalaGrado).toBe('global');
+  });
+
+  it('sin calificadora/calificación cargada: grado/escala null, nunca inventa un grado', () => {
+    const sinRating: BonoReferencia = { ...ref, calificadora: null, calificacion: null };
+    const r = calcularBonoReferencia(sinRating, 0.9, '2026-07-24');
+    expect(r.grado).toBeNull();
+    expect(r.escalaGrado).toBeNull();
   });
 });

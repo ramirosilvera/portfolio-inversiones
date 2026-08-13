@@ -6,8 +6,8 @@ import { usePosicionMutations, useMacro } from '../hooks/usePosiciones';
 import { useBonosCalc, useObjetivoDuracion, resumenBonos, alertasBonos, DEFAULT_MIN_GRADO_INVERSION_PCT, DEFAULT_MAX_DURACION_ANIOS } from '../hooks/useBonos';
 import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { CONCENTRACION_POSICION_ALERTA } from '../engine/bonos';
-import { CALIFICADORAS, CALIFICADORAS_CLASIFICABLES, ETIQUETA_GRADO, ETIQUETA_ESCALA, type GradoCredito, type EscalaRating } from '../engine/rating';
-import { Card, CardHeader, Button, Badge, Stat, Field, Empty, inputCls, fmtUsdCompact, fmtNum, fmtPct, AlertasBanner } from '../components/ui';
+import { CALIFICADORAS } from '../engine/rating';
+import { Card, CardHeader, Button, Badge, Stat, Field, Empty, RatingBadge, inputCls, fmtUsdCompact, fmtNum, fmtPct, AlertasBanner } from '../components/ui';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useChartTheme } from '../hooks/usePrefs';
 import type { Posicion, AmortizacionProgramada } from '../types/domain';
@@ -34,31 +34,6 @@ const SIN_COTIZACION_HINT = 'Sin cotización de mercado todavía (puede ser un b
 // el comentario de ytm() en engine/coupons.ts. "Paridad" y "Valor mercado" NUNCA se ajustan por
 // valor residual: si hay cotización de mercado, el precio ya refleja lo que vale el bono hoy.
 const BULLET_HINT = 'TIR, duración y rendimiento corriente asumen bullet (100% del capital al vencimiento) salvo que marques el bono como "Amortizable" y cargues el valor residual con el ✏️. Paridad y Valor mercado no se ajustan por esto: si hay cotización de mercado, ya reflejan el valor real.';
-
-// Badge de rating: tono por grado (pos=grado de inversión, warn=especulativo, neg=default,
-// gris=sin calificar o 'Otra' calificadora). Nunca inventa un grado que el motor no dio.
-// `grado === null` puede ser por 3 motivos DISTINTOS — mezclarlos en un solo mensaje genérico le
-// mentiría al usuario en 2 de los 3 casos (ej. decirle "notación desconocida" a un S&P sin nota
-// cargada). Cuando SÍ hay grado, el hint siempre aclara la escala (global vs. nacional Arg.) —
-// nunca deja que un "grado de inversión" nacional se lea como si fuera comparable al global.
-function RatingBadge({ calificadora, calificacion, grado, escala }: {
-  calificadora: string | null; calificacion: string | null; grado: GradoCredito | null; escala: EscalaRating | null;
-}) {
-  if (!calificadora && !calificacion) return <span className="text-ink-500 text-[11px]">—</span>;
-  const tone = grado === 'grado_inversion' ? 'pos' : grado === 'especulativo' ? 'warn' : grado === 'default' ? 'neg' : 'gray';
-  const clasificable = calificadora != null && (CALIFICADORAS_CLASIFICABLES as readonly string[]).includes(calificadora);
-  const hint = grado != null && escala != null
-    ? `${calificadora}: ${ETIQUETA_GRADO[grado]} (${ETIQUETA_ESCALA[escala]})`
-    : !calificadora ? 'Sin calificadora cargada'
-    : !clasificable ? `${calificadora} — notación desconocida, no se clasifica automático`
-    : !calificacion ? `${calificadora} — falta cargar la nota`
-    : `${calificadora} — "${calificacion}" no matchea ninguna nota conocida de esta escala (¿typo?)`;
-  return (
-    <span title={hint}>
-      <Badge tone={tone}>{calificacion || '—'}{calificadora && <span className="ml-1 text-[9px] opacity-70">{calificadora}</span>}</Badge>
-    </span>
-  );
-}
 
 export function BonosPage() {
   const { active } = usePortfolios();

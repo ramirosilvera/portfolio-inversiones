@@ -11,7 +11,7 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { couponCalendar, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, type CouponBond, type CapitalBond } from '../engine/coupons';
 import { dividendCalendar, dividendoAnualEstimado, type DividendPosicion } from '../engine/dividendProjection';
 import { resumenCobros, saldoInvertible } from '../engine/cobros';
-import { Card, CardHeader, Button, Badge, Field, Stat, Empty, inputCls, fmtUsd, fmtPct } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Field, Stat, Empty, ViewToggle, inputCls, fmtUsd, fmtPct } from '../components/ui';
 import type { Cobro, CobroInversion, CobroTipo, Posicion } from '../types/domain';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -27,9 +27,8 @@ export function CuponesPage() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <h1 className="text-2xl font-bold text-ink-900 font-display">Cobros · {active.nombre}</h1>
-        <div role="radiogroup" aria-label="Vista" className="flex items-center gap-1.5 ml-auto">
-          <button type="button" onClick={() => setTab('cobrado')} role="radio" aria-checked={tab === 'cobrado'} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${tab === 'cobrado' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>Cobrado</button>
-          <button type="button" onClick={() => setTab('proyectado')} role="radio" aria-checked={tab === 'proyectado'} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${tab === 'proyectado' ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600 hover:text-ink-900'}`}>Proyectado</button>
+        <div className="ml-auto">
+          <ViewToggle value={tab} onChange={setTab} options={[{ value: 'cobrado', label: 'Cobrado' }, { value: 'proyectado', label: 'Proyectado' }]} />
         </div>
       </div>
       {tab === 'cobrado' ? <CobradoTab portfolioId={active.id} /> : <ProyectadoTab portfolioId={active.id} />}
