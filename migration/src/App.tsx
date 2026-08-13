@@ -18,6 +18,7 @@ import { TasasPage } from './pages/TasasPage';
 import { CuponesPage } from './pages/CuponesPage';
 import { RadarPage } from './pages/RadarPage';
 import { AnalisisHomePage } from './pages/AnalisisHomePage';
+import { AnalisisBonoPage } from './pages/AnalisisBonoPage';
 import { FinanzasPage } from './pages/FinanzasPage';
 import { BrokersPage } from './pages/BrokersPage';
 import { MacroPage } from './pages/MacroPage';
@@ -61,6 +62,7 @@ export function App() {
           <Route index element={<DashboardPage />} />
           <Route path="posiciones" element={<PosicionesPage />} />
           <Route path="analisis" element={<AnalisisHomePage />} />
+          <Route path="analisis/bono/:ticker" element={<AnalisisBonoPage />} />
           <Route path="analisis/:ticker" element={<AnalisisPage />} />
           <Route path="bonos" element={<BonosPage />} />
           <Route path="cedears" element={<CedearsPage />} />

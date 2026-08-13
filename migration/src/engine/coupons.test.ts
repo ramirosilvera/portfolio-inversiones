@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, ytm, bondDuration, rendimientoCorriente, type CouponBond, type CapitalBond } from './coupons';
+import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
 
 const semestral: CouponBond = { ticker: 'GD46', faceValue: 1000, tasaAnual: 0.08, frecuencia: 2, mesRef: 1 };
 // paga en enero y julio; cupón por período = 1000 × 0.08/2 = 40
@@ -216,6 +216,88 @@ describe('ytm — TIR al vencimiento (vs current yield)', () => {
       const conMitad = ytm({ precio: 0.9, ...base, valorResidual: 0.5 })!;
       expect(conMitad).toBeLessThan(conTodo);
     });
+  });
+});
+
+describe('ytmFromCronograma / bondDurationFromCronograma — cronograma explícito (bonos_referencia)', () => {
+  // Cronograma bullet equivalente a ytm({tasaAnual:0.06, frecuencia:2, vencimiento:'2031-07-24'}):
+  // 10 cupones semestrales de 0.03 + el último con +1 de amortización (rescate del 100%).
+  const bulletEquivalente: CronogramaItem[] = Array.from({ length: 10 }, (_, i) => {
+    const anio = 2026 + Math.floor((i + 2) / 2);
+    const mes = (i % 2 === 0) ? '01' : '07';
+    return { fecha: `${anio}-${mes}-24`, interes: 0.03, amortizacion: i === 9 ? 1 : 0, saldo_residual: i === 9 ? 0 : 1 };
+  });
+
+  it('cronograma bullet da la MISMA TIR que ytm() con los mismos términos', () => {
+    const viaCronograma = ytmFromCronograma(0.9, bulletEquivalente, '2026-07-24')!;
+    const viaFlat = ytm({ precio: 0.9, tasaAnual: 0.06, frecuencia: 2, vencimiento: '2031-07-24', hoy: '2026-07-24' })!;
+    expect(viaCronograma).toBeCloseTo(viaFlat, 6);
+  });
+
+  it('cronograma amortizable devuelve capital antes → TIR distinta de la aproximación bullet a igual precio', () => {
+    // Mismo cupón total pero con amortización repartida en 3 cuotas en vez de un solo rescate final.
+    const amortizable: CronogramaItem[] = [
+      { fecha: '2027-01-24', interes: 0.03, amortizacion: 0, saldo_residual: 1 },
+      { fecha: '2027-07-24', interes: 0.03, amortizacion: 0.34, saldo_residual: 0.66 },
+      { fecha: '2028-01-24', interes: 0.0198, amortizacion: 0, saldo_residual: 0.66 },
+      { fecha: '2028-07-24', interes: 0.0198, amortizacion: 0.33, saldo_residual: 0.33 },
+      { fecha: '2029-01-24', interes: 0.0099, amortizacion: 0, saldo_residual: 0.33 },
+      { fecha: '2029-07-24', interes: 0.0099, amortizacion: 0.33, saldo_residual: 0 },
+    ];
+    const tirAmortizable = ytmFromCronograma(0.9, amortizable, '2026-07-24')!;
+    const tirBullet = ytm({ precio: 0.9, tasaAnual: 0.06, frecuencia: 2, vencimiento: '2029-07-24', hoy: '2026-07-24' })!;
+    expect(tirAmortizable).not.toBeCloseTo(tirBullet, 3);
+  });
+
+  it('precio inválido o cronograma vacío → null', () => {
+    expect(ytmFromCronograma(0, bulletEquivalente, '2026-07-24')).toBeNull();
+    expect(ytmFromCronograma(-1, bulletEquivalente, '2026-07-24')).toBeNull();
+    expect(ytmFromCronograma(0.9, [], '2026-07-24')).toBeNull();
+  });
+
+  it('todos los flujos ya pasaron (bono vencido) → null', () => {
+    expect(ytmFromCronograma(0.9, bulletEquivalente, '2035-01-01')).toBeNull();
+  });
+
+  it('ignora flujos con monto cero (fecha de referencia sin pago real)', () => {
+    const conCero: CronogramaItem[] = [...bulletEquivalente, { fecha: '2026-08-01', interes: 0, amortizacion: 0, saldo_residual: 1 }];
+    const r = ytmFromCronograma(0.9, conCero, '2026-07-24')!;
+    const sinCero = ytmFromCronograma(0.9, bulletEquivalente, '2026-07-24')!;
+    expect(r).toBeCloseTo(sinCero, 8);
+  });
+
+  it('duración: cronograma bullet da la MISMA duración que bondDuration() con los mismos términos', () => {
+    const tir = ytmFromCronograma(0.9, bulletEquivalente, '2026-07-24')!;
+    const viaCronograma = bondDurationFromCronograma(bulletEquivalente, tir, '2026-07-24')!;
+    const viaFlat = bondDuration({ tasaAnual: 0.06, frecuencia: 2, vencimiento: '2031-07-24', hoy: '2026-07-24', ytmAnual: tir })!;
+    expect(viaCronograma.macaulay).toBeCloseTo(viaFlat.macaulay, 6);
+    expect(viaCronograma.modified).toBeCloseTo(viaFlat.modified, 6);
+  });
+
+  it('amortizar antes acorta la duración frente al bullet equivalente (recibís capital antes)', () => {
+    const amortizable: CronogramaItem[] = [
+      { fecha: '2027-01-24', interes: 0.03, amortizacion: 0, saldo_residual: 1 },
+      { fecha: '2027-07-24', interes: 0.03, amortizacion: 0.34, saldo_residual: 0.66 },
+      { fecha: '2028-01-24', interes: 0.0198, amortizacion: 0, saldo_residual: 0.66 },
+      { fecha: '2028-07-24', interes: 0.0198, amortizacion: 0.33, saldo_residual: 0.33 },
+      { fecha: '2029-01-24', interes: 0.0099, amortizacion: 0, saldo_residual: 0.33 },
+      { fecha: '2029-07-24', interes: 0.0099, amortizacion: 0.33, saldo_residual: 0 },
+    ];
+    const tirAmort = ytmFromCronograma(0.9, amortizable, '2026-07-24')!;
+    const durAmort = bondDurationFromCronograma(amortizable, tirAmort, '2026-07-24')!;
+    const tirBullet = ytm({ precio: 0.9, tasaAnual: 0.06, frecuencia: 2, vencimiento: '2029-07-24', hoy: '2026-07-24' })!;
+    const durBullet = bondDuration({ tasaAnual: 0.06, frecuencia: 2, vencimiento: '2029-07-24', hoy: '2026-07-24', ytmAnual: tirBullet })!;
+    expect(durAmort.macaulay).toBeLessThan(durBullet.macaulay);
+  });
+
+  it('ytmAnual inválido (<=-1 o NaN) → null', () => {
+    expect(bondDurationFromCronograma(bulletEquivalente, -1, '2026-07-24')).toBeNull();
+    expect(bondDurationFromCronograma(bulletEquivalente, NaN, '2026-07-24')).toBeNull();
+  });
+
+  it('cronograma vacío o sin flujos futuros → null', () => {
+    expect(bondDurationFromCronograma([], 0.08, '2026-07-24')).toBeNull();
+    expect(bondDurationFromCronograma(bulletEquivalente, 0.08, '2035-01-01')).toBeNull();
   });
 });
 

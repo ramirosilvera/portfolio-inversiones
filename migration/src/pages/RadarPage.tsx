@@ -2,14 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, LineChart, Radar, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, ShoppingCart, Flame } from 'lucide-react';
-import { useMacro } from '../hooks/usePosiciones';
+import { useMacro, useBonosPrecios } from '../hooks/usePosiciones';
 import { useCikMap } from '../hooks/useCikMap';
 import { useWatchlist, type WatchItem } from '../hooks/useWatchlist';
 import { useRadarTicker } from '../hooks/useRadarTicker';
+import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
 import type { Rating } from '../engine/score';
+import { calcularBonoReferencia, type BonoReferencia } from '../engine/rentaFija';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
-import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtPct } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct } from '../components/ui';
 import { UpdatedAt } from '../components/UpdatedAt';
 
 const RATING_TONE: Record<Rating, 'pos' | 'accent' | 'warn' | 'neg'> = { A: 'pos', B: 'accent', C: 'warn', D: 'neg' };
@@ -20,6 +22,12 @@ const RATING_TONE: Record<Rating, 'pos' | 'accent' | 'warn' | 'neg'> = { A: 'pos
 type SortKey = 'ticker' | 'price' | 'mos' | 'roic' | 'eg5y' | 'score';
 interface RowSortData { price: number | null; mos: number | null; roic: number | null; eg5y: number | null; score: number | null; agresiva: boolean }
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { ticker: 'asc', price: 'desc', mos: 'desc', roic: 'desc', eg5y: 'desc', score: 'desc' };
+
+// Renta fija: catálogo de referencia (bonos_referencia), no la watchlist de acciones de arriba —
+// ver useBonosReferencia. Orden propio (columnas distintas: TIR/duración/vencimiento en vez de
+// MoS/ROIC/EG5Y/score).
+type SortKeyRF = 'ticker' | 'precio' | 'paridad' | 'tir' | 'duracion' | 'vencimiento';
+const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', precio: 'desc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
 
 export function RadarPage() {
   const { data: items = [], isLoading, add, remove } = useWatchlist();
@@ -68,6 +76,37 @@ export function RadarPage() {
   const { data: macro = {} } = useMacro();
   const riskFree = ((macro as Record<string, number | null>).dgs10 ?? 4.3) / 100;
   const { map: dcfMap } = useDcfInputs();
+
+  const { data: bonosRef = [], isLoading: bonosRefLoading } = useBonosReferencia();
+  const { data: bonosPrecios = {} } = useBonosPrecios();
+  const hoy = new Date().toISOString().slice(0, 10);
+  const bonosCalc = useMemo(
+    () => bonosRef.map(ref => calcularBonoReferencia(ref, bonosPrecios[ref.ticker] ?? null, hoy)),
+    [bonosRef, bonosPrecios, hoy],
+  );
+  const [sortRF, setSortRF] = useState<{ key: SortKeyRF; dir: 'asc' | 'desc' } | null>(null);
+  const handleSortRF = (key: SortKeyRF) => setSortRF(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR_RF[key] });
+  const bonosOrdenados = useMemo(() => {
+    if (!sortRF) return bonosCalc;
+    const { key, dir } = sortRF;
+    const factor = dir === 'asc' ? 1 : -1;
+    const val = (b: typeof bonosCalc[number]): number | string | null => {
+      if (key === 'ticker') return b.ref.ticker;
+      if (key === 'precio') return b.px;
+      if (key === 'paridad') return b.paridad;
+      if (key === 'tir') return b.tir;
+      if (key === 'duracion') return b.duracion?.macaulay ?? null;
+      return b.ref.vencimiento;
+    };
+    return [...bonosCalc].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * factor;
+      return (av - bv) * factor;
+    });
+  }, [bonosCalc, sortRF]);
 
   const refrescar = async () => {
     setRefreshing(true);
@@ -149,12 +188,64 @@ export function RadarPage() {
           El score de fundamentos requiere datos de EDGAR (SEC proxy). Sin eso, se muestra solo el precio y el score queda parcial o —.
         </p>
       </Card>
+
+      <Card>
+        <CardHeader title="Renta fija · Catálogo de referencia"
+          sub="TIR y duración calculadas por el código a partir del cronograma real de cada bono/ON (fuente: IOL, actualizado periódicamente) — no cargás cupón a mano." />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead className="text-[11px] text-ink-600 border-b border-line">
+              <tr>
+                <ThSort<SortKeyRF> label="Ticker" align="left" sortKey="ticker" sort={sortRF} onClick={handleSortRF} />
+                <th className="text-right px-3">Tipo</th>
+                <ThSort<SortKeyRF> label="Precio" sortKey="precio" sort={sortRF} onClick={handleSortRF} />
+                <ThSort<SortKeyRF> label="Paridad" sortKey="paridad" sort={sortRF} onClick={handleSortRF} />
+                <ThSort<SortKeyRF> label="TIR" sortKey="tir" sort={sortRF} onClick={handleSortRF} />
+                <ThSort<SortKeyRF> label="Duración" sortKey="duracion" sort={sortRF} onClick={handleSortRF} />
+                <ThSort<SortKeyRF> label="Vencimiento" sortKey="vencimiento" sort={sortRF} onClick={handleSortRF} />
+                <th className="px-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {bonosOrdenados.map(b => <RentaFijaRow key={b.ref.ticker} calc={b} />)}
+              {!bonosRefLoading && bonosRef.length === 0 && (
+                <tr><td colSpan={7}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
 
-function ThSort({ label, sortKey, sort, onClick, align = 'right' }: {
-  label: string; sortKey: SortKey; sort: { key: SortKey; dir: 'asc' | 'desc' } | null; onClick: (key: SortKey) => void; align?: 'left' | 'right';
+function RentaFijaRow({ calc }: { calc: ReturnType<typeof calcularBonoReferencia> }) {
+  const { ref, px, paridad, tir, duracion } = calc;
+  return (
+    <tr className="hover:bg-canvas">
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-ink-900">{ref.ticker}</span>
+          {ref.amortizable && <span title="Amortiza en cuotas, no todo al vencimiento"><Badge tone="warn">amort.</Badge></span>}
+        </div>
+      </td>
+      <td className="text-right px-3"><Badge tone={ref.tipo === 'soberano' ? 'accent' : 'gray'}>{ref.tipo === 'soberano' ? 'Soberano' : 'ON'}</Badge></td>
+      <td className="text-right px-3 tnum">{fmtUsd(px)}</td>
+      <td className="text-right px-3 tnum">{paridad != null ? `${fmtNum(paridad, 1)}%` : '—'}</td>
+      <td className="text-right px-3 tnum">{tir != null ? fmtPct(tir) : '—'}</td>
+      <td className="text-right px-3 tnum">{duracion ? `${fmtNum(duracion.macaulay, 1)}a` : '—'}</td>
+      <td className="text-right px-3 tnum">{ref.vencimiento}</td>
+      <td className="px-2 text-right whitespace-nowrap">
+        <Link to={`/analisis/bono/${ref.ticker}`} className="text-ink-600 hover:text-accent inline-flex items-center justify-center w-9 h-9" title="Análisis" aria-label="Análisis del bono"><LineChart className="w-4 h-4" /></Link>
+      </td>
+    </tr>
+  );
+}
+
+// Genérico en K: lo reusa también la tabla de renta fija más abajo (RentaFijaSort), que ordena por
+// columnas distintas (tir/duracion/vencimiento) a las del radar de acciones (mos/roic/eg5y/score).
+function ThSort<K extends string>({ label, sortKey, sort, onClick, align = 'right' }: {
+  label: string; sortKey: K; sort: { key: K; dir: 'asc' | 'desc' } | null; onClick: (key: K) => void; align?: 'left' | 'right';
 }) {
   const active = sort?.key === sortKey;
   return (

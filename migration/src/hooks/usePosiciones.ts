@@ -282,3 +282,14 @@ export function useMacro() {
     },
   });
 }
+
+// Precios de TODO el universo de bonos/ONs de BYMA (data912, ya en USD) — a diferencia de
+// useQuotes(), que solo pide los tickers en cartera, esto trae el mapa completo. Lo usa el Radar de
+// renta fija (useBonosReferencia) para valuar el catálogo de referencia, no solo lo que tenés.
+export function useBonosPrecios() {
+  return useQuery({
+    queryKey: ['bonos_precios_universo'],
+    staleTime: 5 * 60_000,
+    queryFn: () => api.bonos(),
+  });
+}

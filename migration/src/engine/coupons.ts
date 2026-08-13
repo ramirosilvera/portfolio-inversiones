@@ -282,6 +282,55 @@ export function ytm(p: {
   return xirr(flows);
 }
 
+// ── TIR y duración desde un cronograma EXPLÍCITO ─────────────────────────────
+// A diferencia de ytm()/bondDuration() (que derivan los flujos de tasaAnual/frecuencia y asumen
+// bullet salvo valorResidual), estas dos trabajan directo sobre un cronograma de flujos YA
+// CONOCIDO — fecha + interés + amortización por período, en fracción 0..1 del nominal ORIGINAL
+// (misma base que `precio`/valorResidual en ytm()). Pensadas para bonos_referencia (poblada desde
+// IOL get_fixed_income_analytics): más precisas para instrumentos con cupón escalonado o
+// amortización parcial ya en curso, porque no hay que aproximar "cuánto cupón paga" — el cronograma
+// YA dice cuánto paga cada fecha futura.
+export interface CronogramaItem {
+  fecha: string;           // ISO 'YYYY-MM-DD'
+  interes: number;         // fracción 0..1 del nominal original
+  amortizacion: number;    // fracción 0..1 del nominal original
+  saldo_residual: number;  // fracción 0..1 del nominal original, DESPUÉS de este pago
+}
+
+export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[], hoy: string): number | null {
+  if (!(precio > 0) || !cronograma.length) return null;
+  const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
+  if (!futuros.length) return null;
+  const flows = [
+    { date: hoy, amount: -precio },
+    ...futuros.map(f => ({ date: f.fecha, amount: f.interes + f.amortizacion })),
+  ];
+  return xirr(flows);
+}
+
+// Misma lógica de descuento que bondDuration(): se descuenta a la TIR ya calculada con
+// ytmFromCronograma() (consistencia entre ambas cuentas, nunca un supuesto de tasa nuevo).
+export function bondDurationFromCronograma(
+  cronograma: CronogramaItem[], ytmAnual: number, hoy: string,
+): { macaulay: number; modified: number } | null {
+  if (!Number.isFinite(ytmAnual) || ytmAnual <= -1) return null;
+  const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
+  if (!futuros.length) return null;
+  const hoyMs = new Date(hoy + 'T00:00:00Z').getTime();
+  const DAY = 24 * 60 * 60 * 1000;
+  let sumPv = 0, sumTPv = 0;
+  for (const f of futuros) {
+    const t = (new Date(f.fecha + 'T00:00:00Z').getTime() - hoyMs) / (365 * DAY);
+    if (t <= 0) continue;
+    const monto = f.interes + f.amortizacion;
+    const pv = monto / Math.pow(1 + ytmAnual, t);
+    sumPv += pv; sumTPv += t * pv;
+  }
+  if (sumPv <= 0) return null;
+  const macaulay = sumTPv / sumPv;
+  return { macaulay, modified: macaulay / (1 + ytmAnual) };
+}
+
 // ── Duración (Macaulay y modificada) ─────────────────────────────────────────
 // Macaulay: promedio ponderado (por valor presente de cada flujo) del tiempo hasta cobrarlo, en
 // años. Mide cuánto tarda en "repagarse" el bono — cuanto más corto, menos sensible es el precio a

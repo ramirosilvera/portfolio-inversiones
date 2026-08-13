@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, Sparkles } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Search, Sparkles, LineChart } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosiciones } from '../hooks/usePosiciones';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { Card, CardHeader, Button, Field, inputCls } from '../components/ui';
 
 // Landing de Análisis: buscá cualquier empresa (US/SEC) y andá a su DCF completo.
@@ -12,6 +13,7 @@ export function AnalisisHomePage() {
   const { active } = usePortfolios();
   const { data: posiciones = [] } = usePosiciones(active?.id);
   const { data: watch = [] } = useWatchlist();
+  const { data: bonosRef = [] } = useBonosReferencia();
   const [ticker, setTicker] = useState('');
 
   const ir = (t: string) => { const T = t.toUpperCase().trim(); if (T) navigate(`/analisis/${T}`); };
@@ -55,6 +57,20 @@ export function AnalisisHomePage() {
           <CardHeader title="En tu radar" />
           <div className="p-4 flex flex-wrap gap-2">
             {seguidos.map(t => <QuickLink key={t} ticker={t} onClick={() => ir(t)} />)}
+          </div>
+        </Card>
+      )}
+
+      {bonosRef.length > 0 && (
+        <Card>
+          <CardHeader title="Renta fija" sub="TIR, duración y cronograma en vez de DCF — ver Radar para la tabla comparativa completa." />
+          <div className="p-4 flex flex-wrap gap-2">
+            {bonosRef.map(b => (
+              <Link key={b.ticker} to={`/analisis/bono/${b.ticker}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm font-semibold text-ink-800 hover:border-celeste-300 hover:text-celeste-700 transition-colors">
+                <LineChart className="w-3.5 h-3.5 text-celeste-500" /> {b.ticker}
+              </Link>
+            ))}
           </div>
         </Card>
       )}
