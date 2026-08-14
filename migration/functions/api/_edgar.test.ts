@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnnual, ultimoAnio, type Raw } from './_edgar';
+import { parseAnnual, ultimoAnio, deudaRezagada, type Raw } from './_edgar';
+import type { AnnualPoint } from './_edgar';
+
+const A = (vals: [number, number][]): AnnualPoint[] => vals.map(([fy, val]) => ({ fy, end: `${fy}-12-31`, val }));
 
 // Forma real de la SEC: `fy`/`fp` son del INFORME donde se publicó el dato, `start`/`end` son el
 // período real del dato. Un 10-K trae los comparativos de los años anteriores con el MISMO fy.
@@ -53,6 +56,23 @@ describe('parseAnnual — el año sale del CIERRE del período, no de `fy`', () 
   it('entrada nula o vacía → serie vacía', () => {
     expect(parseAnnual(null)).toEqual([]);
     expect(parseAnnual([])).toEqual([]);
+  });
+});
+
+describe('deudaRezagada — detectar totalDebt congelado vs. el balance (caso KO)', () => {
+  it('totalDebt más de un año atrás del equity (mismo balance) → rezagada', () => {
+    expect(deudaRezagada(A([[2023, 24846], [2024, 25332], [2025, 26000]]), A([[2021, 38116], [2022, 36377], [2023, 37507]]))).toBe(true);
+  });
+  it('totalDebt y equity en el mismo último año → no rezagada', () => {
+    expect(deudaRezagada(A([[2023, 24846]]), A([[2023, 37507]]))).toBe(false);
+  });
+  it('totalDebt MÁS reciente que equity (caso raro, ej. equity atrasado) → no rezagada', () => {
+    expect(deudaRezagada(A([[2023, 24846]]), A([[2024, 37507]]))).toBe(false);
+  });
+  it('cualquiera de las dos series vacía → no se puede comparar, no rezagada', () => {
+    expect(deudaRezagada([], A([[2023, 37507]]))).toBe(false);
+    expect(deudaRezagada(A([[2023, 24846]]), [])).toBe(false);
+    expect(deudaRezagada([], [])).toBe(false);
   });
 });
 

@@ -63,6 +63,50 @@ describe('ratios', () => {
   });
 });
 
+describe('ratios — deuda rezagada respecto del balance (caso KO)', () => {
+  // Fixture: equity/caja/EPS ya en FY2025 pero totalDebt clavado en FY2023 (etiqueta XBRL que EDGAR
+  // dejó de encontrar). Sin la guarda, ratios.ts mezclaría un balance de 2025 con deuda de 2023.
+  const base: Fundamentals = {
+    ticker: 'KO', cik: '0000021344', entityName: 'THE COCA-COLA CO', shares: 4302,
+    ocf: P([[2023, 11201], [2024, 11602], [2025, 12000]]),
+    netIncome: P([[2023, 10714], [2024, 10631], [2025, 11000]]),
+    dna: P([[2023, 1602], [2024, 1600], [2025, 1650]]),
+    capex: P([[2023, 2247], [2024, 2331], [2025, 2400]]),
+    revenue: P([[2023, 45754], [2024, 47061], [2025, 47941]]),
+    operatingIncome: P([[2023, 11311], [2024, 11311], [2025, 11500]]),
+    epsDiluted: P([[2023, 2.47], [2024, 2.46], [2025, 2.55]]),
+    dividendPerShare: P([[2025, 1.94]]),
+    equity: P([[2023, 24846], [2024, 25332], [2025, 26000]]),
+    totalDebt: P([[2021, 38116], [2022, 36377], [2023, 37507]]),   // congelado en FY2023
+    cash: P([[2023, 10707], [2024, 10794], [2025, 11000]]),
+    shortTermInvestments: P([]),
+    taxes: P([[2025, 2400]]),
+    pretaxIncome: P([[2025, 13400]]),
+    interestExpense: P([[2025, 1900]]),
+  };
+  const r = computeRatios(base, 70, 0.6, 0.043);
+
+  it('debtToEquity, netDebtToEbitda y ROIC quedan en null (no mezclan FY2025 con deuda de FY2023)', () => {
+    expect(r.debtToEquity).toBeNull();
+    expect(r.netDebtToEbitda).toBeNull();
+    expect(r.roic).toBeNull();
+  });
+  it('WACC degrada con gracia a Ke (solo equity), no explota ni usa deuda vieja', () => {
+    expect(r.wacc).toBeCloseTo(r.costOfEquity!, 6);
+  });
+  it('el resto de los ratios (que no dependen de deuda) sigue calculándose normal', () => {
+    expect(r.pe).not.toBeNull();
+    expect(r.operatingMargin).not.toBeNull();
+    expect(r.eg5y).not.toBeNull();
+  });
+  it('si equity también está rezagado (mismo año que la deuda), no es "stale" — se usa la deuda igual', () => {
+    const alineado: Fundamentals = { ...base, equity: P([[2021, 22138], [2022, 25941], [2023, 24846]]) };
+    const r2 = computeRatios(alineado, 70, 0.6, 0.043);
+    expect(r2.debtToEquity).not.toBeNull();
+    expect(r2.debtToEquity).toBeCloseTo(37507 / 24846, 6);
+  });
+});
+
 describe('owner earnings + DCF', () => {
   it('owner earnings = OCF − capex mantenimiento; growth capex separado', () => {
     const oe = ownerEarningsByYear(MSFT, 'dna');

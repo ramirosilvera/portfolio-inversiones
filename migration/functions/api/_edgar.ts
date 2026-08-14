@@ -183,6 +183,17 @@ function sumByFy(a: AnnualPoint[], b: AnnualPoint[]): AnnualPoint[] {
   return [...m.values()].sort((x, y) => x.fy - y.fy);
 }
 
+// totalDebt sale de sumar dos aliases (deuda LP + CP) que la empresa puede haber dejado de reportar
+// bajo esas etiquetas XBRL específicas — la serie no queda vacía, queda CONGELADA en un año viejo
+// mientras equity (MISMO balance, mismo 10-K) sigue avanzando (caso KO: totalDebt en FY2023 con
+// equity ya en FY2025). No es lo mismo que "sin datos": el usuario necesita verlo para no confiar en
+// un ratio de deuda que ratios.ts descarta en silencio por este mismo motivo (ver computeRatios).
+export function deudaRezagada(equity: AnnualPoint[], totalDebt: AnnualPoint[]): boolean {
+  const ultimoEq = equity.length ? equity[equity.length - 1].fy : null;
+  const ultimoDebt = totalDebt.length ? totalDebt[totalDebt.length - 1].fy : null;
+  return ultimoEq != null && ultimoDebt != null && ultimoDebt < ultimoEq;
+}
+
 export interface EdgarFundamentals {
   ticker: string; cik: string; entityName: string | null; shares: number | null;
   ocf: AnnualPoint[]; netIncome: AnnualPoint[]; dna: AnnualPoint[]; capex: AnnualPoint[];
@@ -230,6 +241,9 @@ export async function fetchFundamentals(env: Env, ticker: string, cik: string): 
     ['dna', P.dna], ['capex', P.capex], ['equity', P.equity], ['totalDebt', P.totalDebt], ['cash', P.cash],
   ];
   const ungradeable = criticos.filter(([, v]) => v.length === 0).map(([k]) => k);
+  if (deudaRezagada(P.equity, P.totalDebt) && !ungradeable.includes('totalDebt')) {
+    ungradeable.push('totalDebt');
+  }
 
   // Acciones: total de dei; si falta (multi-clase), se deriva de netIncome / EPS diluido.
   const sharesDei = parseLatest(sharesRaw);
