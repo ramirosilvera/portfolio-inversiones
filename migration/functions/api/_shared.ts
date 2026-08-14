@@ -332,6 +332,46 @@ export async function fetchJson<T = unknown>(url: string, init?: RequestInit, ti
   } finally { clearTimeout(t); }
 }
 
+// Llama a Gemini con reintentos ante 429/503 (backoff exponencial) — compartido por los 4 endpoints
+// de analysis/* (bono/empresa/macro/portfolio, antes cada uno con esta misma llamada duplicada).
+// Con AbortController por intento: sin esto, un solo intento que se quedaba sin responder (Gemini
+// caído a medias, no error ni éxito) dejaba el fetch colgado para siempre — el botón de "Analizando…"
+// del cliente nunca volvía a "Analizar" ni mostraba error, porque la promesa nunca se resolvía
+// (caso reportado: análisis IA del catálogo de renta fija).
+export async function callGemini(
+  env: Env, prompt: string, timeoutMs = 25_000,
+): Promise<{ text: string } | { error: string; status: number }> {
+  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY || '' },
+        // thinkingBudget: 0 → los tokens de "thinking" de gemini-2.5-flash se descuentan de
+        // maxOutputTokens y cortaban la respuesta. Es interpretación cualitativa, no cálculo.
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } } }),
+        signal: ctrl.signal,
+      });
+      if (res.status === 429 || res.status === 503) { await new Promise(r => setTimeout(r, 1500 * 2 ** attempt)); continue; }
+      if (!res.ok) return { error: `gemini-${res.status}`, status: 502 };
+      const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+      const text = (data.candidates?.[0]?.content?.parts ?? []).map(p => p.text ?? '').join('').trim();
+      return text ? { text } : { error: 'gemini-sin-respuesta', status: 502 };
+    } catch {
+      // Timeout del intento (AbortController) o error de red: mismo tratamiento que 429/503, con
+      // límite — al agotar los reintentos, error explícito en vez de propagar y dejar la promesa
+      // del cliente sin resolver.
+      if (attempt === 3) return { error: 'gemini-timeout', status: 502 };
+      await new Promise(r => setTimeout(r, 1500 * 2 ** attempt));
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  return { error: 'gemini-sin-respuesta', status: 502 };
+}
+
 export async function fetchText(url: string, init?: RequestInit, timeoutMs = 20_000): Promise<string> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);

@@ -81,13 +81,20 @@ export const api = {
 };
 
 // Nunca rechaza: devuelve {error} ante fallo de red/HTTP para que el botón no quede colgado.
-async function postAnalisis(path: string, body: unknown): Promise<{ analisis?: string; error?: string; cached?: boolean }> {
+// Timeout propio (además del que ya tiene callGemini() del lado del server, ver _shared.ts): si la
+// respuesta se pierde entre el edge y el browser (o el server tarda más de lo esperado por algún
+// motivo no cubierto ahí), este fetch igual se resuelve solo — nunca deja "Analizando…" para siempre.
+async function postAnalisis(path: string, body: unknown, timeoutMs = 60_000): Promise<{ analisis?: string; error?: string; cached?: boolean }> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(path, { method: 'POST', headers: await authHeaders(), body: JSON.stringify(body) });
+    const res = await fetch(path, { method: 'POST', headers: await authHeaders(), body: JSON.stringify(body), signal: ctrl.signal });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return { error: (data as { error?: string }).error ?? `HTTP ${res.status}` };
     return data;
   } catch (e) {
-    return { error: e instanceof Error ? e.message : 'red' };
+    return { error: e instanceof DOMException && e.name === 'AbortError' ? 'tardó demasiado — probá de nuevo' : e instanceof Error ? e.message : 'red' };
+  } finally {
+    clearTimeout(t);
   }
 }
