@@ -73,7 +73,10 @@ function RadarVariable() {
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [rowData, setRowData] = useState<Record<string, RowSortData>>({});
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
+  // Por defecto, ordenado por MoS (margen de seguridad) descendente — lo primero que un inversor
+  // value quiere ver es qué está más lejos de su valor intrínseco, no el orden en que se agregaron
+  // al watchlist. El usuario puede cambiarlo clickeando cualquier columna, como siempre.
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>({ key: 'mos', dir: 'desc' });
 
   const onRowComputed = useCallback((t: string, d: RowSortData) => {
     setRowData(prev => {
