@@ -242,26 +242,55 @@ function fechasCupon(vencimiento: string, frecuencia: number, hoy: string): stri
   return fechas;
 }
 
+// Interés corrido desde el último cupón (teórico, derivado del mismo step mensual que fechasCupon)
+// hasta `hoy`, como fracción del cupón completo del período en curso. `hoy` puede coincidir
+// exactamente con `anterior` (recién pagó, 0 corrido) o con `proxima` (a punto de pagar, casi 1
+// cupón entero corrido) — el resultado queda siempre en [0,1]. Devuelve 0 (no NaN) si por algún
+// motivo el período calculado tiene longitud cero, para que el llamador nunca tenga que filtrar.
+function fraccionCorrida(proxima: string, frecuencia: number, hoy: string): number {
+  const freq = clampFreq(frecuencia);
+  const step = 12 / freq;
+  const prox = new Date(proxima + 'T00:00:00Z');
+  const dia = prox.getUTCDate();
+  const anterior = new Date(Date.UTC(prox.getUTCFullYear(), prox.getUTCMonth() - step, dia));
+  const diasPeriodo = (prox.getTime() - anterior.getTime()) / 86_400_000;
+  if (!(diasPeriodo > 0)) return 0;
+  const diasCorridos = (new Date(hoy + 'T00:00:00Z').getTime() - anterior.getTime()) / 86_400_000;
+  return Math.min(1, Math.max(0, diasCorridos / diasPeriodo));
+}
+
 // ── TIR al vencimiento (YTM) ─────────────────────────────────────────────────
 // El "current yield" (cupón/precio) ignora la ganancia de capital hasta el rescate: un bono cupón
 // 7% comprado a 60 de paridad rinde MUCHO más que 11,7%. La YTM descuenta los flujos reales:
 // hoy −precio, cada cupón hasta el vencimiento, y el capital (1 por nominal) al final.
+//
+// `precio` es SIEMPRE precio LIMPIO (sin interés corrido) — así cotiza data912/BYMA, y así se
+// guarda en toda la app (paridad = precio×100). La TIR, en cambio, se define sobre lo que
+// REALMENTE pagás hoy: precio limpio + interés corrido desde el último cupón (precio "sucio").
+// Tratar el precio limpio como si ya fuera lo que pagás (como hacía esta función antes) infla la
+// TIR calculada, tanto más cuanto más avanzado esté el período de devengamiento actual — verificado
+// contra el TIR que reporta IOL para bonos reales del catálogo: para uno con poco interés corrido
+// (~4% del precio) el error era de ~1 punto porcentual de TIR; para uno con mucho corrido acumulado
+// el precio limpio solo, sin este ajuste, daba una TIR de 53% contra el 4,5% real que reporta IOL.
+// Se corrige agregando el interés corrido (cupón del período en curso × fracción transcurrida,
+// `fraccionCorrida()`) al precio antes de correr la XIRR — los flujos futuros (cupones + rescate)
+// no cambian, siguen siendo los montos COMPLETOS de cada período.
+//
 // Asume BULLET (100% del capital recién al vencimiento) salvo que se pase `valorResidual` — no
-// modela interés corrido (precio "sucio") ni un cronograma de amortización completo, solo una FOTO
-// puntual de cuánto capital queda. El sesgo de asumir bullet en un bono que en los hechos amortiza
-// NO es "leve" ni siempre en la misma dirección: verificado numéricamente (bono 2 años, semestral,
-// cupón 6%, amortizando 25% del capital por período) — comprado bajo la par (85) el bullet da
-// 15,5% pero el amortizable real rinde 21,6% (subestima, porque el amortizable te devuelve capital
-// antes, a precio de descuento); comprado sobre la par (105) el bullet da 3,4% contra 1,9% real (ahí
-// sí sobrestima). `valorResidual` (0..1, default 1) corrige esto de forma inequívoca — no depende de
-// ninguna convención de mercado, solo de cuánto capital queda realmente por cobrar: escala CADA
-// cupón (se paga sobre el saldo remanente, no sobre el nominal original) y reemplaza el rescate de 1
-// por `valorResidual` en el último flujo. Simplificación deliberada: trata el remanente como si se
-// repagara TODO junto al vencimiento (no modela cuotas futuras que todavía no ocurrieron) — mejor
-// que asumir 100%, pero sigue siendo una aproximación si al bono le quedan más amortizaciones por
-// delante.
+// modela un cronograma de amortización completo, solo una FOTO puntual de cuánto capital queda. El
+// sesgo de asumir bullet en un bono que en los hechos amortiza NO es "leve" ni siempre en la misma
+// dirección: verificado numéricamente (bono 2 años, semestral, cupón 6%, amortizando 25% del
+// capital por período) — comprado bajo la par (85) el bullet da 15,5% pero el amortizable real
+// rinde 21,6% (subestima, porque el amortizable te devuelve capital antes, a precio de descuento);
+// comprado sobre la par (105) el bullet da 3,4% contra 1,9% real (ahí sí sobrestima). `valorResidual`
+// (0..1, default 1) corrige esto de forma inequívoca — no depende de ninguna convención de mercado,
+// solo de cuánto capital queda realmente por cobrar: escala CADA cupón (se paga sobre el saldo
+// remanente, no sobre el nominal original) y reemplaza el rescate de 1 por `valorResidual` en el
+// último flujo. Simplificación deliberada: trata el remanente como si se repagara TODO junto al
+// vencimiento (no modela cuotas futuras que todavía no ocurrieron) — mejor que asumir 100%, pero
+// sigue siendo una aproximación si al bono le quedan más amortizaciones por delante.
 export function ytm(p: {
-  precio: number;        // precio por nominal hoy (0.982 = 98,2% de paridad)
+  precio: number;        // precio LIMPIO por nominal hoy (0.982 = 98,2% de paridad, sin interés corrido)
   tasaAnual: number;     // cupón nominal anual (0.06 = 6%)
   frecuencia: number;    // pagos por año
   vencimiento: string;   // ISO 'YYYY-MM-DD'
@@ -274,8 +303,9 @@ export function ytm(p: {
 
   const vr = p.valorResidual ?? 1;
   const cupon = (p.tasaAnual / clampFreq(p.frecuencia)) * vr;
+  const sucio = p.precio + cupon * fraccionCorrida(fechas[0], p.frecuencia, p.hoy);
   const flows = [
-    { date: p.hoy, amount: -p.precio },
+    { date: p.hoy, amount: -sucio },
     ...fechas.map(f => ({ date: f, amount: cupon })),
     { date: fechas[fechas.length - 1], amount: vr },   // rescate del capital remanente al vencimiento
   ];
@@ -307,15 +337,80 @@ function cronogramaValido(cronograma: CronogramaItem[] | null | undefined): cron
     && cronograma.every(f => Number.isFinite(f.interes) && Number.isFinite(f.amortizacion) && !Number.isNaN(Date.parse(f.fecha)));
 }
 
+// `precio` (data912) es precio LIMPIO — mismo problema y misma corrección que en ytm() (ver su
+// comentario para el porqué y la verificación empírica contra IOL). Acá no hay `frecuencia`
+// explícita (bonos_referencia no la guarda como columna), así que la duración del período en curso
+// se infiere de la distancia entre los DOS próximos flujos del propio cronograma — exacta para
+// cualquier momento de la vida del bono salvo el último período (cuando solo queda 1 flujo futuro:
+// el rescate final), donde no hay con qué inferirla y se usa el precio limpio tal cual, igual que
+// antes de este fix. Es una aproximación menor acotada a esa única ventana, muy por debajo en
+// magnitud del sesgo que corrige el resto de la función.
 export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[] | null | undefined, hoy: string): number | null {
   if (!(precio > 0) || !cronogramaValido(cronograma)) return null;
   const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
   if (!futuros.length) return null;
+
+  let sucio = precio;
+  if (futuros.length >= 2) {
+    const proxima = Date.parse(futuros[0].fecha), siguiente = Date.parse(futuros[1].fecha);
+    const diasPeriodo = (siguiente - proxima) / 86_400_000;
+    if (diasPeriodo > 0) {
+      const anterior = proxima - diasPeriodo * 86_400_000;
+      const diasCorridos = (Date.parse(hoy + 'T00:00:00Z') - anterior) / 86_400_000;
+      const fraccion = Math.min(1, Math.max(0, diasCorridos / diasPeriodo));
+      sucio = precio + futuros[0].interes * fraccion;
+    }
+  }
+
   const flows = [
-    { date: hoy, amount: -precio },
+    { date: hoy, amount: -sucio },
     ...futuros.map(f => ({ date: f.fecha, amount: f.interes + f.amortizacion })),
   ];
   return xirr(flows);
+}
+
+// Rendimiento corriente (current yield) para bonos_referencia: mismo concepto que
+// rendimientoCorriente() (cupón anual / precio, ignora pull-to-par), pero sin una `tasaAnual` fija
+// como parámetro — se anualiza el interés del PRÓXIMO período usando la misma frecuencia inferida
+// de la distancia entre los dos próximos flujos que usa ytmFromCronograma() (ver su comentario).
+// Con un solo flujo futuro (último período del bono) no hay de dónde inferir la frecuencia → null,
+// mismo criterio que el resto de esta sección: mejor "sin dato" que un número armado con un supuesto
+// nuevo.
+export function rendimientoCorrienteFromCronograma(precio: number, cronograma: CronogramaItem[] | null | undefined, hoy: string): number | null {
+  if (!(precio > 0) || !cronogramaValido(cronograma)) return null;
+  const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
+  if (futuros.length < 2) return null;
+  const diasPeriodo = (Date.parse(futuros[1].fecha) - Date.parse(futuros[0].fecha)) / 86_400_000;
+  if (!(diasPeriodo > 0)) return null;
+  const cuponAnualizado = futuros[0].interes * (365 / diasPeriodo);
+  return cuponAnualizado / precio;
+}
+
+// Infiere los campos "planos" de cupón (tasaAnual/frecuencia/mesRef, el formato que usa Posicion/
+// CouponBond) a partir de un cronograma real de bonos_referencia — para precargar el alta de un bono
+// en Posiciones (ver PosicionesPage) sin que el usuario tenga que volver a tipear lo que el catálogo
+// ya conoce. Misma inferencia de frecuencia por distancia entre los 2 próximos flujos que usan
+// ytmFromCronograma()/rendimientoCorrienteFromCronograma() — nunca un supuesto nuevo, y se redondea
+// al múltiplo estándar (mensual/trimestral/semestral/anual) más cercano al período real, porque
+// CouponBond.frecuencia es un entero (pagos/año), no una duración exacta. null si no hay 2 flujos
+// futuros de dónde inferir la frecuencia — mejor no precargar que precargar con un supuesto.
+const FRECUENCIAS_ESTANDAR = [1, 2, 4, 12] as const;
+export function inferirCuponDeCronograma(
+  cronograma: CronogramaItem[] | null | undefined, hoy: string,
+): { tasaAnual: number; frecuencia: number; mesRef: number } | null {
+  if (!cronogramaValido(cronograma)) return null;
+  const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
+  if (futuros.length < 2) return null;
+  const diasPeriodo = (Date.parse(futuros[1].fecha) - Date.parse(futuros[0].fecha)) / 86_400_000;
+  if (!(diasPeriodo > 0)) return null;
+  const mesesPeriodo = diasPeriodo / 30.44;
+  let frecuencia: number = FRECUENCIAS_ESTANDAR[0], mejorDist = Infinity;
+  for (const freq of FRECUENCIAS_ESTANDAR) {
+    const dist = Math.abs(mesesPeriodo - 12 / freq);
+    if (dist < mejorDist) { mejorDist = dist; frecuencia = freq; }
+  }
+  const mesRef = new Date(Date.parse(futuros[0].fecha)).getUTCMonth() + 1;
+  return { tasaAnual: futuros[0].interes * frecuencia, frecuencia, mesRef };
 }
 
 // Misma lógica de descuento que bondDuration(): se descuenta a la TIR ya calculada con

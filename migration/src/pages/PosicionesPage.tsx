@@ -4,6 +4,8 @@ import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff,
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro } from '../hooks/usePosiciones';
 import { useCedearRatios } from '../hooks/useCedearRatios';
+import { useBonosReferencia } from '../hooks/useBonosReferencia';
+import { inferirCuponDeCronograma } from '../engine/coupons';
 import { useCikMap } from '../hooks/useCikMap';
 import { useAporteMutations } from '../hooks/useAportes';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -20,6 +22,7 @@ type Row = { p: Posicion; live: number | null; unit: number | null; mkt: number 
 export function PosicionesPage() {
   const { active } = usePortfolios();
   const { ratios: cedearRatios, saveRatio } = useCedearRatios();
+  const { data: catalogoBonos = [] } = useBonosReferencia();
   const { data: posiciones = [], isLoading: posLoading } = usePosiciones(active?.id);
   const { add, sell, update, remove, setObjetivos } = usePosicionMutations(active?.id);
   const { add: addAporte } = useAporteMutations(active?.id);
@@ -94,13 +97,36 @@ export function PosicionesPage() {
     try { await setObjetivos(result); } catch { /* el input vuelve al valor guardado en el próximo refetch */ }
   };
 
-  // Pre-llena el ratio de un CEDEAR desde la base (si existe y el usuario no lo tipeó).
+  // Pre-llena el ratio de un CEDEAR desde la base (si existe y el usuario no lo tipeó), o el cupón/
+  // vencimiento/calificación de un bono desde el catálogo de referencia (bonos_referencia — el mismo
+  // que alimenta el Radar) si el ticker matchea exacto. cupon_tasa/frecuencia/mesRef se INFIEREN del
+  // cronograma real (inferirCuponDeCronograma, misma inferencia que usa el motor de TIR — nunca un
+  // supuesto nuevo); calificadora/calificacion/amortizable/valor_residual se copian directo. Nunca
+  // pisa un campo que el usuario ya tenga cargado (mismo criterio que el ratio de CEDEAR).
   const applyAuto = (f: Partial<Posicion>): Partial<Posicion> => {
     if (f.tipo === 'cedear' && f.ticker && cedearRatios[f.ticker] && !f.ratio_cedear) {
       return { ...f, ratio_cedear: cedearRatios[f.ticker] };
     }
+    if (f.tipo === 'bono' && f.ticker) {
+      const ref = catalogoBonos.find(b => b.ticker === f.ticker);
+      if (ref) {
+        const cupon = f.cupon_tasa == null ? inferirCuponDeCronograma(ref.cronograma, new Date().toISOString().slice(0, 10)) : null;
+        return {
+          ...f,
+          cupon_tasa: f.cupon_tasa ?? cupon?.tasaAnual ?? f.cupon_tasa,
+          cupon_frecuencia: f.cupon_frecuencia ?? cupon?.frecuencia ?? f.cupon_frecuencia,
+          cupon_mes: f.cupon_mes ?? cupon?.mesRef ?? f.cupon_mes,
+          vencimiento: f.vencimiento ?? ref.vencimiento,
+          calificadora: f.calificadora ?? ref.calificadora,
+          calificacion: f.calificacion ?? ref.calificacion,
+          amortizable: f.amortizable ?? ref.amortizable,
+          valor_residual: f.valor_residual ?? (ref.amortizable ? ref.valor_residual : f.valor_residual),
+        };
+      }
+    }
     return f;
   };
+  const bonoDelCatalogo = form.tipo === 'bono' && form.ticker ? catalogoBonos.find(b => b.ticker === form.ticker) : undefined;
 
   const guardar = async () => {
     if (!form.ticker) { setFormErr('Ingresá el ticker.'); return; }
@@ -213,7 +239,14 @@ export function PosicionesPage() {
           </div>
           {form.tipo === 'bono' && (
             <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm border-t border-line pt-3">
-              <div className="col-span-2 sm:col-span-4 text-[11px] text-ink-600">Datos de cupón (para el flujo de cupones):</div>
+              <div className="col-span-2 sm:col-span-4 text-[11px] text-ink-600">
+                Datos de cupón (para el flujo de cupones):
+                {bonoDelCatalogo && (
+                  <span className="ml-1.5 text-pos font-medium">
+                    ✓ precargado desde el catálogo de referencia (calificación {bonoDelCatalogo.calificadora ?? 'sin cargar'}{bonoDelCatalogo.amortizable ? ', amortizable' : ''}) — revisá y ajustá si hace falta.
+                  </span>
+                )}
+              </div>
               <Field label="Tasa cupón (% anual)">
                 <input placeholder="Tasa cupón % anual" type="number" step="0.1" value={form.cupon_tasa != null ? form.cupon_tasa * 100 : ''}
                   onChange={e => setForm({ ...form, cupon_tasa: e.target.value ? Number(e.target.value) / 100 : null })}
