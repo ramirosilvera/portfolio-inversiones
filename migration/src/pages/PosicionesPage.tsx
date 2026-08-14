@@ -150,12 +150,12 @@ export function PosicionesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-ink-900 font-display">Posiciones · {active.nombre}</h1>
           <UpdatedAt icon />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="ghost" onClick={() => setSimular({})}><ShoppingCart className="w-4 h-4" /> Simular compra</Button>
           <Button onClick={() => {
             // Al abrir, arrancar limpio: sin esto, campos de una carga anterior (incluido cupón)
