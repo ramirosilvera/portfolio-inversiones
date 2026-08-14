@@ -33,14 +33,22 @@ export function MacroPage() {
   const resumen = resumenMacro(semaforos);
   const conDatos = semaforos.filter(r => r.luz);
 
+  // try/finally: sin esto, una excepción inesperada acá adentro dejaba `busy` en true para siempre
+  // — el botón trababa en "Analizando…" sin mostrar error ni dejar reintentar (mismo bug encontrado
+  // y corregido en el equivalente de renta fija, AnalisisBonoPage.tsx).
   async function explicar() {
     setBusy(true); setErr(null);
-    const r = await api.analisisMacro({
-      indicadores: conDatos.map(r => ({ indicador: r.def.label, grupo: r.def.grupo, valor: r.valor != null && r.def.fmt ? r.def.fmt(r.valor) : r.valor, estado: r.luz })),
-    });
-    if (r.error) setErr(r.error);
-    else { setIa(r.analisis ?? ''); if (r.analisis) setUltimo('MACRO', 'macro', r.analisis); }
-    setBusy(false);
+    try {
+      const r = await api.analisisMacro({
+        indicadores: conDatos.map(r => ({ indicador: r.def.label, grupo: r.def.grupo, valor: r.valor != null && r.def.fmt ? r.def.fmt(r.valor) : r.valor, estado: r.luz })),
+      });
+      if (r.error) setErr(r.error);
+      else { setIa(r.analisis ?? ''); if (r.analisis) setUltimo('MACRO', 'macro', r.analisis); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'error inesperado');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const tone = resumen.luz === 'rojo' ? 'neg' : resumen.luz === 'amarillo' ? 'warn' : 'pos';

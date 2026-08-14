@@ -15,18 +15,26 @@ export function PortfolioReview({ posiciones, pfName, pesos }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // try/finally: sin esto, una excepción inesperada acá adentro dejaba `busy` en true para siempre
+  // — el botón trababa en "Analizando…" sin mostrar error ni dejar reintentar (mismo bug encontrado
+  // y corregido en el equivalente de renta fija, AnalisisBonoPage.tsx).
   const run = async () => {
     setBusy(true); setErr(null);
-    const resumen = posiciones.map(p => ({
-      portfolio: pfName.get(p.portfolio_id) ?? '', ticker: p.ticker, tipo: p.tipo,
-      sector: p.sector, rol: p.rol, peso_objetivo: p.peso_objetivo,
-      // Sin el peso real la IA no puede juzgar concentración; lo calcula el código, no ella.
-      peso_actual: pesos?.get(p.ticker) != null ? +(pesos.get(p.ticker)! * 100).toFixed(1) + '%' : null,
-    }));
-    const r = await api.analisisPortfolio({ posiciones: resumen });
-    if (r.error) setErr(r.error);
-    else setTxt(r.analisis ?? '');
-    setBusy(false);
+    try {
+      const resumen = posiciones.map(p => ({
+        portfolio: pfName.get(p.portfolio_id) ?? '', ticker: p.ticker, tipo: p.tipo,
+        sector: p.sector, rol: p.rol, peso_objetivo: p.peso_objetivo,
+        // Sin el peso real la IA no puede juzgar concentración; lo calcula el código, no ella.
+        peso_actual: pesos?.get(p.ticker) != null ? +(pesos.get(p.ticker)! * 100).toFixed(1) + '%' : null,
+      }));
+      const r = await api.analisisPortfolio({ posiciones: resumen });
+      if (r.error) setErr(r.error);
+      else setTxt(r.analisis ?? '');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'error inesperado');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
