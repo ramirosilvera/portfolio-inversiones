@@ -12,13 +12,16 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
 import type { Rating } from '../engine/score';
-import { calcularBonoReferencia } from '../engine/rentaFija';
+import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
 import { CALIFICADORAS, ETIQUETA_GRADO, type GradoCredito } from '../engine/rating';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
 import { Card, CardHeader, Button, Badge, RatingBadge, ViewToggle, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct } from '../components/ui';
 import { UpdatedAt } from '../components/UpdatedAt';
 
 const RATING_TONE: Record<Rating, 'pos' | 'accent' | 'warn' | 'neg'> = { A: 'pos', B: 'accent', C: 'warn', D: 'neg' };
+const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
+// PIE_COLORS[0]/[4]/[3] (ui.tsx) — categóricos, no compiten con pos/warn/neg (rating)
+const TIPO_COLOR: Record<BonoReferencia['tipo'], string> = { soberano: '#4F97D4', subsoberano: '#E08E6D', on: '#B08BD6' };
 
 // Orden por columna: cada fila calcula su propio score/DCF de forma independiente (fetch por
 // ticker), así que esos valores se reportan al padre (onComputed) para poder ordenar sin
@@ -280,7 +283,6 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
 type SortKeyRF = 'ticker' | 'paridad' | 'tir' | 'duracion' | 'vencimiento';
 const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
 type FiltroGrado = 'todos' | GradoCredito | 'sin_calificar';
-const ON_COLOR = '#B08BD6'; // PIE_COLORS[3] (ui.tsx) — categórico, no compite con accent (soberano) ni pos/warn/neg (rating)
 const SIN_CALIFICAR_COLOR = '#8B96A5'; // mismo gris que RatingBadge/BonosPage para "sin calificar"
 const FILTRO_GRADO_LABEL: Record<FiltroGrado, string> = { todos: 'Todos', ...ETIQUETA_GRADO, sin_calificar: 'Sin calificar' };
 
@@ -295,7 +297,7 @@ function RadarFija() {
   );
 
   const [busqueda, setBusqueda] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'soberano' | 'on'>('todos');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | BonoReferencia['tipo']>('todos');
   const [filtroGrado, setFiltroGrado] = useState<FiltroGrado>('todos');
   const [colorPor, setColorPor] = useState<'tipo' | 'calificacion'>('tipo');
   const [sortRF, setSortRF] = useState<{ key: SortKeyRF; dir: 'asc' | 'desc' } | null>(null);
@@ -340,14 +342,14 @@ function RadarFija() {
     [filtrados],
   );
   const colorDePunto = (b: (typeof puntos)[number]): string => {
-    if (colorPor === 'tipo') return b.ref.tipo === 'soberano' ? '#4F97D4' : ON_COLOR;
+    if (colorPor === 'tipo') return TIPO_COLOR[b.ref.tipo];
     if (b.grado === 'grado_inversion') return chart.pos;
     if (b.grado === 'especulativo') return chart.warn;
     if (b.grado === 'default') return chart.neg;
     return SIN_CALIFICAR_COLOR;
   };
   const leyenda: { color: string; label: string }[] = colorPor === 'tipo'
-    ? [{ color: '#4F97D4', label: 'Soberano' }, { color: ON_COLOR, label: 'ON' }]
+    ? (Object.keys(TIPO_LABEL) as BonoReferencia['tipo'][]).map(t => ({ color: TIPO_COLOR[t], label: TIPO_LABEL[t] }))
     : [{ color: chart.pos, label: 'Grado de inversión' }, { color: chart.warn, label: 'Especulativo' }, { color: chart.neg, label: 'Default' }, { color: SIN_CALIFICAR_COLOR, label: 'Sin calificar' }];
 
   return (
@@ -363,8 +365,9 @@ function RadarFija() {
           <Field label="Tipo">
             <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value as typeof filtroTipo)} className={`${inputCls} w-36`}>
               <option value="todos">Todos</option>
-              <option value="soberano">Soberano</option>
-              <option value="on">ON</option>
+              <option value="soberano">{TIPO_LABEL.soberano}</option>
+              <option value="subsoberano">{TIPO_LABEL.subsoberano}</option>
+              <option value="on">{TIPO_LABEL.on}</option>
             </select>
           </Field>
           <Field label="Calificación">
@@ -479,7 +482,7 @@ function RentaFijaRow({ calc, hoy, onEditarRating }: { calc: ReturnType<typeof c
         </div>
       </td>
       <td className="px-3 text-ink-700 truncate max-w-[160px]" title={ref.emisor ?? undefined}>{ref.emisor ?? <span className="text-ink-500">—</span>}</td>
-      <td className="text-right px-3"><Badge tone={ref.tipo === 'soberano' ? 'accent' : 'gray'}>{ref.tipo === 'soberano' ? 'Soberano' : 'ON'}</Badge></td>
+      <td className="text-right px-3"><Badge tone={TIPO_TONE[ref.tipo]}>{TIPO_LABEL[ref.tipo]}</Badge></td>
       <td className="px-3">
         <button onClick={onEditarRating} className="hover:opacity-75 transition-opacity" title="Editar calificación" aria-label={`Editar calificación de ${ref.ticker}`}>
           <RatingBadge calificadora={ref.calificadora} calificacion={ref.calificacion} grado={grado} escala={escalaGrado} />

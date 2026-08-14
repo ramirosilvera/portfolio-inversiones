@@ -3,8 +3,10 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, LineChart } from 'lucide-react';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { useBonosPrecios } from '../hooks/usePosiciones';
-import { calcularBonoReferencia } from '../engine/rentaFija';
+import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
 import { Card, CardHeader, Stat, Badge, Empty, fmtUsd, fmtNum, fmtPct } from '../components/ui';
+
+const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
 
 // Análisis de un bono/ON del catálogo de referencia (bonos_referencia): cronograma completo +
 // TIR/duración/paridad, calculados por engine/rentaFija.ts — no hay DCF acá (Owner Earnings no
@@ -33,7 +35,7 @@ export function AnalisisBonoPage() {
       <div className="flex items-center gap-2">
         <Link to="/radar" className="text-ink-600 hover:text-ink-900 inline-flex items-center justify-center w-9 h-9" aria-label="Volver al Radar"><ArrowLeft className="w-4 h-4" /></Link>
         <h1 className="text-2xl font-bold text-ink-900 font-display">{T || 'Renta fija'}</h1>
-        {ref && <Badge tone={ref.tipo === 'soberano' ? 'accent' : 'gray'}>{ref.tipo === 'soberano' ? 'Soberano' : 'ON'}</Badge>}
+        {ref && <Badge tone={TIPO_TONE[ref.tipo]}>{TIPO_LABEL[ref.tipo]}</Badge>}
         {ref?.amortizable && <Badge tone="warn">amortizable</Badge>}
       </div>
 
