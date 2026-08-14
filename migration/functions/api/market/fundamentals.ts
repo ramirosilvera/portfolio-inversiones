@@ -3,6 +3,14 @@ import { DEFAULT_CIK, fetchFundamentals } from '../_edgar';
 
 const TTL = 12 * 60 * 60 * 1000; // 12h
 
+// A diferencia de un precio de mercado (que "miente" si se muestra viejo), un balance/10-K sigue
+// siendo el dato correcto durante meses — recién se reemplaza con la próxima presentación trimestral
+// o anual. Usar el MAX_STALE_MS de _shared (7 días, pensado para precios) hacía que, apenas la SEC
+// fallaba un par de veces seguidas para un ticker poco visitado, el fallback dejara de servir datos
+// perfectamente válidos y la pantalla mostrara "EDGAR no devolvió datos" en vez de la última foto real
+// (caso KO: cache de 16 días, con series completas hasta FY2025, descartada solo por la edad).
+const FUNDAMENTALS_STALE_MS = 120 * 24 * 60 * 60 * 1000; // 120 días
+
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
 // GET /api/market/fundamentals?ticker=MSFT[&cik=...][&fresh=1]
@@ -48,7 +56,7 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
     // como "esta empresa no aplica", que es un diagnóstico equivocado. Antes de rendirnos, servimos
     // lo último cacheado si existe.
     if (!data.ocf.length && !data.epsDiluted.length && !data.revenue.length) {
-      const last = await cacheLast<{ data_json: object }>(env, 'fundamentals_cache', 'ticker', ticker);
+      const last = await cacheLast<{ data_json: object }>(env, 'fundamentals_cache', 'ticker', ticker, FUNDAMENTALS_STALE_MS);
       if (last?.data_json) return json({ ...(last.data_json as object), cached: true, stale: true });
       return json({
         error: 'edgar-sin-datos',
@@ -63,7 +71,7 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   } catch (e) {
     // EDGAR caído: si hay algo cacheado (aunque vencido), lo servimos en vez de un error que vacía
     // la pantalla. Solo devolvemos 502 si nunca tuvimos fundamentals de este ticker.
-    const last = await cacheLast<{ data_json: object }>(env, 'fundamentals_cache', 'ticker', ticker);
+    const last = await cacheLast<{ data_json: object }>(env, 'fundamentals_cache', 'ticker', ticker, FUNDAMENTALS_STALE_MS);
     if (last?.data_json) return json({ ...(last.data_json as object), cached: true, stale: true });
     return json({ error: 'edgar-fetch-failed', detail: String(e) }, 502);
   }

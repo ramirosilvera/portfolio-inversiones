@@ -151,12 +151,16 @@ export function AnalisisPage() {
         <span className="text-sm text-ink-600">{(fund as Fundamentals).entityName ?? ''}</span>
         <Badge tone={verdictTone as 'pos'|'neg'|'warn'}>{dcf.verdict}</Badge>
         {(fund as { warning?: string }).warning && <Badge tone="warn">datos incompletos EDGAR</Badge>}
+        {(fund as { stale?: boolean }).stale && <Badge tone="warn">EDGAR no respondió — mostrando la última foto guardada</Badge>}
         <Button variant="ghost" onClick={actualizar} disabled={refreshing} className="ml-auto">
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} /> {refreshing ? 'Actualizando…' : 'Actualizar datos'}
         </Button>
       </div>
       {(fund as { warning?: string }).warning && (
         <p className="text-[11px] text-warn">{(fund as { warning?: string }).warning}</p>
+      )}
+      {(fund as { stale?: boolean }).stale && !(fund as { warning?: string }).warning && (
+        <p className="text-[11px] text-warn">La SEC no respondió en el último intento — estos números son del último fetch exitoso (no necesariamente de hoy). Probá "Actualizar datos".</p>
       )}
       {dcf.motivoInestable && (
         <div className="rounded-xl bg-warn/10 ring-1 ring-inset ring-warn/25 px-3 py-2 text-[11px] text-ink-700 flex items-start gap-2">
