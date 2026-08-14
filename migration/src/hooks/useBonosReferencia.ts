@@ -11,7 +11,12 @@ export function useBonosReferencia() {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: ['bonos_referencia'],
-    staleTime: 24 * 60 * 60_000,
+    // 1h, no 24h: el catálogo lo puebla un proceso mensual, pero también recibe correcciones
+    // puntuales (emisor/rating/tipo) fuera de ese ciclo — con gcTime de 1 semana + persistencia en
+    // localStorage (ver main.tsx), un staleTime de 24h dejaba el catálogo mostrando una foto de
+    // hasta 7 días de antigüedad sin refetch automático (refetchOnWindowFocus está en false a nivel
+    // global) y sin botón de refresco en esta pantalla — ver "Refrescar" en RadarFija.
+    staleTime: 60 * 60_000,
     queryFn: async (): Promise<BonoReferencia[]> => {
       const { data, error } = await supabase.from('bonos_referencia').select('*').order('ticker');
       if (error) throw error;

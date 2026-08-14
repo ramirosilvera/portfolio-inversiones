@@ -289,6 +289,21 @@ const FILTRO_GRADO_LABEL: Record<FiltroGrado, string> = { todos: 'Todos', ...ETI
 function RadarFija() {
   const { data: bonosRef = [], isLoading: bonosRefLoading, isError: bonosRefError, actualizarRating } = useBonosReferencia();
   const { data: bonosPrecios = {} } = useBonosPrecios();
+  const qc = useQueryClient();
+  const [refreshingRF, setRefreshingRF] = useState(false);
+  // El catálogo tiene staleTime de 1h y gcTime/persistencia de hasta 1 semana (ver
+  // useBonosReferencia.ts) — sin un botón acá, un usuario que abrió esta pantalla antes de una
+  // corrección de emisor/rating/tipo podía quedarse viendo la foto vieja sin ninguna forma de
+  // forzar el refetch (mismo criterio que "Refrescar" en RadarVariable, arriba).
+  const refrescarRF = async () => {
+    setRefreshingRF(true);
+    try {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['bonos_referencia'] }),
+        qc.invalidateQueries({ queryKey: ['bonos_precios_universo'] }),
+      ]);
+    } finally { setRefreshingRF(false); }
+  };
   const chart = useChartTheme();
   const hoy = new Date().toISOString().slice(0, 10);
   const bonosCalc = useMemo(
@@ -427,7 +442,10 @@ function RadarFija() {
       </Card>
 
       <Card>
-        <CardHeader title="Catálogo de referencia" sub={`${ordenados.length} de ${bonosRef.length} instrumentos · TIR y duración calculadas por el código, no cargás cupón a mano.`} />
+        <CardHeader title="Catálogo de referencia" sub={`${ordenados.length} de ${bonosRef.length} instrumentos · TIR y duración calculadas por el código, no cargás cupón a mano.`}
+          right={<Button variant="ghost" onClick={refrescarRF} disabled={refreshingRF}>
+            <RefreshCw className={`w-4 h-4 ${refreshingRF ? 'animate-spin' : ''}`} /> {refreshingRF ? 'Actualizando…' : 'Refrescar'}
+          </Button>} />
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[920px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
