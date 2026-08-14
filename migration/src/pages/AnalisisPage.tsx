@@ -365,12 +365,20 @@ function GeminiAnalysis({ ticker, portfolioId, context }: { ticker: string; port
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const mostrado = txt ?? guardado;
+  // try/finally: sin esto, cualquier excepción inesperada acá adentro dejaba `busy` en true para
+  // siempre — el botón trababa en "Analizando…" sin mostrar error ni dejar reintentar (mismo bug
+  // encontrado y corregido en el equivalente de renta fija, AnalisisBonoPage.tsx).
   const run = async () => {
     setBusy(true); setErr(null);
-    const r = await api.analisisEmpresa({ ticker, portfolio_id: portfolioId, context });
-    if (r.error) setErr(r.error);
-    else { setTxt(r.analisis ?? ''); if (r.analisis) setUltimo(ticker, 'empresa', r.analisis); }
-    setBusy(false);
+    try {
+      const r = await api.analisisEmpresa({ ticker, portfolio_id: portfolioId, context });
+      if (r.error) setErr(r.error);
+      else { setTxt(r.analisis ?? ''); if (r.analisis) setUltimo(ticker, 'empresa', r.analisis); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'error inesperado');
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <Card>

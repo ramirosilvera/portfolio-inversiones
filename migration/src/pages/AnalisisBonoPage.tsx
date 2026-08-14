@@ -193,21 +193,30 @@ function AnalisisIA({ ticker, portfolioId, ref: bono, calc, tirComparables, spre
   const [err, setErr] = useState<string | null>(null);
   const mostrado = txt ?? guardado;
 
+  // try/finally: postAnalisis() ya no rechaza (ver api.ts), pero si algo INESPERADO explota acá
+  // adentro (construyendo `context`, guardando el resultado) sin este finally `busy` quedaba en
+  // true para siempre — el botón trababa en "Analizando…" sin mostrar error ni dejar reintentar
+  // (caso reportado: análisis IA de renta fija).
   const run = async () => {
     setBusy(true); setErr(null);
-    const context = {
-      ticker, emisor: bono.emisor, tipo: bono.tipo, instrumento: bono.instrumento,
-      calificadora: bono.calificadora, calificacion: bono.calificacion,
-      grado: calc.grado ? ETIQUETA_GRADO[calc.grado] : null,
-      tir: calc.tir, rendimientoCorriente: calc.rendCorriente,
-      duracionMacaulay: calc.duracion?.macaulay ?? null, duracionModificada: calc.duracion?.modified ?? null,
-      paridad: calc.paridad, valorResidual: bono.valor_residual, vencimiento: bono.vencimiento,
-      tirPromedioComparablesMismoGrado: tirComparables, spreadVsComparables: spreadComparables, cantidadComparablesMismoGrado: nComparables,
-    };
-    const r = await api.analisisBono({ ticker, portfolio_id: portfolioId, context });
-    if (r.error) setErr(r.error);
-    else { setTxt(r.analisis ?? ''); if (r.analisis) setUltimo(ticker, 'bono', r.analisis); }
-    setBusy(false);
+    try {
+      const context = {
+        ticker, emisor: bono.emisor, tipo: bono.tipo, instrumento: bono.instrumento,
+        calificadora: bono.calificadora, calificacion: bono.calificacion,
+        grado: calc.grado ? ETIQUETA_GRADO[calc.grado] : null,
+        tir: calc.tir, rendimientoCorriente: calc.rendCorriente,
+        duracionMacaulay: calc.duracion?.macaulay ?? null, duracionModificada: calc.duracion?.modified ?? null,
+        paridad: calc.paridad, valorResidual: bono.valor_residual, vencimiento: bono.vencimiento,
+        tirPromedioComparablesMismoGrado: tirComparables, spreadVsComparables: spreadComparables, cantidadComparablesMismoGrado: nComparables,
+      };
+      const r = await api.analisisBono({ ticker, portfolio_id: portfolioId, context });
+      if (r.error) setErr(r.error);
+      else { setTxt(r.analisis ?? ''); if (r.analisis) setUltimo(ticker, 'bono', r.analisis); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'error inesperado');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
