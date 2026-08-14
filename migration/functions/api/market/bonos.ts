@@ -1,4 +1,4 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbSelect, sbUpsert, fetchJson, MAX_STALE_MS } from '../_shared';
 
 const TTL = 30 * 60 * 1000; // 30 min
 const LISTS = ['arg_corp', 'arg_bonds', 'arg_notes'] as const;
@@ -27,6 +27,16 @@ function symbolOf(x: Record<string, unknown>): string | null {
 // sin sufijo, la especie liquida en PESOS. Cubre soberanos (AL30D/GD30C) y ONs (YM41D, XMC1D…).
 export function esHardDollar(ticker: string): boolean {
   return ticker.length >= 3 && (ticker.endsWith('D') || ticker.endsWith('C'));
+}
+
+// Completa el mapa de precios VIVOS con el último precio cacheado para los tickers que data912 no
+// devolvió en este request (proveedor caído, o simplemente no lista esa especie puntual) — nunca pisa
+// un precio que sí vino vivo. Extraída como función pura (separada del handler HTTP) para poder
+// testearla sin mockear fetch/Supabase, mismo criterio que parseTwelveData/parseEodhd en _dividendos.ts.
+export function mergeFallback(map: Record<string, number>, cacheados: { ticker: string; precio: number }[]): Record<string, number> {
+  const out = { ...map };
+  for (const c of cacheados) if (!(c.ticker in out)) out[c.ticker] = c.precio;
+  return out;
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
@@ -72,5 +82,14 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
     const px = map[one] ?? (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', one))?.precio ?? null;
     return json({ ticker: one, precio: px });
   }
-  return json(map);
+
+  // Mismo fallback que el path de un solo ticker, pero para el mapa completo: las 3 listas pueden
+  // fallar (data912 caído) o simplemente no listar TODAS las especies del catálogo/cartera en un
+  // request puntual — sin esto, esos tickers quedaban directamente ausentes del mapa (Radar/BonosPage
+  // los mostraba con Precio/Paridad/TIR/Duración en "—" aunque hubiera un precio de ayer perfectamente
+  // usable). Un solo SELECT para todo el cache (no uno por ticker).
+  const cacheados = await sbSelect<{ ticker: string; precio: number }>(
+    env, 'precios_cache', `updated_at=gte.${encodeURIComponent(new Date(Date.now() - MAX_STALE_MS).toISOString())}&select=ticker,precio`,
+  );
+  return json(mergeFallback(map, cacheados));
 });
