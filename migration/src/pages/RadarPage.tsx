@@ -314,17 +314,31 @@ function RadarFija() {
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | BonoReferencia['tipo']>('todos');
   const [filtroGrado, setFiltroGrado] = useState<FiltroGrado>('todos');
+  // Duración en años (Macaulay) — string, no number, para poder dejar el campo vacío sin que un 0
+  // se interprete como "duración exactamente 0" (mismo criterio que `busqueda`). Un bono sin
+  // duración calculable (sin cotización de mercado) no puede verificarse contra el rango, así que
+  // se excluye en vez de asumir que "sí" o "no" entra.
+  const [filtroDuracionMin, setFiltroDuracionMin] = useState('');
+  const [filtroDuracionMax, setFiltroDuracionMax] = useState('');
   const [colorPor, setColorPor] = useState<'tipo' | 'calificacion'>('tipo');
   const [sortRF, setSortRF] = useState<{ key: SortKeyRF; dir: 'asc' | 'desc' } | null>(null);
   const [editando, setEditando] = useState<ReturnType<typeof calcularBonoReferencia> | null>(null);
 
+  const durMin = filtroDuracionMin ? Number(filtroDuracionMin) : null;
+  const durMax = filtroDuracionMax ? Number(filtroDuracionMax) : null;
   const filtrados = useMemo(() => bonosCalc.filter(b => {
     if (filtroTipo !== 'todos' && b.ref.tipo !== filtroTipo) return false;
     if (filtroGrado !== 'todos' && (filtroGrado === 'sin_calificar' ? b.grado != null : b.grado !== filtroGrado)) return false;
+    if (durMin != null || durMax != null) {
+      const d = b.duracion?.macaulay;
+      if (d == null || !Number.isFinite(d)) return false;
+      if (durMin != null && d < durMin) return false;
+      if (durMax != null && d > durMax) return false;
+    }
     const q = busqueda.trim().toUpperCase();
     if (q && !b.ref.ticker.includes(q) && !(b.ref.emisor?.toUpperCase().includes(q)) && !(b.ref.nombre?.toUpperCase().includes(q))) return false;
     return true;
-  }), [bonosCalc, filtroTipo, filtroGrado, busqueda]);
+  }), [bonosCalc, filtroTipo, filtroGrado, durMin, durMax, busqueda]);
 
   const handleSortRF = (key: SortKeyRF) => setSortRF(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR_RF[key] });
   const ordenados = useMemo(() => {
@@ -389,6 +403,15 @@ function RadarFija() {
             <select value={filtroGrado} onChange={e => setFiltroGrado(e.target.value as FiltroGrado)} className={`${inputCls} w-44`}>
               {(Object.keys(FILTRO_GRADO_LABEL) as FiltroGrado[]).map(g => <option key={g} value={g}>{FILTRO_GRADO_LABEL[g]}</option>)}
             </select>
+          </Field>
+          <Field label="Duración (años)">
+            <div className="flex items-center gap-1.5">
+              <input type="number" min="0" step="0.5" placeholder="Desde" value={filtroDuracionMin}
+                onChange={e => setFiltroDuracionMin(e.target.value)} className={`${inputCls} w-20`} />
+              <span className="text-ink-500 text-xs">–</span>
+              <input type="number" min="0" step="0.5" placeholder="Hasta" value={filtroDuracionMax}
+                onChange={e => setFiltroDuracionMax(e.target.value)} className={`${inputCls} w-20`} />
+            </div>
           </Field>
         </div>
       </Card>
