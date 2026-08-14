@@ -170,7 +170,7 @@ export function AnalisisBonoPage() {
             </Card>
           )}
 
-          <AnalisisIA ticker={T} portfolioId={active?.id ?? null} ref={ref} calc={calc}
+          <AnalisisIA ticker={T} portfolioId={active?.id ?? null} bono={ref} calc={calc}
             tirComparables={tirComparables} spreadComparables={spreadComparables} nComparables={comps.filter(c => c.mismoGrado).length} />
         </>
       )}
@@ -180,10 +180,14 @@ export function AnalisisBonoPage() {
 
 // Mismo patrón que GeminiAnalysis en AnalisisPage.tsx (acciones/CEDEARs): la IA interpreta los
 // números ya calculados por el código (TIR, duración, calificación, comparativa) — nunca los
-// recalcula ni inventa una cifra nueva. `ref`/`calc` renombrados en la desestructuración porque
-// `ref` colisiona con el uso normal de la palabra en JSX de componentes.
-function AnalisisIA({ ticker, portfolioId, ref: bono, calc, tirComparables, spreadComparables, nComparables }: {
-  ticker: string; portfolioId: string | null; ref: BonoReferencia; calc: BonoReferenciaCalc;
+// recalcula ni inventa una cifra nueva.
+// La prop se llama `bono`, NO `ref`: `ref` es un nombre reservado por React (el mecanismo de
+// forwardRef) — en un componente función sin forwardRef, JSX simplemente lo descarta ANTES de
+// construir el objeto de props, así que nunca llega adentro. Con `ref: bono` en la desestructuración
+// de abajo `bono` daba `undefined` siempre, para CUALQUIER bono — el análisis IA de renta fija nunca
+// había funcionado ni una sola vez (confirmado: 0 filas con tipo='bono' en analisis_ia en producción).
+function AnalisisIA({ ticker, portfolioId, bono, calc, tirComparables, spreadComparables, nComparables }: {
+  ticker: string; portfolioId: string | null; bono: BonoReferencia; calc: BonoReferenciaCalc;
   tirComparables: number | null; spreadComparables: number | null; nComparables: number;
 }) {
   const { texto: guardado, fecha } = useUltimoAnalisis(ticker, 'bono');
