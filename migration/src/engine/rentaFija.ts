@@ -6,7 +6,7 @@
 // el universo de seguimiento (Radar) en vez de la cartera.
 // =============================================================================
 
-import { ytmFromCronograma, bondDurationFromCronograma, type CronogramaItem } from './coupons';
+import { ytmFromCronograma, bondDurationFromCronograma, rendimientoCorrienteFromCronograma, type CronogramaItem } from './coupons';
 import { clasificarRating, type GradoCredito, type EscalaRating } from './rating';
 
 // Mismo criterio que Posicion en types/domain.ts: los campos mirror 1:1 las columnas de
@@ -52,6 +52,10 @@ export interface BonoReferenciaCalc {
   paridad: number | null;   // px * 100
   tir: number | null;
   duracion: { macaulay: number; modified: number } | null;
+  // Cupón anualizado / precio (ignora pull-to-par, a diferencia de la TIR) — ver
+  // rendimientoCorrienteFromCronograma(). null si no hay 2 flujos futuros de dónde inferir la
+  // frecuencia (último período del bono), igual límite que tir/duracion en ese caso puntual.
+  rendCorriente: number | null;
   // null = sin calificar, calificadora 'Otra' (notación desconocida), o nota que no matchea
   // ninguna escala conocida — nunca "adivina" un grado (ver clasificarRating).
   grado: GradoCredito | null;
@@ -66,6 +70,61 @@ export function calcularBonoReferencia(ref: BonoReferencia, px: number | null, h
   const paridad = px != null ? px * 100 : null;
   const tir = px != null ? ytmFromCronograma(px, ref.cronograma, hoy) : null;
   const duracion = tir != null ? bondDurationFromCronograma(ref.cronograma, tir, hoy) : null;
+  const rendCorriente = px != null ? rendimientoCorrienteFromCronograma(px, ref.cronograma, hoy) : null;
   const clasif = clasificarRating(ref.calificadora, ref.calificacion);
-  return { ref, px, paridad, tir, duracion, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null };
+  return { ref, px, paridad, tir, duracion, rendCorriente, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null };
+}
+
+export interface Comparable extends BonoReferenciaCalc {
+  // true si comparte grado de riesgo con el bono de referencia (o si ninguno de los dos está
+  // calificado) — la UI lo usa para separar "de riesgo comparable" de "relleno" cuando no hay
+  // suficientes bonos del mismo grado en el catálogo.
+  mismoGrado: boolean;
+}
+
+const GRADO_RANGO: Record<GradoCredito, number> = { grado_inversion: 0, especulativo: 1, default: 2 };
+
+// Bonos "comparables" a `target`: mismo grado de riesgo crediticio primero (grado de inversión /
+// especulativo / default — nunca mezcla escala global con nacional porque el grado ya viene
+// normalizado por clasificarRating), ordenados dentro de ese grupo por duración más cercana — así se
+// comparan manzanas con manzanas (mismo riesgo, mismo horizonte) en vez de listar la mejor TIR del
+// catálogo entero, que puede ser la mejor simplemente porque es más riesgosa o más larga. Si no hay
+// suficientes del mismo grado, se completa con el resto del catálogo (también por duración más
+// cercana) para no dejar la lista vacía — marcados `mismoGrado: false` para que la UI distinga.
+// Un bono sin calificar (grado null) se compara contra otros sin calificar primero, nunca se asume
+// que "sin calificar" equivale a un grado conocido.
+export function comparables(target: BonoReferenciaCalc, universo: BonoReferenciaCalc[], n = 6): Comparable[] {
+  const elegibles = universo.filter(c => c.ref.ticker !== target.ref.ticker && c.tir != null);
+  const durTarget = target.duracion?.macaulay ?? null;
+  const porDuracion = (lista: BonoReferenciaCalc[]) => [...lista].sort((a, b) => {
+    const da = durTarget != null && a.duracion != null ? Math.abs(a.duracion.macaulay - durTarget) : Infinity;
+    const db = durTarget != null && b.duracion != null ? Math.abs(b.duracion.macaulay - durTarget) : Infinity;
+    return da - db;
+  });
+
+  const mismoGradoQ = (c: BonoReferenciaCalc) => target.grado != null ? c.grado === target.grado : c.grado == null;
+  const primarios = porDuracion(elegibles.filter(mismoGradoQ));
+  if (primarios.length >= n) return primarios.slice(0, n).map(c => ({ ...c, mismoGrado: true }));
+
+  // Relleno: prioriza grado más CERCANO al del target (no cualquiera) y, dentro de esa cercanía,
+  // duración más cercana — así "especulativo" completa antes con "grado de inversión" que con
+  // "default", aunque este último tenga una duración más parecida.
+  const resto = elegibles.filter(c => !mismoGradoQ(c)).sort((a, b) => {
+    const ga = a.grado != null && target.grado != null ? Math.abs(GRADO_RANGO[a.grado] - GRADO_RANGO[target.grado]) : 3;
+    const gb = b.grado != null && target.grado != null ? Math.abs(GRADO_RANGO[b.grado] - GRADO_RANGO[target.grado]) : 3;
+    if (ga !== gb) return ga - gb;
+    const da = durTarget != null && a.duracion != null ? Math.abs(a.duracion.macaulay - durTarget) : Infinity;
+    const db = durTarget != null && b.duracion != null ? Math.abs(b.duracion.macaulay - durTarget) : Infinity;
+    return da - db;
+  }).slice(0, n - primarios.length);
+  return [...primarios.map(c => ({ ...c, mismoGrado: true })), ...resto.map(c => ({ ...c, mismoGrado: false }))];
+}
+
+// Referencia rápida para "cómo se para este bono frente a lo comparable": TIR promedio (simple, no
+// ponderada por capital — no hay una cartera acá, es el catálogo entero) de los comparables del MISMO
+// grado únicamente (ignora los de relleno) — null si no hay ninguno del mismo grado con TIR.
+export function tirPromedioComparables(comps: Comparable[]): number | null {
+  const delMismoGrado = comps.filter(c => c.mismoGrado && c.tir != null);
+  if (!delMismoGrado.length) return null;
+  return delMismoGrado.reduce((s, c) => s + c.tir!, 0) / delMismoGrado.length;
 }

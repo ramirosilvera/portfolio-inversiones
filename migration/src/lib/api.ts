@@ -65,6 +65,7 @@ export const api = {
       `/api/market/acciones-ar?tickers=${tickers.map(encodeURIComponent).join(',')}`),
 
   analisisEmpresa: (body: unknown) => postAnalisis('/api/analysis/empresa', body),
+  analisisBono: (body: unknown) => postAnalisis('/api/analysis/bono', body),
   analisisPortfolio: (body: unknown) => postAnalisis('/api/analysis/portfolio', body),
   analisisMacro: (body: unknown) => postAnalisis('/api/analysis/macro', body),
 
