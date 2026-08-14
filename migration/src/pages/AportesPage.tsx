@@ -15,6 +15,28 @@ import type { Aporte, AporteTipo } from '../types/domain';
 const arsFromUsd = (usd: number, mep: number | null): string => (mep && usd > 0 ? String(+(usd * mep).toFixed(2)) : '');
 const usdFromArs = (ars: number, mep: number | null): string => (mep && ars > 0 ? String(+(ars / mep).toFixed(2)) : '');
 
+// Separador de miles SOLO mientras el campo no tiene foco — reformatear en cada tecla mientras se
+// tipea mueve el cursor a un lugar impredecible (agregar una coma antes del cursor lo corre). El
+// valor RAW (sin comas) es siempre lo que viaja a onUsdChange/onArsChange — este componente nunca
+// le agrega formato al string que usan los cálculos, solo a lo que se ve cuando no estás editando.
+const formatearMiles = (raw: string): string => {
+  const n = Number(raw);
+  return raw !== '' && Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : raw;
+};
+
+function MontoInput({ value, onChange, placeholder, disabled, className }: {
+  value: string; onChange: (raw: string) => void; placeholder?: string; disabled?: boolean; className?: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <input type="text" inputMode="decimal" placeholder={placeholder} disabled={disabled}
+      value={focused ? value : formatearMiles(value)}
+      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+      onChange={e => onChange(e.target.value.replace(/[^0-9.]/g, ''))}
+      className={className} />
+  );
+}
+
 const TIPO_TONE: Record<AporteTipo, 'accent' | 'gray' | 'warn' | 'neg'> = { inicial: 'accent', recurrente: 'gray', adelanto: 'warn', retiro: 'neg' };
 
 type AnioFiltro = 'todos' | 'positivos' | 'negativos' | 'sindatos';
@@ -120,17 +142,20 @@ export function AportesPage() {
         <CardHeader title="Registrar movimiento de capital" sub="El capital que entra (aporte) o sale (retiro) del portfolio. Impacta la TIR del Dashboard." />
         <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
           <Field label="Monto (USD)">
-            <input type="number" placeholder="Monto USD" value={f.monto} onChange={e => onUsdChange(e.target.value)} className={inputCls} />
+            <MontoInput placeholder="Monto USD" value={f.monto} onChange={onUsdChange} className={inputCls} />
           </Field>
           <Field label="Monto (ARS)" hint={mep ? `MEP ${fmtArs(mep)}` : 'MEP no disponible'}>
-            <input type="number" placeholder="Monto ARS" value={f.montoArs} onChange={e => onArsChange(e.target.value)} disabled={!mep}
+            <MontoInput placeholder="Monto ARS" value={f.montoArs} onChange={onArsChange} disabled={!mep}
               className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} />
           </Field>
-          <Field label="Fecha">
-            <input type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)} value={f.fecha} onChange={e => setF({ ...f, fecha: e.target.value })} className={inputCls} />
+          {/* min-w-0: sin esto, el input date puede pedir más ancho del que le toca en la columna del
+              grid (CSS Grid no encoge un ítem por debajo del contenido si no se le dice explícito) y
+              termina empujando/superponiéndose con el <select> de Tipo al lado. */}
+          <Field label="Fecha" className="min-w-0">
+            <input type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)} value={f.fecha} onChange={e => setF({ ...f, fecha: e.target.value })} className={`${inputCls} min-w-0`} />
           </Field>
-          <Field label="Tipo">
-            <select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value as AporteTipo })} className={inputCls}>
+          <Field label="Tipo" className="min-w-0">
+            <select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value as AporteTipo })} className={`${inputCls} min-w-0`}>
               <option value="inicial">Inicial</option><option value="recurrente">Recurrente</option><option value="adelanto">Adelanto</option><option value="retiro">Retiro (salida)</option>
             </select>
           </Field>
