@@ -22,7 +22,12 @@ export function useBonosDestacados() {
       return (data ?? []).map(r => r.ticker as string);
     },
   });
-  const destacados = useMemo(() => new Set(q.data ?? []), [q.data]);
+  // Array.isArray(), no solo `?? []`: un navegador que ya había cacheado el Set roto de ANTES de este
+  // fix (ver comentario arriba) tiene en localStorage un objeto plano "{}" persistido — es un valor
+  // TRUTHY, así que `?? []` no lo reemplaza, y new Set({}) explota (un objeto plano no es iterable).
+  // Con este chequeo, cualquier cache vieja/corrupta cae a [] en vez de tirar la pantalla abajo, y el
+  // refetch normal (staleTime por defecto) la pisa con datos buenos enseguida.
+  const destacados = useMemo(() => new Set(Array.isArray(q.data) ? q.data : []), [q.data]);
   const invalidate = () => qc.invalidateQueries({ queryKey: ['bonos_destacados'] });
   return {
     destacados,
