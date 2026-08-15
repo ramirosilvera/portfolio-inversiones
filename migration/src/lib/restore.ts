@@ -45,6 +45,7 @@ const RESTORE_ORDER: { table: string; onConflict: string; userScoped: boolean }[
   { table: 'flujo_items', onConflict: 'id',           userScoped: true },
   { table: 'dcf_inputs',  onConflict: 'user_id,ticker', userScoped: true },
   { table: 'watchlist',   onConflict: 'user_id,ticker', userScoped: true }, // tiene unique(user_id,ticker)
+  { table: 'bonos_destacados', onConflict: 'user_id,ticker', userScoped: true }, // PK (user_id, ticker)
 ];
 
 export interface Preview {

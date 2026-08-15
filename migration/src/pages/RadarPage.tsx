@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Plus, Trash2, LineChart, Radar, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, ShoppingCart, Flame, Search, X } from 'lucide-react';
+import { Plus, Trash2, LineChart, Radar, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, ShoppingCart, Flame, Search, X, Star } from 'lucide-react';
 import { useMacro, useBonosPrecios } from '../hooks/usePosiciones';
 import { useCikMap } from '../hooks/useCikMap';
 import { useWatchlist, type WatchItem } from '../hooks/useWatchlist';
 import { useRadarTicker } from '../hooks/useRadarTicker';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
+import { useBonosDestacados } from '../hooks/useBonosDestacados';
 import { useChartTheme } from '../hooks/usePrefs';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
@@ -292,6 +293,7 @@ const FILTRO_GRADO_LABEL: Record<FiltroGrado, string> = { todos: 'Todos', ...ETI
 function RadarFija() {
   const { data: bonosRef = [], isLoading: bonosRefLoading, isError: bonosRefError, actualizarRating } = useBonosReferencia();
   const { data: bonosPrecios = {} } = useBonosPrecios();
+  const { destacados, toggle: toggleDestacado } = useBonosDestacados();
   const qc = useQueryClient();
   const [refreshingRF, setRefreshingRF] = useState(false);
   // El catálogo tiene staleTime de 1h y gcTime/persistencia de hasta 1 semana (ver
@@ -344,7 +346,7 @@ function RadarFija() {
   }), [bonosCalc, filtroTipo, filtroGrado, durMin, durMax, busqueda]);
 
   const handleSortRF = (key: SortKeyRF) => setSortRF(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR_RF[key] });
-  const ordenados = useMemo(() => {
+  const ordenadosPorColumna = useMemo(() => {
     if (!sortRF) return filtrados;
     const { key, dir } = sortRF;
     const factor = dir === 'asc' ? 1 : -1;
@@ -364,6 +366,13 @@ function RadarFija() {
       return (av - bv) * factor;
     });
   }, [filtrados, sortRF]);
+  // Destacados siempre arriba, sin importar el orden de columna elegido — sort() es estable (spec
+  // desde ES2019, todos los motores modernos), así que dentro de cada grupo (destacado / no
+  // destacado) se conserva el orden de ordenadosPorColumna tal cual.
+  const ordenados = useMemo(
+    () => [...ordenadosPorColumna].sort((a, b) => Number(destacados.has(b.ref.ticker)) - Number(destacados.has(a.ref.ticker))),
+    [ordenadosPorColumna, destacados],
+  );
 
   // Curva: solo entran los que tienen TIR y duración calculables (necesitan cotización de
   // mercado) — sin eso no hay punto que graficar, no un punto en el origen.
@@ -476,6 +485,7 @@ function RadarFija() {
           <table className="w-full text-sm min-w-[920px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
               <tr>
+                <th className="px-2" title="Destacado"><span className="sr-only">Destacado</span></th>
                 <ThSort<SortKeyRF> label="Ticker" align="left" sortKey="ticker" sort={sortRF} onClick={handleSortRF} />
                 <th className="text-left px-3">Emisor</th>
                 <th className="text-right px-3">Tipo</th>
@@ -488,15 +498,18 @@ function RadarFija() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {ordenados.map(b => <RentaFijaRow key={b.ref.ticker} calc={b} hoy={hoy} onEditarRating={() => setEditando(b)} />)}
+              {ordenados.map(b => (
+                <RentaFijaRow key={b.ref.ticker} calc={b} hoy={hoy} onEditarRating={() => setEditando(b)}
+                  destacado={destacados.has(b.ref.ticker)} onToggleDestacado={() => toggleDestacado(b.ref.ticker, !destacados.has(b.ref.ticker))} />
+              ))}
               {bonosRefError && (
-                <tr><td colSpan={9}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
+                <tr><td colSpan={10}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length === 0 && (
-                <tr><td colSpan={9}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
+                <tr><td colSpan={10}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length > 0 && ordenados.length === 0 && (
-                <tr><td colSpan={9}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
+                <tr><td colSpan={10}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
               )}
             </tbody>
           </table>
@@ -511,11 +524,27 @@ function RadarFija() {
   );
 }
 
-function RentaFijaRow({ calc, hoy, onEditarRating }: { calc: ReturnType<typeof calcularBonoReferencia>; hoy: string; onEditarRating: () => void }) {
+function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado }: {
+  calc: ReturnType<typeof calcularBonoReferencia>; hoy: string; onEditarRating: () => void;
+  destacado: boolean; onToggleDestacado: () => Promise<void>;
+}) {
   const { ref, paridad, tir, duracion, grado, escalaGrado } = calc;
   const vencido = ref.vencimiento < hoy;
+  const [busyDestacado, setBusyDestacado] = useState(false);
+  const toggle = async () => {
+    setBusyDestacado(true);
+    try { await onToggleDestacado(); } catch { /* la fila simplemente no cambia — el usuario puede reintentar */ }
+    finally { setBusyDestacado(false); }
+  };
   return (
-    <tr className="hover:bg-canvas">
+    <tr className={`hover:bg-canvas ${destacado ? 'bg-sol/5' : ''}`}>
+      <td className="px-2 py-2 text-center">
+        <button onClick={toggle} disabled={busyDestacado} className="hover:opacity-75 transition-opacity disabled:opacity-40"
+          title={destacado ? 'Quitar de destacados' : 'Marcar como destacado'}
+          aria-label={destacado ? `Quitar ${ref.ticker} de destacados` : `Marcar ${ref.ticker} como destacado`} aria-pressed={destacado}>
+          <Star className={`w-4 h-4 ${destacado ? 'fill-sol text-sol' : 'text-ink-400'}`} />
+        </button>
+      </td>
       <td className="px-4 py-2">
         {/* title con la fecha de actualización del catálogo — mismo criterio que UpdatedAt en el
             resto de la app: no hay columna dedicada, pero el dato queda a un hover de distancia. */}
