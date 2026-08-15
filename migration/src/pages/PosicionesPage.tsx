@@ -368,9 +368,11 @@ function AgregarModal({ cedearRatios, catalogoBonos, onClose, onAdd, onSaveRatio
             <Field label="Precio compra (USD)">
               <input placeholder="Precio compra USD" type="number" onChange={e => setForm({ ...form, precio_compra: Number(e.target.value) })} className={inputCls} />
             </Field>
-            <Field label="Ratio CEDEAR">
-              <input placeholder={form.tipo === 'cedear' ? 'Ratio (auto)' : 'Ratio (CEDEAR)'} type="number" value={form.ratio_cedear ?? ''} onChange={e => setForm({ ...form, ratio_cedear: Number(e.target.value) || null })} className={inputCls} />
-            </Field>
+            {form.tipo === 'cedear' && (
+              <Field label="Ratio CEDEAR">
+                <input placeholder="Ratio (auto)" type="number" value={form.ratio_cedear ?? ''} onChange={e => setForm({ ...form, ratio_cedear: Number(e.target.value) || null })} className={inputCls} />
+              </Field>
+            )}
             <Field label="% objetivo">
               <input placeholder="% objetivo (0-100)" type="number" onChange={e => setForm({ ...form, peso_objetivo: e.target.value ? Number(e.target.value) / 100 : null })} className={inputCls} />
             </Field>
