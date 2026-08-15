@@ -416,17 +416,20 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
             <div className="grid grid-cols-3 gap-2 p-3">
               <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los aportes (inicial + recurrente + adelanto)">
                 <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Aportado</p>
-                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 break-words leading-tight">{fmtUsdCompact(aportado)}</p>
+                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(aportado, 0)}>{fmtUsdCompact(aportado, { k: true })}</p>
               </div>
               <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los retiros de capital">
                 <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Retirado</p>
-                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 break-words leading-tight">{fmtUsdCompact(retirado)}</p>
+                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(retirado, 0)}>{fmtUsdCompact(retirado, { k: true })}</p>
               </div>
               {/* Sin color pos/neg: acá no significa ganancia/pérdida (ese semáforo lo usa el resto
-                  de la app para P&L) — "positivo" solo dice que aportaste más de lo que retiraste. */}
-              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0">
-                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Neto aportado</p>
-                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 break-words leading-tight">{fmtUsdCompact(neto)}</p>
+                  de la app para P&L) — "positivo" solo dice que aportaste más de lo que retiraste.
+                  Label acortado a "Neto" (no "Neto aportado"): con el label largo, esta tercera
+                  columna se corta a "NETO APORT…" en el mismo ancho angosto — el texto de abajo
+                  ("Aportado − retirado — no es rendimiento") ya aclara qué es. */}
+              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Aportado menos retirado">
+                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Neto</p>
+                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(neto, 0)}>{fmtUsdCompact(neto, { k: true })}</p>
               </div>
             </div>
             {/* Visible, no solo tooltip — al lado de un % de rendimiento real (modo "Ambos"), un
