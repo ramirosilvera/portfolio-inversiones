@@ -1,4 +1,5 @@
 import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson } from '../_shared';
+import { yahooHist as yahooHistBase } from '../_market';
 
 const TTL = 30 * 60 * 1000; // 30 min
 
@@ -9,14 +10,9 @@ const TTL = 30 * 60 * 1000; // 30 min
 // el actual quedan en dólares y la inflación no lo distorsiona. Todo es dato real, nada inventado.
 interface DD { actual: number; max: number; dd: number }
 
-async function yahooHist(symbol: string) {
-  const j = await fetchJson<{ chart?: { result?: {
-    timestamp?: number[]; meta?: { regularMarketPrice?: number };
-    indicators?: { quote?: { close?: (number | null)[]; high?: (number | null)[] }[] };
-  }[] } }>(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1wk&range=max`,
-    { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  return j.chart?.result?.[0];
-}
+// yahooHist(symbol, {interval, range}) ahora vive en _market.ts (compartida con market/historico.ts,
+// que la usa para el gráfico de precio de Análisis) — acá se fija el mismo interval/range de siempre.
+const yahooHist = (symbol: string) => yahooHistBase(symbol, { interval: '1wk', range: 'max' });
 
 const num = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? x : null);
 // Máximo con un loop (no spread): la historia completa puede tener miles de puntos.
