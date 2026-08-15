@@ -28,12 +28,15 @@ import { supabase } from './supabase';
 // v8: agrega dashboard_layout (layout del Dashboard personalizable — qué tarjetas, en qué orden. Ver
 // 0029_dashboard_layout.sql). Tabla nueva, 1 fila JSONB por usuario (no por portfolio, mismo criterio
 // que flujo_items) — mismo motivo que v7, hace falta sumarla a TABLAS explícitamente.
-export const BACKUP_VERSION = 8;
+// v9: agrega bonos_destacados (tickers de renta fija marcados como destacados en el Radar — ver
+// 0038_bonos_destacados.sql). Tabla nueva, per-user (no forma parte de bonos_referencia, que es el
+// catálogo global y no se exporta) — mismo motivo que v7/v8, hace falta sumarla a TABLAS.
+export const BACKUP_VERSION = 9;
 
 const TABLAS = [
   'portfolios', 'brokers', 'posiciones', 'posicion_brokers', 'movimientos', 'aportes', 'portfolio_snapshots',
   'flujo_items', 'dcf_inputs', 'proyeccion_inputs', 'cobros', 'cobros_inversiones', 'transferencias',
-  'amortizaciones_programadas', 'dashboard_layout', 'cik_map', 'watchlist', 'analisis_ia', 'profiles',
+  'amortizaciones_programadas', 'dashboard_layout', 'cik_map', 'watchlist', 'bonos_destacados', 'analisis_ia', 'profiles',
 ] as const;
 
 export interface BackupResult {

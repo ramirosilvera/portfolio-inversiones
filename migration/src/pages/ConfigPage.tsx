@@ -164,7 +164,7 @@ function BackupSection() {
       <div className="p-4 space-y-3">
         <div className="flex items-start gap-2 rounded-xl bg-canvas ring-1 ring-inset ring-line px-3 py-2.5 text-[11px] text-ink-600">
           <ShieldCheck className="w-4 h-4 shrink-0 text-pos mt-0.5" />
-          <p>Incluye portfolios, brokers y su asignación, posiciones, movimientos, aportes, transferencias entre portfolios, cobros (dividendos/intereses/amortizaciones) y el saldo ya invertido, flujo de caja, supuestos de DCF y de Proyección, cronograma de amortización manual, layout del Dashboard, histórico, watchlist, mapa de CIK, análisis de IA y tu perfil. Se genera en tu navegador (no se sube a ningún lado). El proyecto está en el plan gratuito de Supabase, que NO incluye backups automáticos — este archivo es la única copia de tus datos fuera de la base. Guardalo en tu Drive u otro lugar seguro cada tanto.</p>
+          <p>Incluye portfolios, brokers y su asignación, posiciones, movimientos, aportes, transferencias entre portfolios, cobros (dividendos/intereses/amortizaciones) y el saldo ya invertido, flujo de caja, supuestos de DCF y de Proyección, cronograma de amortización manual, layout del Dashboard, histórico, watchlist, bonos destacados del Radar, mapa de CIK, análisis de IA y tu perfil. Se genera en tu navegador (no se sube a ningún lado). El proyecto está en el plan gratuito de Supabase, que NO incluye backups automáticos — este archivo es la única copia de tus datos fuera de la base. Guardalo en tu Drive u otro lugar seguro cada tanto.</p>
         </div>
         {haceFalta && (
           <p className="flex items-center gap-1.5 text-[11px] text-warn">
@@ -187,6 +187,7 @@ const TABLA_LABEL: Record<string, string> = {
   analisis_ia: 'análisis IA', profiles: 'perfil', cobros: 'cobros', proyeccion_inputs: 'supuestos proyección',
   brokers: 'brokers', posicion_brokers: 'asignación de brokers', cobros_inversiones: 'saldo invertido',
   transferencias: 'transferencias', amortizaciones_programadas: 'cronograma amortización', dashboard_layout: 'layout Dashboard',
+  bonos_destacados: 'destacados renta fija',
 };
 
 function RestoreSection() {
