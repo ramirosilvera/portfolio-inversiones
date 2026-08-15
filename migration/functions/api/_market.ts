@@ -12,7 +12,7 @@ export interface YahooChartResult {
     quote?: { close?: (number | null)[]; high?: (number | null)[] }[];
     // adjclose (precio ajustado por dividendos/splits): sin esto, una empresa con dividendo alto
     // muestra una caída de precio que en parte es solo el dividendo saliendo de la cotización, no
-    // pérdida de valor real — la "Var. 5 años" quedaría estructuralmente sesgada para abajo.
+    // pérdida de valor real — la variación de precio quedaría estructuralmente sesgada para abajo.
     adjclose?: { adjclose?: (number | null)[] }[];
   };
 }

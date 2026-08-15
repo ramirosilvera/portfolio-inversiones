@@ -9,7 +9,7 @@ export interface PuntoPrecio { fecha: string; close: number }
 // Precio ajustado por dividendos (adjclose) si Yahoo lo trae; si no, cae a close sin ajustar — mejor
 // un dato aproximado que ninguno, pero preferimos adjclose porque sin ajuste una empresa con
 // dividendo alto muestra una caída de precio que en parte es solo el dividendo saliendo de la
-// cotización, no pérdida de valor real (distorsiona "Var. 5 años" sistemáticamente para abajo).
+// cotización, no pérdida de valor real (distorsiona la variación de precio sistemáticamente para abajo).
 function parseWeekly(r: YahooChartResult | undefined): PuntoPrecio[] {
   if (!r?.timestamp?.length) return [];
   const adj = r.indicators?.adjclose?.[0]?.adjclose;
@@ -26,7 +26,7 @@ function parseWeekly(r: YahooChartResult | undefined): PuntoPrecio[] {
 
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
-// GET /api/market/historico?ticker=X → hasta 5 años de precio semanal. El toggle 1A/5A del front
+// GET /api/market/historico?ticker=X → hasta 10 años de precio semanal. El toggle 1A/5A/10A del front
 // recorta ESTA misma serie (no hay un fetch separado por rango — un solo pedido a Yahoo por ticker).
 export const onRequestGet = guardAuth(async ({ request, env }) => {
   const url = new URL(request.url);
@@ -38,7 +38,7 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   if (cached?.data_json?.length) return json({ ticker, puntos: cached.data_json, cached: true });
 
   try {
-    const r = await yahooHist(yahooSymbol(ticker), { interval: '1wk', range: '5y' });
+    const r = await yahooHist(yahooSymbol(ticker), { interval: '1wk', range: '10y' });
     const puntos = parseWeekly(r);
     if (!puntos.length) throw new Error('sin-datos');
     await sbUpsert(env, 'precio_historico_cache', [{ ticker, data_json: puntos, updated_at: new Date().toISOString() }], 'ticker');
