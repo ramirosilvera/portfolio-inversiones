@@ -9,12 +9,45 @@ const latest = (a: AnnualPoint[]): number | null => (a.length ? a[a.length - 1].
 const sortedByFy = (a: AnnualPoint[]) => [...a].sort((x, y) => x.fy - y.fy);
 
 // CAGR real del EPS diluido de los últimos 5 años: (eps_hoy/eps_hace_5a)^(1/(n-1)) − 1
-export function eg5y(epsDiluted: AnnualPoint[]): number | null {
+//
+// netIncome es OPCIONAL pero muy recomendable: sirve para detectar un split no restatado hacia atrás
+// por la empresa en SEC EDGAR. Algunas empresas (ej. NVDA, split 10:1 en 2024) no repiten un año tan
+// viejo como comparativo en los 10-K posteriores al split, así que EDGAR nunca tiene una versión
+// "corregida" de ese año — queda mezclado en pre-split con el resto ya en post-split. netIncome/EPS
+// da las acciones IMPLÍCITAS de cada año; si pegan un salto (~2x-10x) de un año al siguiente que no es
+// un buyback/dilución normal, es la marca de ese quiebre. Sin esto, EG5Y mezclaba un año pre-split
+// con cuatro post-split y daba 6,2% para NVDA (debería ser altísimo, coherente con el CAGR histórico
+// de owner earnings de la misma empresa) — el año viejo, en unidades 10x más grandes, aplasta el ratio.
+export function eg5y(epsDiluted: AnnualPoint[], netIncome: AnnualPoint[] = []): number | null {
   const s = sortedByFy(epsDiluted).slice(-5);
   if (s.length < 2) return null;
-  const first = s[0].val, last = s[s.length - 1].val;
+  const desde = primerIndiceConsistente(s, netIncome);
+  const limpio = s.slice(desde);
+  if (limpio.length < 2) return null;
+  const first = limpio[0].val, last = limpio[limpio.length - 1].val;
   if (first <= 0 || last <= 0) return null;
-  return (last / first) ** (1 / (s.length - 1)) - 1;
+  return (last / first) ** (1 / (limpio.length - 1)) - 1;
+}
+
+// Devuelve el índice desde el cual la serie de EPS es consistente (mismas acciones en juego, sin un
+// split de por medio) — recorre de la más reciente hacia atrás, porque el tramo reciente es el que
+// alimenta el DCF y es el más confiable. Sin netIncome (o sin FY que matchee) no hay forma de
+// verificar nada → usa la serie completa tal cual (comportamiento previo, sin regresión).
+function primerIndiceConsistente(eps: AnnualPoint[], netIncome: AnnualPoint[]): number {
+  if (!netIncome.length) return 0;
+  const niByFy = new Map(netIncome.map(p => [p.fy, p.val]));
+  const impliedShares = eps.map(p => {
+    const ni = niByFy.get(p.fy);
+    return ni != null && p.val !== 0 ? ni / p.val : null;
+  });
+  for (let i = impliedShares.length - 1; i > 0; i--) {
+    const actual = impliedShares[i], anterior = impliedShares[i - 1];
+    if (actual == null || anterior == null || actual <= 0 || anterior <= 0) continue;
+    const ratio = actual / anterior;
+    // >40% de un año a otro no es dilución/buyback orgánico — un split real salta 2x-10x.
+    if (ratio > 1.4 || ratio < 1 / 1.4) return i;
+  }
+  return 0;
 }
 
 export function computeRatios(f: Fundamentals, price: number | null, beta: number, riskFreeRate: number): Ratios {
@@ -48,7 +81,7 @@ export function computeRatios(f: Fundamentals, price: number | null, beta: numbe
   }
 
   const bookPerShare = equity != null && shares ? equity / shares : null;
-  const eg = eg5y(f.epsDiluted);
+  const eg = eg5y(f.epsDiluted, f.netIncome);
   const pe = price != null && eps ? price / eps : null;
 
   // Capital invertido = equity + deuda − caja. Con denominador ≤ 0 (cash-rich o equity
