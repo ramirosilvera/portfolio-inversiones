@@ -107,6 +107,43 @@ describe('ratios — deuda rezagada respecto del balance (caso KO)', () => {
   });
 });
 
+describe('eg5y — split no restatado en EDGAR (caso real NVDA, split 10:1 de 2024)', () => {
+  // Valores reales cacheados de fundamentals_cache para NVDA: FY2022 quedó en unidades PRE-split
+  // (EDGAR no lo repite como comparativo en ningún 10-K posterior al split, así que nunca hay una
+  // versión "corregida"), mientras FY2023-FY2026 ya están en post-split. Acciones implícitas
+  // (netIncome/EPS): FY2022 ≈ 2.53B, FY2023 ≈ 25.7B — salto de ~10x, ningún buyback hace eso.
+  const eps = P([[2022, 3.85], [2023, 0.17], [2024, 1.19], [2025, 2.94], [2026, 4.90]]);
+  const ni = P([[2022, 9752], [2023, 4368], [2024, 29760], [2025, 72880], [2026, 120067]]); // millones
+
+  it('sin netIncome (comportamiento previo): mezcla el año pre-split y da un CAGR aplastado', () => {
+    const g = eg5y(eps);
+    expect(g).not.toBeNull();
+    expect(g!).toBeCloseTo((4.90 / 3.85) ** (1 / 4) - 1, 6);   // ≈ 6.2% — el bug que reportó el usuario
+    expect(g!).toBeLessThan(0.10);
+  });
+
+  it('con netIncome: descarta FY2022 (acciones implícitas 10x distintas) y usa solo el tramo consistente', () => {
+    const g = eg5y(eps, ni);
+    expect(g).not.toBeNull();
+    // Tramo limpio: FY2023→FY2026 (3 períodos), ya sin el año pre-split.
+    expect(g!).toBeCloseTo((4.90 / 0.17) ** (1 / 3) - 1, 6);
+    expect(g!).toBeGreaterThan(1);   // crecimiento real explosivo, no un 6% artificial
+  });
+
+  it('acciones implícitas consistentes (sin split real) → no descarta nada, mismo resultado que antes', () => {
+    const epsEstable = P([[2020, 5.76], [2021, 8.05], [2022, 9.65], [2023, 9.68], [2024, 11.80]]);
+    const niEstable = P([[2020, 44281], [2021, 61271], [2022, 72738], [2023, 72361], [2024, 88136]]);
+    const sinNi = eg5y(epsEstable);
+    const conNi = eg5y(epsEstable, niEstable);
+    expect(conNi).toBeCloseTo(sinNi!, 10);
+  });
+
+  it('netIncome sin ningún FY que matchee: no puede verificar nada, cae a la serie completa (no revienta)', () => {
+    const g = eg5y(eps, P([[1999, 1]]));
+    expect(g).toBeCloseTo((4.90 / 3.85) ** (1 / 4) - 1, 6);
+  });
+});
+
 describe('owner earnings + DCF', () => {
   it('owner earnings = OCF − capex mantenimiento; growth capex separado', () => {
     const oe = ownerEarningsByYear(MSFT, 'dna');
