@@ -5,6 +5,7 @@ import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro } from '../hooks/usePosiciones';
 import { useCedearRatios } from '../hooks/useCedearRatios';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
+import type { BonoReferencia } from '../engine/rentaFija';
 import { inferirCuponDeCronograma } from '../engine/coupons';
 import { useCikMap } from '../hooks/useCikMap';
 import { useAporteMutations } from '../hooks/useAportes';
@@ -54,14 +55,7 @@ export function PosicionesPage() {
   const { data: allMovs = [] } = useMovimientos(active?.id);
   const realized = useMemo(() => realizedPnl(allMovs), [allMovs]);
 
-  const [form, setForm] = useState<Partial<Posicion>>({ tipo: 'cedear', cantidad: 0, precio_compra: 0 });
   const [showForm, setShowForm] = useState(false);
-  const [formErr, setFormErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  // Sin tildar por default: crear un aporte automático cuando en realidad se compró con plata que
-  // ya estaba en el portfolio duplicaría capital en la TIR (ver portfolioTir en engine/irr.ts) —
-  // más vale que el usuario lo tilde a propósito que asumirlo mal.
-  const [capitalNuevo, setCapitalNuevo] = useState(false);
   const [histTicker, setHistTicker] = useState<string | null>(null);
   const [sellData, setSellData] = useState<{ pos: Posicion; sugerido: number | null } | null>(null);
   const [editPos, setEditPos] = useState<Posicion | null>(null);
@@ -97,73 +91,6 @@ export function PosicionesPage() {
     try { await setObjetivos(result); } catch { /* el input vuelve al valor guardado en el próximo refetch */ }
   };
 
-  // Pre-llena el ratio de un CEDEAR desde la base (si existe y el usuario no lo tipeó), o el cupón/
-  // vencimiento/calificación de un bono desde el catálogo de referencia (bonos_referencia — el mismo
-  // que alimenta el Radar) si el ticker matchea exacto. cupon_tasa/frecuencia/mesRef se INFIEREN del
-  // cronograma real (inferirCuponDeCronograma, misma inferencia que usa el motor de TIR — nunca un
-  // supuesto nuevo); calificadora/calificacion/amortizable/valor_residual se copian directo. Nunca
-  // pisa un campo que el usuario ya tenga cargado (mismo criterio que el ratio de CEDEAR).
-  const applyAuto = (f: Partial<Posicion>): Partial<Posicion> => {
-    if (f.tipo === 'cedear' && f.ticker && cedearRatios[f.ticker] && !f.ratio_cedear) {
-      return { ...f, ratio_cedear: cedearRatios[f.ticker] };
-    }
-    if (f.tipo === 'bono' && f.ticker) {
-      const ref = catalogoBonos.find(b => b.ticker === f.ticker);
-      if (ref) {
-        const cupon = f.cupon_tasa == null ? inferirCuponDeCronograma(ref.cronograma, new Date().toISOString().slice(0, 10)) : null;
-        return {
-          ...f,
-          cupon_tasa: f.cupon_tasa ?? cupon?.tasaAnual ?? f.cupon_tasa,
-          cupon_frecuencia: f.cupon_frecuencia ?? cupon?.frecuencia ?? f.cupon_frecuencia,
-          cupon_mes: f.cupon_mes ?? cupon?.mesRef ?? f.cupon_mes,
-          vencimiento: f.vencimiento ?? ref.vencimiento,
-          calificadora: f.calificadora ?? ref.calificadora,
-          calificacion: f.calificacion ?? ref.calificacion,
-          amortizable: f.amortizable ?? ref.amortizable,
-          valor_residual: f.valor_residual ?? (ref.amortizable ? ref.valor_residual : f.valor_residual),
-        };
-      }
-    }
-    return f;
-  };
-  const bonoDelCatalogo = form.tipo === 'bono' && form.ticker ? catalogoBonos.find(b => b.ticker === form.ticker) : undefined;
-
-  const guardar = async () => {
-    if (!form.ticker) { setFormErr('Ingresá el ticker.'); return; }
-    if (!(Number(form.cantidad) > 0)) { setFormErr('La cantidad debe ser mayor a 0.'); return; }
-    if (!(Number(form.precio_compra) > 0)) { setFormErr('Ingresá el precio de compra.'); return; }
-    if (form.tipo === 'cedear' && !(form.ratio_cedear && form.ratio_cedear > 0)) {
-      setFormErr('Un CEDEAR necesita su ratio (subyacentes por CEDEAR) — sin eso el valor se calcula mal.'); return;
-    }
-    setSaving(true); setFormErr(null);
-    try {
-      await add(form);
-      // Si es CEDEAR y no estaba en la base, la enriquecemos con este ratio.
-      if (form.tipo === 'cedear' && form.ticker && form.ratio_cedear && !cedearRatios[form.ticker]) {
-        void saveRatio(form.ticker, form.ratio_cedear);
-      }
-      // Aporte automático SOLO si el usuario tildó "es capital nuevo" — evita la carga duplicada
-      // (posición + aporte a mano) sin arriesgar duplicar capital en la TIR cuando en realidad se
-      // compró con plata que ya estaba en el portfolio (ver nota en el estado de capitalNuevo).
-      if (capitalNuevo) {
-        const monto = (Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0);
-        if (monto > 0) {
-          try {
-            await addAporte({
-              monto, fecha: form.fecha_compra || new Date().toISOString().slice(0, 10),
-              tipo: 'recurrente', descripcion: `Compra ${form.ticker}`,
-            });
-          } catch { /* la posición ya se guardó — un aporte fallido no debe parecer que todo falló */ }
-        }
-      }
-      setShowForm(false);
-      setForm({ tipo: 'cedear', cantidad: 0, precio_compra: 0 });
-      setCapitalNuevo(false);
-    } catch (e) {
-      setFormErr(`No se pudo guardar: ${e instanceof Error ? e.message : 'error'}`);
-    } finally { setSaving(false); }
-  };
-
   const borrar = async (p: Posicion) => {
     if (!window.confirm(`¿Borrar ${p.ticker}? Se elimina la posición y su historial. No se puede deshacer.`)) return;
     setDeletingId(p.id);
@@ -183,11 +110,7 @@ export function PosicionesPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="ghost" onClick={() => setSimular({})}><ShoppingCart className="w-4 h-4" /> Simular compra</Button>
-          <Button onClick={() => {
-            // Al abrir, arrancar limpio: sin esto, campos de una carga anterior (incluido cupón)
-            // reaparecían y podían mezclarse con el alta siguiente.
-            setShowForm(v => { if (!v) { setForm({ tipo: 'cedear', cantidad: 0, precio_compra: 0 }); setFormErr(null); setCapitalNuevo(false); } return !v; });
-          }}><Plus className="w-4 h-4" /> Agregar</Button>
+          <Button onClick={() => setShowForm(true)}><Plus className="w-4 h-4" /> Agregar</Button>
         </div>
       </div>
 
@@ -197,99 +120,6 @@ export function PosicionesPage() {
         <Stat label="P&L no realizado" value={fmtUsdCompact(pnlNoReal)} delta={costoTotal > 0 ? pnlNoReal / costoTotal : undefined} hint="ganancia/pérdida de lo que tenés hoy" />
         <Stat label="P&L realizado" value={fmtUsdCompact(realized.total)} hint="resultado de las ventas (según historial)" />
       </div>
-
-      {showForm && (
-        <Card>
-          <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-            <Field label="Tipo">
-              <select value={form.tipo} onChange={e => setForm(f => applyAuto({ ...f, tipo: e.target.value as Posicion['tipo'] }))}
-                className={`${inputCls} appearance-none`}>
-                <option value="cedear">CEDEAR</option>
-                <option value="accion">Acción (US)</option>
-                <option value="accion_ar">Acción ARG</option>
-                <option value="etf">ETF</option>
-                <option value="bono">Bono / ON</option>
-                <option value="cash">Cash</option>
-              </select>
-            </Field>
-            <Field label="Ticker">
-              <input placeholder="Ticker" value={form.ticker ?? ''} onChange={e => setForm(f => applyAuto({ ...f, ticker: e.target.value.toUpperCase() }))} className={inputCls} />
-            </Field>
-            <Field label="Cantidad">
-              <input placeholder="Cantidad" type="number" onChange={e => setForm({ ...form, cantidad: Number(e.target.value) })} className={inputCls} />
-            </Field>
-            <Field label="Precio compra (USD)">
-              <input placeholder="Precio compra USD" type="number" onChange={e => setForm({ ...form, precio_compra: Number(e.target.value) })} className={inputCls} />
-            </Field>
-            <Field label="Ratio CEDEAR">
-              <input placeholder={form.tipo === 'cedear' ? 'Ratio (auto)' : 'Ratio (CEDEAR)'} type="number" value={form.ratio_cedear ?? ''} onChange={e => setForm({ ...form, ratio_cedear: Number(e.target.value) || null })} className={inputCls} />
-            </Field>
-            <Field label="% objetivo">
-              <input placeholder="% objetivo (0-100)" type="number" onChange={e => setForm({ ...form, peso_objetivo: e.target.value ? Number(e.target.value) / 100 : null })} className={inputCls} />
-            </Field>
-            <Field label="Fecha de compra">
-              <input type="date" value={form.fecha_compra ?? ''} onChange={e => setForm({ ...form, fecha_compra: e.target.value || null })} className={inputCls} />
-            </Field>
-            <Field label="Sector">
-              <input placeholder="Sector" onChange={e => setForm({ ...form, sector: e.target.value })} className={`${inputCls} text-base sm:text-sm`} />
-            </Field>
-            <div className="flex items-end">
-              <Button onClick={guardar} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Button>
-            </div>
-          </div>
-          {form.tipo === 'bono' && (
-            <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm border-t border-line pt-3">
-              <div className="col-span-2 sm:col-span-4 text-[11px] text-ink-600">
-                Datos de cupón (para el flujo de cupones):
-                {bonoDelCatalogo && (
-                  <span className="ml-1.5 text-pos font-medium">
-                    ✓ precargado desde el catálogo de referencia (calificación {bonoDelCatalogo.calificadora ?? 'sin cargar'}{bonoDelCatalogo.amortizable ? ', amortizable' : ''}) — revisá y ajustá si hace falta.
-                  </span>
-                )}
-              </div>
-              <Field label="Tasa cupón (% anual)">
-                <input placeholder="Tasa cupón % anual" type="number" step="0.1" value={form.cupon_tasa != null ? form.cupon_tasa * 100 : ''}
-                  onChange={e => setForm({ ...form, cupon_tasa: e.target.value ? Number(e.target.value) / 100 : null })}
-                  className={inputCls} />
-              </Field>
-              <Field label="Frecuencia">
-                <select value={form.cupon_frecuencia ?? ''} onChange={e => setForm({ ...form, cupon_frecuencia: e.target.value ? Number(e.target.value) : null })}
-                  className={`${inputCls} appearance-none`}>
-                  <option value="">Frecuencia…</option>
-                  <option value="1">Anual</option>
-                  <option value="2">Semestral</option>
-                  <option value="4">Trimestral</option>
-                </select>
-              </Field>
-              <Field label="Mes de pago">
-                <select value={form.cupon_mes ?? ''} onChange={e => setForm({ ...form, cupon_mes: e.target.value ? Number(e.target.value) : null })}
-                  className={`${inputCls} appearance-none`}>
-                  <option value="">Mes de pago…</option>
-                  {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((m, i) => (
-                    <option key={m} value={i + 1}>{m}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Vencimiento">
-                <input placeholder="Vencimiento" type="date" value={form.vencimiento ?? ''}
-                  onChange={e => setForm({ ...form, vencimiento: e.target.value || null })}
-                  className={inputCls} />
-              </Field>
-            </div>
-          )}
-          <div className="px-4 pb-3">
-            <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
-              <input type="checkbox" checked={capitalNuevo} onChange={e => setCapitalNuevo(e.target.checked)} className="mt-0.5" />
-              <span>
-                ¿Es capital nuevo (recién ingresado, no plata que ya estaba en el portfolio)? Si tildás esto se registra
-                un aporte de {fmtUsd((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), 0)} automáticamente,
-                para no tener que cargarlo dos veces en Aportes.
-              </span>
-            </label>
-          </div>
-          {formErr && <p className="px-4 pb-3 text-xs text-warn">{formErr}</p>}
-        </Card>
-      )}
 
       <Card>
         <CardHeader title="Cartera" sub="Al agregar un activo ya existente se consolida (costo promedio ponderado); mirá el historial con el ícono de reloj."
@@ -401,9 +231,213 @@ export function PosicionesPage() {
         }} />}
       {editPos && <EditModal pos={editPos} onClose={() => setEditPos(null)}
         onSave={async (patch) => { await update(editPos.id, patch); setEditPos(null); }} />}
-      {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios} mep={mep}
+      {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep}
         initial={simular.pos} initialTicker={simular.ticker} onClose={() => setSimular(null)}
-        onEjecutar={async (payload) => { await add(payload); }} />}
+        onEjecutar={async (payload) => { await add(payload); }} onAporte={addAporte} />}
+      {showForm && <AgregarModal cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} onClose={() => setShowForm(false)}
+        onAdd={add} onSaveRatio={saveRatio} onAporte={addAporte} />}
+    </div>
+  );
+}
+
+// Cupón/vencimiento/calificación de un bono desde el catálogo de referencia (bonos_referencia — el
+// mismo que alimenta el Radar), si el ticker matchea exacto. cupon_tasa/frecuencia/mes se INFIEREN
+// del cronograma real (inferirCuponDeCronograma, misma inferencia que usa el motor de TIR — nunca un
+// supuesto nuevo). Compartida entre AgregarModal y SimularCompraModal: antes solo la usaba el
+// formulario de Agregar, así que un bono NUEVO cargado desde Simular compra se guardaba sin cupón ni
+// vencimiento — quedaba con TIR/duración rotas en Radar, Cupones y Análisis sin ningún aviso.
+function enrichBono(ticker: string, catalogoBonos: BonoReferencia[]): Partial<Posicion> | null {
+  const ref = catalogoBonos.find(b => b.ticker === ticker);
+  if (!ref) return null;
+  const cupon = inferirCuponDeCronograma(ref.cronograma, new Date().toISOString().slice(0, 10));
+  return {
+    cupon_tasa: cupon?.tasaAnual ?? null,
+    cupon_frecuencia: cupon?.frecuencia ?? null,
+    cupon_mes: cupon?.mesRef ?? null,
+    vencimiento: ref.vencimiento,
+    calificadora: ref.calificadora,
+    calificacion: ref.calificacion,
+    amortizable: ref.amortizable,
+    valor_residual: ref.amortizable ? ref.valor_residual : null,
+  };
+}
+
+// Mismo formulario de alta que antes vivía inline en PosicionesPage, ahora en modal — mismo estilo
+// visual que "Simular compra" (ver auditoría de UX: una abría tarjeta en la página, la otra popup,
+// para la misma acción de fondo).
+function AgregarModal({ cedearRatios, catalogoBonos, onClose, onAdd, onSaveRatio, onAporte }: {
+  cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; onClose: () => void;
+  onAdd: (p: Partial<Posicion>) => Promise<void>;
+  onSaveRatio: (ticker: string, ratio: number) => void;
+  onAporte: (a: { monto: number; fecha: string; tipo: 'recurrente'; descripcion: string }) => Promise<void>;
+}) {
+  useEscapeClose(onClose);
+  const [form, setForm] = useState<Partial<Posicion>>({ tipo: 'cedear', cantidad: 0, precio_compra: 0 });
+  const [formErr, setFormErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Sin tildar por default: crear un aporte automático cuando en realidad se compró con plata que
+  // ya estaba en el portfolio duplicaría capital en la TIR (ver portfolioTir en engine/irr.ts) —
+  // más vale que el usuario lo tilde a propósito que asumirlo mal.
+  const [capitalNuevo, setCapitalNuevo] = useState(false);
+
+  // Pre-llena el ratio de un CEDEAR desde la base (si existe y el usuario no lo tipeó), o el cupón/
+  // vencimiento/calificación de un bono (ver enrichBono). Nunca pisa un campo que el usuario ya
+  // tenga cargado.
+  const applyAuto = (f: Partial<Posicion>): Partial<Posicion> => {
+    if (f.tipo === 'cedear' && f.ticker && cedearRatios[f.ticker] && !f.ratio_cedear) {
+      return { ...f, ratio_cedear: cedearRatios[f.ticker] };
+    }
+    if (f.tipo === 'bono' && f.ticker) {
+      const auto = enrichBono(f.ticker, catalogoBonos);
+      if (auto) {
+        return {
+          ...f,
+          cupon_tasa: f.cupon_tasa ?? auto.cupon_tasa,
+          cupon_frecuencia: f.cupon_frecuencia ?? auto.cupon_frecuencia,
+          cupon_mes: f.cupon_mes ?? auto.cupon_mes,
+          vencimiento: f.vencimiento ?? auto.vencimiento,
+          calificadora: f.calificadora ?? auto.calificadora,
+          calificacion: f.calificacion ?? auto.calificacion,
+          amortizable: f.amortizable ?? auto.amortizable,
+          valor_residual: f.valor_residual ?? auto.valor_residual,
+        };
+      }
+    }
+    return f;
+  };
+  const bonoDelCatalogo = form.tipo === 'bono' && form.ticker ? catalogoBonos.find(b => b.ticker === form.ticker) : undefined;
+
+  const guardar = async () => {
+    if (!form.ticker) { setFormErr('Ingresá el ticker.'); return; }
+    if (!(Number(form.cantidad) > 0)) { setFormErr('La cantidad debe ser mayor a 0.'); return; }
+    if (!(Number(form.precio_compra) > 0)) { setFormErr('Ingresá el precio de compra.'); return; }
+    if (form.tipo === 'cedear' && !(form.ratio_cedear && form.ratio_cedear > 0)) {
+      setFormErr('Un CEDEAR necesita su ratio (subyacentes por CEDEAR) — sin eso el valor se calcula mal.'); return;
+    }
+    setSaving(true); setFormErr(null);
+    try {
+      await onAdd(form);
+      // Si es CEDEAR y no estaba en la base, la enriquecemos con este ratio.
+      if (form.tipo === 'cedear' && form.ticker && form.ratio_cedear && !cedearRatios[form.ticker]) {
+        onSaveRatio(form.ticker, form.ratio_cedear);
+      }
+      // Aporte automático SOLO si el usuario tildó "es capital nuevo" — evita la carga duplicada
+      // (posición + aporte a mano) sin arriesgar duplicar capital en la TIR cuando en realidad se
+      // compró con plata que ya estaba en el portfolio (ver nota en el estado de capitalNuevo).
+      if (capitalNuevo) {
+        const monto = (Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0);
+        if (monto > 0) {
+          try {
+            await onAporte({
+              monto, fecha: form.fecha_compra || new Date().toISOString().slice(0, 10),
+              tipo: 'recurrente', descripcion: `Compra ${form.ticker}`,
+            });
+          } catch { /* la posición ya se guardó — un aporte fallido no debe parecer que todo falló */ }
+        }
+      }
+      onClose();
+    } catch (e) {
+      setFormErr(`No se pudo guardar: ${e instanceof Error ? e.message : 'error'}`);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-lg" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Agregar posición">
+        <Card className="animate-rise max-h-[90vh] overflow-y-auto">
+          <CardHeader title="Agregar posición" sub="Alta manual — para dimensionar una compra contra el resto de la cartera, usá Simular compra."
+            right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
+          <div className="p-4 grid grid-cols-2 gap-3 text-sm">
+            <Field label="Tipo">
+              <select value={form.tipo} onChange={e => setForm(f => applyAuto({ ...f, tipo: e.target.value as Posicion['tipo'] }))}
+                className={`${inputCls} appearance-none`}>
+                <option value="cedear">CEDEAR</option>
+                <option value="accion">Acción (US)</option>
+                <option value="accion_ar">Acción ARG</option>
+                <option value="etf">ETF</option>
+                <option value="bono">Bono / ON</option>
+                <option value="cash">Cash</option>
+              </select>
+            </Field>
+            <Field label="Ticker">
+              <input placeholder="Ticker" value={form.ticker ?? ''} onChange={e => setForm(f => applyAuto({ ...f, ticker: e.target.value.toUpperCase() }))} className={inputCls} />
+            </Field>
+            <Field label="Cantidad">
+              <input placeholder="Cantidad" type="number" onChange={e => setForm({ ...form, cantidad: Number(e.target.value) })} className={inputCls} />
+            </Field>
+            <Field label="Precio compra (USD)">
+              <input placeholder="Precio compra USD" type="number" onChange={e => setForm({ ...form, precio_compra: Number(e.target.value) })} className={inputCls} />
+            </Field>
+            <Field label="Ratio CEDEAR">
+              <input placeholder={form.tipo === 'cedear' ? 'Ratio (auto)' : 'Ratio (CEDEAR)'} type="number" value={form.ratio_cedear ?? ''} onChange={e => setForm({ ...form, ratio_cedear: Number(e.target.value) || null })} className={inputCls} />
+            </Field>
+            <Field label="% objetivo">
+              <input placeholder="% objetivo (0-100)" type="number" onChange={e => setForm({ ...form, peso_objetivo: e.target.value ? Number(e.target.value) / 100 : null })} className={inputCls} />
+            </Field>
+            <Field label="Fecha de compra">
+              <input type="date" value={form.fecha_compra ?? ''} onChange={e => setForm({ ...form, fecha_compra: e.target.value || null })} className={inputCls} />
+            </Field>
+            <Field label="Sector">
+              <input placeholder="Sector" onChange={e => setForm({ ...form, sector: e.target.value })} className={inputCls} />
+            </Field>
+          </div>
+          {form.tipo === 'bono' && (
+            <div className="px-4 pb-4 grid grid-cols-2 gap-3 text-sm border-t border-line pt-3">
+              <div className="col-span-2 text-[11px] text-ink-600">
+                Datos de cupón (para el flujo de cupones):
+                {bonoDelCatalogo && (
+                  <span className="ml-1.5 text-pos font-medium">
+                    ✓ precargado desde el catálogo de referencia (calificación {bonoDelCatalogo.calificadora ?? 'sin cargar'}{bonoDelCatalogo.amortizable ? ', amortizable' : ''}) — revisá y ajustá si hace falta.
+                  </span>
+                )}
+              </div>
+              <Field label="Tasa cupón (% anual)">
+                <input placeholder="Tasa cupón % anual" type="number" step="0.1" value={form.cupon_tasa != null ? form.cupon_tasa * 100 : ''}
+                  onChange={e => setForm({ ...form, cupon_tasa: e.target.value ? Number(e.target.value) / 100 : null })}
+                  className={inputCls} />
+              </Field>
+              <Field label="Frecuencia">
+                <select value={form.cupon_frecuencia ?? ''} onChange={e => setForm({ ...form, cupon_frecuencia: e.target.value ? Number(e.target.value) : null })}
+                  className={`${inputCls} appearance-none`}>
+                  <option value="">Frecuencia…</option>
+                  <option value="1">Anual</option>
+                  <option value="2">Semestral</option>
+                  <option value="4">Trimestral</option>
+                </select>
+              </Field>
+              <Field label="Mes de pago">
+                <select value={form.cupon_mes ?? ''} onChange={e => setForm({ ...form, cupon_mes: e.target.value ? Number(e.target.value) : null })}
+                  className={`${inputCls} appearance-none`}>
+                  <option value="">Mes de pago…</option>
+                  {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((m, i) => (
+                    <option key={m} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Vencimiento">
+                <input placeholder="Vencimiento" type="date" value={form.vencimiento ?? ''}
+                  onChange={e => setForm({ ...form, vencimiento: e.target.value || null })}
+                  className={inputCls} />
+              </Field>
+            </div>
+          )}
+          <div className="px-4 pb-3">
+            <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
+              <input type="checkbox" checked={capitalNuevo} onChange={e => setCapitalNuevo(e.target.checked)} className="mt-0.5" />
+              <span>
+                ¿Es capital nuevo (recién ingresado, no plata que ya estaba en el portfolio)? Si tildás esto se registra
+                un aporte de {fmtUsd((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), 0)} automáticamente,
+                para no tener que cargarlo dos veces en Aportes.
+              </span>
+            </label>
+          </div>
+          {formErr && <p className="px-4 pb-2 text-xs text-warn">{formErr}</p>}
+          <div className="px-4 pb-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Button>
+            <Button onClick={guardar} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -714,11 +748,15 @@ function nuevaSim(usadas: Set<string>, comprables: Row[], mep: number | null): S
   };
 }
 
-function SimularCompraModal({ openRows, totalMkt, cedearRatios, mep, initial, initialTicker, onClose, onEjecutar }: {
-  openRows: Row[]; totalMkt: number; cedearRatios: Record<string, number>; mep: number | null;
+function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, mep, initial, initialTicker, onClose, onEjecutar, onAporte }: {
+  openRows: Row[]; totalMkt: number; cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; mep: number | null;
   initial?: Posicion; initialTicker?: string; onClose: () => void; onEjecutar: (payload: Partial<Posicion>) => Promise<void>;
+  onAporte: (a: { monto: number; fecha: string; tipo: 'recurrente'; descripcion: string }) => Promise<void>;
 }) {
   useEscapeClose(onClose);
+  // Mismo criterio que AgregarModal: sin tildar por default, para no duplicar capital en la TIR
+  // cuando en realidad se compró con plata que ya estaba en el portfolio.
+  const [capitalNuevo, setCapitalNuevo] = useState(false);
   const comprables = openRows.filter(r => r.p.tipo !== 'cash');
   const [sims, setSims] = useState<SimDraft[]>(() => {
     // Deep-link con ticker (sin posición existente elegida): arranca en modo "nuevo" con ese
@@ -879,7 +917,21 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, mep, initial, in
         const payload: Partial<Posicion> = s.modo === 'existente'
           ? { ticker: d.sel!.p.ticker, tipo: d.sel!.p.tipo, cantidad, precio_compra: d.unitPrice, ratio_cedear: d.sel!.p.ratio_cedear }
           : { ticker: d.ticker, tipo: s.nTipo, cantidad, precio_compra: d.unitPrice, ratio_cedear: s.nTipo === 'cedear' ? Number(s.nRatio) : null };
+        // Bono NUEVO: sin esto se guardaba sin cupón/vencimiento (rompía TIR/duración en el resto de
+        // la app) — mismo enrichBono() que usa AgregarModal, no un camino distinto.
+        if (s.modo === 'nuevo' && s.nTipo === 'bono' && d.ticker) {
+          const auto = enrichBono(d.ticker, catalogoBonos);
+          if (auto) Object.assign(payload, auto);
+        }
         await onEjecutar(payload);
+        // Aporte automático SOLO si el usuario tildó "es capital nuevo" — mismo criterio que
+        // AgregarModal (antes esta ejecución nunca lo registraba, sin importar el checkbox porque
+        // ni siquiera existía: la TIR quedaba subestimando el capital puesto).
+        if (capitalNuevo && costo > 0) {
+          try {
+            await onAporte({ monto: costo, fecha: new Date().toISOString().slice(0, 10), tipo: 'recurrente', descripcion: `Compra ${d.ticker}` });
+          } catch { /* la posición ya se ejecutó — un aporte fallido no debe parecer que todo falló */ }
+        }
         // Sacarla apenas se ejecuta: si una fila más adelante falla, un reintento no debe volver a
         // comprar esta (el catch de abajo NO cierra el modal, así que `sims` sigue visible).
         setSims(prev => prev.filter(x => x.key !== s.key));
@@ -948,6 +1000,12 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, mep, initial, in
                         </select>
                       </Field>
                       {d.esNuevoCedear && <Field label="Ratio CEDEAR" className="col-span-2"><input type="number" value={s.nRatio} onChange={e => patchSim(s.key, { nRatio: e.target.value })} className={inputCls} placeholder="subyacentes por CEDEAR" /></Field>}
+                      {/* Cupón/vencimiento se completan solos SI el ticker está en el catálogo de referencia (ver
+                          enrichBono) — sin catálogo la posición queda sin esos datos, mismo aviso que el Radar
+                          usa para "sin calificar". Para cargarlos a mano hace falta el formulario de Agregar. */}
+                      {s.nTipo === 'bono' && d.ticker && !catalogoBonos.find(b => b.ticker === d.ticker) && (
+                        <p className="col-span-2 text-[11px] text-warn">{d.ticker} no está en el catálogo de referencia — se va a guardar sin cupón ni vencimiento. Para cargarlos a mano, usá "Agregar".</p>
+                      )}
                     </div>
                   )}
 
@@ -1010,6 +1068,15 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, mep, initial, in
               </p>
             </div>
           )}
+          <div className="px-4 pb-3">
+            <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
+              <input type="checkbox" checked={capitalNuevo} onChange={e => setCapitalNuevo(e.target.checked)} className="mt-0.5" />
+              <span>
+                ¿Es capital nuevo (recién ingresado, no plata que ya estaba en el portfolio)? Si tildás esto se registra
+                un aporte por cada compra que ejecutes ({fmtUsd(totalInvertido, 0)} en total), para no tener que cargarlo dos veces en Aportes.
+              </span>
+            </label>
+          </div>
           {objetivosInalcanzables && <p className="px-4 pb-2 text-xs text-warn">Los objetivos combinados suman demasiado del total resultante — no son alcanzables comprando. Bajá alguno.</p>}
           {tickerDuplicado && <p className="px-4 pb-2 text-xs text-warn">Hay un ticker repetido entre las simulaciones activas.</p>}
           {err && <p className="px-4 pb-2 text-xs text-warn">{err}</p>}
