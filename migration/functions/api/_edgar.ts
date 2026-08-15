@@ -188,11 +188,18 @@ function sumByFy(a: AnnualPoint[], b: AnnualPoint[]): AnnualPoint[] {
 // mientras equity (MISMO balance, mismo 10-K) sigue avanzando (caso KO: totalDebt en FY2023 con
 // equity ya en FY2025). No es lo mismo que "sin datos": el usuario necesita verlo para no confiar en
 // un ratio de deuda que ratios.ts descarta en silencio por este mismo motivo (ver computeRatios).
-export function deudaRezagada(equity: AnnualPoint[], totalDebt: AnnualPoint[]): boolean {
-  const ultimoEq = equity.length ? equity[equity.length - 1].fy : null;
-  const ultimoDebt = totalDebt.length ? totalDebt[totalDebt.length - 1].fy : null;
-  return ultimoEq != null && ultimoDebt != null && ultimoDebt < ultimoEq;
+// Generalizada: mismo criterio aplica a cualquier par de series que deberían venir del mismo estado
+// contable — revenue vs. operatingIncome (mismo estado de resultados, caso real GOOGL: revenue
+// clavado en FY2024), interestExpense vs. totalDebt (el interés se anualiza sobre la deuda del MISMO
+// año, caso real MELI: interestExpense clavado en FY2017). ratios.ts aplica el mismo descarte a estos
+// 3 pares (ver computeRatios) — esto es lo que hace que el usuario lo VEA (badge "datos incompletos
+// EDGAR"), no solo que el ratio se calle en silencio.
+export function serieRezagada(ancla: AnnualPoint[], serie: AnnualPoint[]): boolean {
+  const ultimoAncla = ancla.length ? ancla[ancla.length - 1].fy : null;
+  const ultimoSerie = serie.length ? serie[serie.length - 1].fy : null;
+  return ultimoAncla != null && ultimoSerie != null && ultimoSerie < ultimoAncla;
 }
+export const deudaRezagada = serieRezagada;
 
 export interface EdgarFundamentals {
   ticker: string; cik: string; entityName: string | null; shares: number | null;
@@ -241,8 +248,15 @@ export async function fetchFundamentals(env: Env, ticker: string, cik: string): 
     ['dna', P.dna], ['capex', P.capex], ['equity', P.equity], ['totalDebt', P.totalDebt], ['cash', P.cash],
   ];
   const ungradeable = criticos.filter(([, v]) => v.length === 0).map(([k]) => k);
-  if (deudaRezagada(P.equity, P.totalDebt) && !ungradeable.includes('totalDebt')) {
-    ungradeable.push('totalDebt');
+  // Mismos 3 pares que ratios.ts descarta por año cruzado (ver computeRatios): equity/totalDebt
+  // (balance), operatingIncome/revenue (resultados), totalDebt/interestExpense (deuda vs. su interés).
+  const rezagados: [AnnualPoint[], AnnualPoint[], string][] = [
+    [P.equity, P.totalDebt, 'totalDebt'],
+    [P.operatingIncome, P.revenue, 'revenue'],
+    [P.totalDebt, P.interestExpense, 'interestExpense'],
+  ];
+  for (const [ancla, serie, campo] of rezagados) {
+    if (serieRezagada(ancla, serie) && !ungradeable.includes(campo)) ungradeable.push(campo);
   }
 
   // Acciones: total de dei; si falta (multi-clase), se deriva de netIncome / EPS diluido.
