@@ -57,7 +57,7 @@ export const api = {
   indicadores: () => get<Record<string, number | null>>('/api/market/indicadores'),
   // Distancia al máximo de 52s (drawdown) de S&P 500, oro y Merval.
   drawdowns: () => get<Record<string, { actual: number; max: number; dd: number } | null>>('/api/market/drawdowns'),
-  // Histórico de precio semanal (hasta 5 años, Yahoo Finance) para el gráfico de tendencia en Análisis.
+  // Histórico de precio semanal (hasta 10 años, Yahoo Finance) para el gráfico de tendencia en Análisis.
   historico: (ticker: string) =>
     get<{ ticker: string; puntos: PuntoPrecio[]; parcial?: boolean; cached?: boolean; stale?: boolean }>(
       `/api/market/historico?ticker=${encodeURIComponent(ticker)}`),

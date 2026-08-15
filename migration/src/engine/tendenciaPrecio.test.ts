@@ -10,18 +10,38 @@ const semanal = (vals: number[], desde = '2021-01-01'): { fecha: string; close: 
 
 describe('tendenciaPrecio', () => {
   it('serie vacía → todo null, no revienta', () => {
-    expect(tendenciaPrecio([])).toEqual({ actual: null, var52sem: null, var5y: null, distanciaMax: null });
+    expect(tendenciaPrecio([])).toEqual({ actual: null, var52sem: null, var5y: null, varVentana: null, anios: null, distanciaMax: null });
   });
 
-  it('var5y = precio de hoy vs. el primer punto de la ventana', () => {
+  it('varVentana = precio de hoy vs. el primer punto de TODA la ventana recibida', () => {
     const puntos = semanal([100, 110, 90, 150]);
     const t = tendenciaPrecio(puntos);
     expect(t.actual).toBe(150);
-    expect(t.var5y).toBeCloseTo(150 / 100 - 1, 6);
+    expect(t.varVentana).toBeCloseTo(150 / 100 - 1, 6);
+  });
+
+  it('con menos de 5 años de historia, var5y cae al primer punto disponible (igual que varVentana)', () => {
+    const puntos = semanal([100, 110, 90, 150]); // 4 semanas, muy por debajo de 261
+    const t = tendenciaPrecio(puntos);
+    expect(t.var5y).toBeCloseTo(t.varVentana!, 6);
+  });
+
+  it('con más de 5 años de historia (ventana de 10 años), var5y usa SOLO los últimos ~5 años, distinto de varVentana', () => {
+    // 10 años de semanas (~521), precio sube de 50 (hace 10a) a 100 (hace ~5a) y de 100 a 200 (hoy).
+    const vals = Array.from({ length: 521 }, (_, i) => (i < 261 ? 50 + i * (50 / 260) : 100 + (i - 261) * (100 / 259)));
+    const puntos = semanal(vals);
+    const t = tendenciaPrecio(puntos);
+    const actual = vals[520];
+    const inicio5y = vals[521 - 261];
+    const inicioVentana = vals[0];
+    expect(t.var5y).toBeCloseTo(actual / inicio5y - 1, 6);
+    expect(t.varVentana).toBeCloseTo(actual / inicioVentana - 1, 6);
+    expect(t.var5y).not.toBeCloseTo(t.varVentana!, 2);
+    expect(t.anios).toBe(10);
   });
 
   it('var52sem = precio de hoy vs. ~52 semanas atrás (no vs. el inicio de toda la ventana)', () => {
-    // 60 semanas: la semana 60-52=8 (índice 7, 0-based) es el "hace 1 año".
+    // 60 semanas: la semana 60-53=7 (índice, 0-based) es el "hace 1 año".
     const vals = Array.from({ length: 60 }, (_, i) => 100 + i);
     const puntos = semanal(vals);
     const t = tendenciaPrecio(puntos);
@@ -29,11 +49,11 @@ describe('tendenciaPrecio', () => {
     expect(t.var52sem).toBeCloseTo(vals[59] / esperadoInicio1y - 1, 6);
   });
 
-  it('menos de 1 año de historia (IPO reciente): var52sem es null, var5y sí se calcula', () => {
+  it('menos de 1 año de historia (IPO reciente): var52sem es null, varVentana sí se calcula', () => {
     const puntos = semanal([100, 105, 110]); // 3 semanas
     const t = tendenciaPrecio(puntos);
     expect(t.var52sem).toBeNull();
-    expect(t.var5y).toBeCloseTo(110 / 100 - 1, 6);
+    expect(t.varVentana).toBeCloseTo(110 / 100 - 1, 6);
   });
 
   it('distanciaMax: 0 si el precio de hoy ES el máximo de la ventana; negativo si no', () => {

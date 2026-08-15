@@ -57,10 +57,10 @@ export function AnalisisPage() {
   });
   const betaDefault = betaFetched?.beta ?? 1.0;
 
-  // Histórico de precio semanal (Yahoo Finance, hasta 5 años) para la tarjeta de tendencia — ver
+  // Histórico de precio semanal (Yahoo Finance, hasta 10 años) para la tarjeta de tendencia — ver
   // engine/tendenciaPrecio.ts. 24h de staleTime: un precio semanal no necesita refrescarse más
   // seguido (mismo TTL que ya usa el endpoint del lado del server).
-  const [rangoPrecio, setRangoPrecio] = useState<'1a' | '5a'>('1a');
+  const [rangoPrecio, setRangoPrecio] = useState<'1a' | '5a' | '10a'>('1a');
   const chart = useChartTheme();
   const { data: hist, isLoading: histLoading } = useQuery({
     queryKey: ['historico', T],
@@ -83,18 +83,24 @@ export function AnalisisPage() {
     return { ratios: r, dcf: d, sens: s };
   }, [fund, price, beta, riskFree, inp]);
 
-  // Var. 52 sem./5 años/distancia al máximo, siempre sobre la ventana COMPLETA de 5 años — el toggle
-  // 1A/5A de abajo solo cambia qué se DIBUJA, nunca estos números (si no, "Var. 5 años" cambiaría de
-  // valor según qué botón esté apretado, lo cual sería confuso y no tiene sentido).
+  // Var. 52 sem./ventana completa/distancia al máximo, siempre sobre TODA la historia recibida (hasta
+  // 10 años) — el toggle 1A/5A/10A de abajo solo cambia qué se DIBUJA, nunca estos números (si no,
+  // "Var. X años" cambiaría de valor según qué botón esté apretado, lo cual sería confuso). var5y es la
+  // excepción: se calcula siempre sobre los últimos 5 años EXACTOS (no toda la ventana) porque es lo
+  // que se cruza contra dcf.histCagrOE más abajo, que también es un CAGR a 5 años — mezclar horizontes
+  // ahí invalidaría el cruce.
   const tendencia = useMemo(() => tendenciaPrecio(hist?.puntos ?? []), [hist]);
   const puntosGrafico = useMemo(() => {
     const todos = hist?.puntos ?? [];
-    return rangoPrecio === '1a' ? todos.slice(-53) : todos;
+    return rangoPrecio === '1a' ? todos.slice(-53) : rangoPrecio === '5a' ? todos.slice(-261) : todos;
   }, [hist, rangoPrecio]);
   // Cruza precio vs. NEGOCIO (CAGR histórico de owner earnings, no margin of safety ni valor
   // intrínseco: esos dos ya incorporan el precio de hoy, cruzarlos sería comparar el precio contra sí
   // mismo). Ver engine/tendenciaPrecio.ts para el razonamiento completo.
   const lecturaTendencia = dcf ? contrastarConNegocio(tendencia.var5y, dcf.histCagrOE) : null;
+  const etiquetaVentana = tendencia.anios == null ? 'la ventana'
+    : tendencia.anios < 1 ? 'todo el historial' // IPO reciente: "0 años" leería mal
+    : `${tendencia.anios} año${tendencia.anios === 1 ? '' : 's'}`;
 
   // Al abrir un ticker (una vez que hay ratios y cargó lo guardado): si el usuario ya guardó
   // supuestos para ese ticker, los usamos; si no, calculamos los defaults por empresa
@@ -214,7 +220,7 @@ export function AnalisisPage() {
       <Card>
         <CardHeader title="Precio — tendencia" sub="Histórico semanal — Yahoo Finance, referencial."
           right={<ViewToggle value={rangoPrecio} onChange={setRangoPrecio} label="Ventana"
-            options={[{ value: '1a', label: '1 año' }, { value: '5a', label: '5 años' }]} />} />
+            options={[{ value: '1a', label: '1 año' }, { value: '5a', label: '5 años' }, { value: '10a', label: '10 años' }]} />} />
         {histLoading ? (
           <p className="p-4 text-sm text-ink-600">Cargando histórico de precio…</p>
         ) : !hist?.puntos?.length ? (
@@ -224,9 +230,9 @@ export function AnalisisPage() {
             <div className="px-4 pt-3 grid grid-cols-3 gap-3 text-sm">
               <Metric l="Var. 52 sem." v={fmtPct(tendencia.var52sem)}
                 tone={tendencia.var52sem == null ? undefined : tendencia.var52sem >= 0 ? 'pos' : 'neg'} />
-              <Metric l="Var. 5 años" v={fmtPct(tendencia.var5y)}
-                tone={tendencia.var5y == null ? undefined : tendencia.var5y >= 0 ? 'pos' : 'neg'} />
-              <Metric l="Vs. máx. 5 años" v={fmtPct(tendencia.distanciaMax)}
+              <Metric l={`Var. ${etiquetaVentana}`} v={fmtPct(tendencia.varVentana)}
+                tone={tendencia.varVentana == null ? undefined : tendencia.varVentana >= 0 ? 'pos' : 'neg'} />
+              <Metric l={`Vs. máx. ${etiquetaVentana}`} v={fmtPct(tendencia.distanciaMax)}
                 tone={tendencia.distanciaMax != null && tendencia.distanciaMax < -0.10 ? 'warn' : undefined} />
             </div>
             <div className="h-[200px] px-2 pt-2">
