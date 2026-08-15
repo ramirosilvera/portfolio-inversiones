@@ -28,11 +28,16 @@ const persister = createSyncStoragePersister({
   key: 'portafolio-rq-cache',
 });
 
+// buster = commit del build actual: si cambió desde el último deploy, react-query descarta TODA
+// la caché persistida en vez de reutilizarla. Sin esto, un cambio de backend que altera qué trae
+// una query (p. ej. el histórico de precio pasando de 5 a 10 años) queda invisible para cualquiera
+// que ya tuviera esa query persistida — seguiría viendo el dato viejo hasta que venciera su
+// staleTime (hasta 24h para precios/fundamentals), sin que el fix recién deployado se notara.
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister, maxAge: WEEK }}
+      persistOptions={{ persister, maxAge: WEEK, buster: __GIT_COMMIT__ }}
     >
       <AuthProvider>
         <BrowserRouter>
