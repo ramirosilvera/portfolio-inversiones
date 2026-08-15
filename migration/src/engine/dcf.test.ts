@@ -107,6 +107,82 @@ describe('ratios — deuda rezagada respecto del balance (caso KO)', () => {
   });
 });
 
+describe('ratios — revenue rezagado respecto de operatingIncome (caso real GOOGL)', () => {
+  // GOOGL real: revenue clavado en FY2024 mientras opInc/netIncome/equity/etc. ya están en FY2025
+  // (mismo patrón que KO/totalDebt — un alias XBRL que EDGAR dejó de encontrar para ESE concepto
+  // puntual). Sin la guarda, operatingMargin mezclaba el opInc de 2025 con el revenue de 2024.
+  const base: Fundamentals = {
+    ticker: 'GOOGL', cik: '0001652044', entityName: 'ALPHABET INC', shares: 12100,
+    ocf: P([[2023, 101746], [2024, 125299], [2025, 138000]]),
+    netIncome: P([[2023, 73795], [2024, 100118], [2025, 112000]]),
+    dna: P([[2023, 11946], [2024, 15311], [2025, 16500]]),
+    capex: P([[2023, 32251], [2024, 52535], [2025, 58000]]),
+    revenue: P([[2023, 307394], [2024, 350018]]),                    // se queda en FY2024
+    operatingIncome: P([[2023, 84293], [2024, 112390], [2025, 125000]]),
+    epsDiluted: P([[2023, 5.8], [2024, 8.04], [2025, 9.2]]),
+    dividendPerShare: P([[2025, 0.84]]),
+    equity: P([[2023, 283379], [2024, 325084], [2025, 360000]]),
+    totalDebt: P([[2023, 28125], [2024, 24149], [2025, 23000]]),
+    cash: P([[2023, 24048], [2024, 23466], [2025, 25000]]),
+    shortTermInvestments: P([[2025, 60000]]),
+    taxes: P([[2025, 15000]]),
+    pretaxIncome: P([[2025, 127000]]),
+    interestExpense: P([[2025, 400]]),
+  };
+  const r = computeRatios(base, 200, 1.0, 0.043);
+
+  it('operatingMargin queda en null (no mezcla opInc 2025 con revenue 2024)', () => {
+    expect(r.operatingMargin).toBeNull();
+  });
+  it('el resto de los ratios (que sí tienen su par alineado) sigue calculándose normal', () => {
+    expect(r.roic).not.toBeNull();
+    expect(r.debtToEquity).not.toBeNull();
+  });
+  it('si revenue se pone al día, operatingMargin vuelve a calcularse', () => {
+    const alDia: Fundamentals = { ...base, revenue: P([[2023, 307394], [2024, 350018], [2025, 385000]]) };
+    const r2 = computeRatios(alDia, 200, 1.0, 0.043);
+    expect(r2.operatingMargin).toBeCloseTo(125000 / 385000, 6);
+  });
+});
+
+describe('ratios — interestExpense rezagado respecto de la deuda (caso real MELI)', () => {
+  // MELI real: interestExpense clavado en FY2017 mientras totalDebt (y todo el resto) ya está en
+  // FY2025 — mezclarlos daría una tasa de interés implícita (intExp/deuda) sin ningún sentido.
+  const base: Fundamentals = {
+    ticker: 'MELI', cik: '0001099590', entityName: 'MERCADOLIBRE INC', shares: 51,
+    ocf: P([[2023, 2381], [2024, 2856], [2025, 3200]]),
+    netIncome: P([[2023, 987], [2024, 1907], [2025, 2400]]),
+    dna: P([[2023, 300], [2024, 400], [2025, 450]]),
+    capex: P([[2023, 500], [2024, 600], [2025, 650]]),
+    revenue: P([[2023, 14473], [2024, 20949], [2025, 24000]]),
+    operatingIncome: P([[2023, 1439], [2024, 1959], [2025, 2200]]),
+    epsDiluted: P([[2023, 19.14], [2024, 37.07], [2025, 46]]),
+    dividendPerShare: P([]),
+    equity: P([[2023, 2418], [2024, 3831], [2025, 4800]]),
+    totalDebt: P([[2023, 1961], [2024, 2200], [2025, 2500]]),
+    cash: P([[2023, 1936], [2024, 2200], [2025, 2400]]),
+    shortTermInvestments: P([]),
+    taxes: P([[2025, 800]]),
+    pretaxIncome: P([[2025, 3200]]),
+    interestExpense: P([[2015, 20], [2016, 25], [2017, 30]]),   // se queda en FY2017
+  };
+  const r = computeRatios(base, 2000, 1.2, 0.043);
+
+  it('costOfDebt cae al default (rf + 200bps, no la tasa implícita con años cruzados)', () => {
+    // WACC solo entra a ponderar con deuda si costOfDebt no es null — acá SÍ hay deuda actual, pero
+    // el intExp de 2017 se descarta, así que kdPretax queda en el default (rf+2%), no en intExp/deuda.
+    const kdPretaxDefault = 0.043 + 0.02;
+    expect(r.costOfDebt).not.toBeNull();
+    expect(r.costOfDebt!).toBeCloseTo(kdPretaxDefault * (1 - r.effectiveTaxRate), 6);
+  });
+  it('si interestExpense se pone al día, la tasa implícita real entra a jugar', () => {
+    const alDia: Fundamentals = { ...base, interestExpense: P([[2023, 90], [2024, 100], [2025, 110]]) };
+    const r2 = computeRatios(alDia, 2000, 1.2, 0.043);
+    const implied = 110 / 2500;
+    expect(r2.costOfDebt!).toBeCloseTo(implied * (1 - r2.effectiveTaxRate), 6);
+  });
+});
+
 describe('eg5y — split no restatado en EDGAR (caso real NVDA, split 10:1 de 2024)', () => {
   // Valores reales cacheados de fundamentals_cache para NVDA: FY2022 quedó en unidades PRE-split
   // (EDGAR no lo repite como comparativo en ningún 10-K posterior al split, así que nunca hay una

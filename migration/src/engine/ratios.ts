@@ -50,13 +50,19 @@ function primerIndiceConsistente(eps: AnnualPoint[], netIncome: AnnualPoint[]): 
   return 0;
 }
 
+// Último punto (valor + año fiscal) de una serie, o null si está vacía — variante de latest() que
+// además expone el año, para poder comparar dos series entre sí (ver operatingMargin/costOfDebt).
+const latestPoint = (a: AnnualPoint[]): AnnualPoint | null => (a.length ? a[a.length - 1] : null);
+
 export function computeRatios(f: Fundamentals, price: number | null, beta: number, riskFreeRate: number): Ratios {
   const eps = latest(f.epsDiluted);
   const equity = latest(f.equity);
   const shares = f.shares ?? null;
   const dps = latest(f.dividendPerShare) ?? 0;
-  const revenue = latest(f.revenue);
-  const opInc = latest(f.operatingIncome);
+  const revenuePoint = latestPoint(f.revenue);
+  const opIncPoint = latestPoint(f.operatingIncome);
+  const revenue = revenuePoint?.val ?? null;
+  const opInc = opIncPoint?.val ?? null;
   // Equity, deuda y caja salen del MISMO balance (mismo 10-K) → deben quedar en el mismo año fiscal.
   // Si la deuda quedó rezagada uno o más años respecto del equity (ej. EDGAR dejó de encontrar la
   // etiqueta XBRL vigente y la serie se congeló en un año viejo — caso KO: totalDebt clavado en
@@ -100,7 +106,13 @@ export function computeRatios(f: Fundamentals, price: number | null, beta: numbe
   const costOfEquity = riskFreeRate + beta * 0.05;
   // Kd (costo de deuda) después de impuestos. Tasa implícita = gasto por intereses / deuda total
   // (dato real de EDGAR); si no está o da fuera de un rango sensato [0.5%, 20%], usamos rf + 200bps.
-  const intExp = Math.abs(latest(f.interestExpense ?? []) ?? 0);
+  // El gasto por intereses tiene que ser del MISMO año que la deuda que se está anualizando — si
+  // quedó rezagado (mismo patrón que totalDebt vs. equity: un alias XBRL que EDGAR dejó de encontrar,
+  // caso real MELI con interestExpense clavado en FY2017 mientras el resto ya está en FY2025),
+  // mezclarlo con la deuda actual da una tasa implícita que no significa nada. Mejor caer al default
+  // (rf + 200bps) que fabricar un Kd con años cruzados.
+  const intExpPoint = latestPoint(f.interestExpense ?? []);
+  const intExp = intExpPoint != null && debtPoint != null && intExpPoint.fy === debtPoint.fy ? Math.abs(intExpPoint.val) : 0;
   let kdPretax = riskFreeRate + 0.02;
   if (debtSafe > 0 && intExp > 0) {
     const implied = intExp / debtSafe;
@@ -125,7 +137,10 @@ export function computeRatios(f: Fundamentals, price: number | null, beta: numbe
     divYield: price ? dps / price : null,
     // payout con EPS ≤ 0 daría un número negativo engañoso (dividendo pagado con pérdidas) → null.
     payout: eps && eps > 0 ? dps / eps : null,
-    operatingMargin: opInc != null && revenue ? opInc / revenue : null,
+    // revenue/operatingIncome vienen del mismo estado de resultados (mismo 10-K) — si uno quedó
+    // rezagado (caso real GOOGL: revenue clavado en FY2024 con todo lo demás ya en FY2025), el
+    // margen mezclaría dos años distintos. Mismo criterio que debtToEquity/costOfDebt.
+    operatingMargin: opInc != null && revenue && revenuePoint!.fy === opIncPoint!.fy ? opInc / revenue : null,
     // Equity NEGATIVO (habitual por recompras: MCD, SBUX, PM…) daría D/E negativo, que el score
     // interpretaba como solidez perfecta (100/100). Igual criterio que roic/netDebtToEbitda → null.
     // Deuda rezagada (debt === null) → null también, no 0 (ver comentario más arriba).

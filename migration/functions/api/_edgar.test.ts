@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnnual, ultimoAnio, deudaRezagada, type Raw } from './_edgar';
+import { parseAnnual, ultimoAnio, deudaRezagada, serieRezagada, type Raw } from './_edgar';
 import type { AnnualPoint } from './_edgar';
 
 const A = (vals: [number, number][]): AnnualPoint[] => vals.map(([fy, val]) => ({ fy, end: `${fy}-12-31`, val }));
@@ -73,6 +73,18 @@ describe('deudaRezagada — detectar totalDebt congelado vs. el balance (caso KO
     expect(deudaRezagada([], A([[2023, 37507]]))).toBe(false);
     expect(deudaRezagada(A([[2023, 24846]]), [])).toBe(false);
     expect(deudaRezagada([], [])).toBe(false);
+  });
+});
+
+describe('serieRezagada — generalizada a otros pares (casos reales GOOGL/MELI)', () => {
+  it('revenue rezagado respecto de operatingIncome (mismo estado de resultados, caso GOOGL)', () => {
+    expect(serieRezagada(A([[2023, 84293], [2024, 112390], [2025, 125000]]), A([[2023, 307394], [2024, 350018]]))).toBe(true);
+  });
+  it('interestExpense rezagado respecto de totalDebt (caso MELI, clavado años atrás)', () => {
+    expect(serieRezagada(A([[2023, 1961], [2024, 2200], [2025, 2500]]), A([[2015, 20], [2016, 25], [2017, 30]]))).toBe(true);
+  });
+  it('deudaRezagada sigue siendo el mismo alias de siempre (no un caso especial aparte)', () => {
+    expect(deudaRezagada).toBe(serieRezagada);
   });
 });
 
