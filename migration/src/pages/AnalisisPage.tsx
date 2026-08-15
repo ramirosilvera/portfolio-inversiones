@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Sparkles, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Sparkles, CheckCircle2, AlertTriangle, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
 import { api } from '../lib/api';
 import { useQuotes, useMacro } from '../hooks/usePosiciones';
 import { useCikMap } from '../hooks/useCikMap';
 import { usePortfolios } from '../hooks/usePortfolios';
+import { useChartTheme } from '../hooks/usePrefs';
 import { computeRatios } from '../engine/ratios';
 import { computeDcf, sensitivityTable, dcfDefaultsFor, DEFAULT_DCF_INPUTS, OE_METHOD_DEFAULT, type DcfInputs, type CapexMethod, type OeMethod } from '../engine/dcf';
+import { tendenciaPrecio, contrastarConNegocio } from '../engine/tendenciaPrecio';
 import { useDcfInputs } from '../hooks/useDcfInputs';
 import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA';
-import { Card, CardHeader, Button, Badge, Stat, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Stat, ViewToggle, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
 import type { Fundamentals } from '../types/domain';
 
 export function AnalisisPage() {
@@ -54,6 +57,18 @@ export function AnalisisPage() {
   });
   const betaDefault = betaFetched?.beta ?? 1.0;
 
+  // Histórico de precio semanal (Yahoo Finance, hasta 5 años) para la tarjeta de tendencia — ver
+  // engine/tendenciaPrecio.ts. 24h de staleTime: un precio semanal no necesita refrescarse más
+  // seguido (mismo TTL que ya usa el endpoint del lado del server).
+  const [rangoPrecio, setRangoPrecio] = useState<'1a' | '5a'>('1a');
+  const chart = useChartTheme();
+  const { data: hist, isLoading: histLoading } = useQuery({
+    queryKey: ['historico', T],
+    enabled: !!T,
+    queryFn: () => api.historico(T),
+    staleTime: 24 * 60 * 60_000,
+  });
+
   const seededFor = useRef<string | null>(null);
   useEffect(() => { seededFor.current = null; setSaveMsg(null); }, [T]);
 
@@ -67,6 +82,19 @@ export function AnalisisPage() {
       [inp.d - 0.02, inp.d, inp.d + 0.02, inp.d + 0.04]);
     return { ratios: r, dcf: d, sens: s };
   }, [fund, price, beta, riskFree, inp]);
+
+  // Var. 52 sem./5 años/distancia al máximo, siempre sobre la ventana COMPLETA de 5 años — el toggle
+  // 1A/5A de abajo solo cambia qué se DIBUJA, nunca estos números (si no, "Var. 5 años" cambiaría de
+  // valor según qué botón esté apretado, lo cual sería confuso y no tiene sentido).
+  const tendencia = useMemo(() => tendenciaPrecio(hist?.puntos ?? []), [hist]);
+  const puntosGrafico = useMemo(() => {
+    const todos = hist?.puntos ?? [];
+    return rangoPrecio === '1a' ? todos.slice(-53) : todos;
+  }, [hist, rangoPrecio]);
+  // Cruza precio vs. NEGOCIO (CAGR histórico de owner earnings, no margin of safety ni valor
+  // intrínseco: esos dos ya incorporan el precio de hoy, cruzarlos sería comparar el precio contra sí
+  // mismo). Ver engine/tendenciaPrecio.ts para el razonamiento completo.
+  const lecturaTendencia = dcf ? contrastarConNegocio(tendencia.var5y, dcf.histCagrOE) : null;
 
   // Al abrir un ticker (una vez que hay ratios y cargó lo guardado): si el usuario ya guardó
   // supuestos para ese ticker, los usamos; si no, calculamos los defaults por empresa
@@ -176,6 +204,69 @@ export function AnalisisPage() {
         <Stat label="Margen de seguridad" value={fmtPct(dcf.marginOfSafety)} hint={`exigido ${fmtPct(inp.mosRequired)}`} />
         <Stat label="Owner earnings norm." value={fmtUsdCompact(dcf.ownerEarningsNorm)} hint={oeHint} />
       </div>
+
+      {/* Precio — tendencia. Deliberadamente NO se dibuja el valor intrínseco sobre el gráfico: esa
+          línea se calcula con datos de HOY (shares, owner earnings actuales) y pintarla cruzando 5
+          años de historia insinuaría que valía eso en el pasado, lo cual es falso. La comparación
+          precio-vs-valor ya está arriba (Precio / Valor intrínseco / MoS); acá se cruza el precio
+          contra el NEGOCIO (owner earnings), que es una pregunta distinta y más útil: "esta caída,
+          ¿es pánico de mercado o el negocio también se deterioró?". */}
+      <Card>
+        <CardHeader title="Precio — tendencia" sub="Histórico semanal — Yahoo Finance, referencial."
+          right={<ViewToggle value={rangoPrecio} onChange={setRangoPrecio} label="Ventana"
+            options={[{ value: '1a', label: '1 año' }, { value: '5a', label: '5 años' }]} />} />
+        {histLoading ? (
+          <p className="p-4 text-sm text-ink-600">Cargando histórico de precio…</p>
+        ) : !hist?.puntos?.length ? (
+          <p className="p-4 text-sm text-ink-600">Histórico de precio no disponible por ahora.</p>
+        ) : (
+          <>
+            <div className="px-4 pt-3 grid grid-cols-3 gap-3 text-sm">
+              <Metric l="Var. 52 sem." v={fmtPct(tendencia.var52sem)}
+                tone={tendencia.var52sem == null ? undefined : tendencia.var52sem >= 0 ? 'pos' : 'neg'} />
+              <Metric l="Var. 5 años" v={fmtPct(tendencia.var5y)}
+                tone={tendencia.var5y == null ? undefined : tendencia.var5y >= 0 ? 'pos' : 'neg'} />
+              <Metric l="Vs. máx. 5 años" v={fmtPct(tendencia.distanciaMax)}
+                tone={tendencia.distanciaMax != null && tendencia.distanciaMax < -0.10 ? 'warn' : undefined} />
+            </div>
+            <div className="h-[200px] px-2 pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={puntosGrafico} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+                  <CartesianGrid stroke={chart.grid} strokeDasharray="3 3" />
+                  <XAxis dataKey="fecha" stroke={chart.axis} fontSize={10} minTickGap={48}
+                    tickFormatter={f => f.slice(0, 7)} />
+                  <YAxis stroke={chart.axis} fontSize={11} width={56} domain={['auto', 'auto']}
+                    tickFormatter={v => fmtUsd(v, 0)} />
+                  <Tooltip formatter={(v: number) => [fmtUsd(v), 'Precio']}
+                    contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 12, color: chart.tooltipText, fontSize: 12 }} />
+                  <Area type="monotone" dataKey="close" stroke="#4F97D4" fill="#4F97D4" fillOpacity={0.12} strokeWidth={1.5} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            {hist.parcial && (
+              <p className="px-4 pt-1 text-[11px] text-ink-500">Historial limitado — {T} parece cotizar hace menos de un año.</p>
+            )}
+            {lecturaTendencia && (
+              <div className={`mx-4 mt-3 mb-2 rounded-xl px-3 py-2.5 text-[11px] flex items-start gap-2 ring-1 ring-inset ${
+                lecturaTendencia === 'posible-panico' ? 'bg-pos/10 ring-pos/25'
+                : lecturaTendencia === 'posible-deterioro' ? 'bg-neg/10 ring-neg/25' : 'bg-canvas ring-line'}`}>
+                {lecturaTendencia === 'posible-deterioro'
+                  ? <TrendingDown className="w-4 h-4 shrink-0 text-neg mt-0.5" />
+                  : <TrendingUp className="w-4 h-4 shrink-0 text-pos mt-0.5" />}
+                <p className="text-ink-700">
+                  {lecturaTendencia === 'posible-panico' &&
+                    <>Precio {fmtPct(tendencia.var5y)} en 5 años, pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
+                  {lecturaTendencia === 'posible-deterioro' &&
+                    <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — nada acá contradice que el negocio se haya deteriorado. Un precio bajo por sí solo no es garantía de descuento.</>}
+                  {lecturaTendencia === 'sin-señal-clara' &&
+                    <>Sin movimiento fuerte de precio ni de Owner Earnings en 5 años — no hay una lectura clara de pánico ni de deterioro.</>}
+                </p>
+              </div>
+            )}
+            <p className="px-4 pb-3 text-[10px] text-ink-500">Puede diferir levemente del precio de arriba (Finnhub/FMP) — esta serie es de Yahoo Finance.</p>
+          </>
+        )}
+      </Card>
 
       {/* Ratios */}
       <Card>

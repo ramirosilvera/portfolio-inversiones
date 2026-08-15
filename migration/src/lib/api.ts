@@ -1,6 +1,7 @@
 // Typed fetchers for the Pages Functions (all external data goes through them).
 import type { Fundamentals } from '../types/domain';
 import type { DividendoInfo } from '../engine/dividendProjection';
+import type { PuntoPrecio } from '../engine/tendenciaPrecio';
 import { supabase } from './supabase';
 
 // Las Functions exigen sesión (si no, cualquiera podría llamarlas y quemar cuota paga de
@@ -56,6 +57,10 @@ export const api = {
   indicadores: () => get<Record<string, number | null>>('/api/market/indicadores'),
   // Distancia al máximo de 52s (drawdown) de S&P 500, oro y Merval.
   drawdowns: () => get<Record<string, { actual: number; max: number; dd: number } | null>>('/api/market/drawdowns'),
+  // Histórico de precio semanal (hasta 5 años, Yahoo Finance) para el gráfico de tendencia en Análisis.
+  historico: (ticker: string) =>
+    get<{ ticker: string; puntos: PuntoPrecio[]; parcial?: boolean; cached?: boolean; stale?: boolean }>(
+      `/api/market/historico?ticker=${encodeURIComponent(ticker)}`),
   status: () => get<{ precios: string | null; macro: string | null; fundamentals: string | null; last: string | null }>('/api/market/status'),
   bonos: () => get<Record<string, number>>('/api/market/bonos'),
   dividendos: (tickers: string[]) =>
