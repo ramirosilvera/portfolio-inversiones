@@ -227,7 +227,7 @@ export const fmtUsd = (n: number | null | undefined, dp = 2): string =>
 // Compacto para magnitudes grandes (millones M / miles de millones B / billones T, escala en-US) —
 // evita que desborden las cajas. Debajo de 1M muestra el número completo (importes chicos exactos).
 // Decimales adaptativos: 2 si el número guía es <10 (US$1,23 M), 1 si <100, 0 si no (conserva cifras).
-export const fmtUsdCompact = (n: number | null | undefined): string => {
+export const fmtUsdCompact = (n: number | null | undefined, opts?: { k?: boolean }): string => {
   if (n == null || !Number.isFinite(n)) return '—';
   const abs = Math.abs(n), sign = n < 0 ? '-' : '';
   // Siempre al menos 1 decimal: con 0 decimales, 143,577 M se mostraba "US$144 B" y no se podía
@@ -236,6 +236,15 @@ export const fmtUsdCompact = (n: number | null | undefined): string => {
   if (abs >= 1e12) return fmt(abs / 1e12, 'T');
   if (abs >= 1e9) return fmt(abs / 1e9, 'B');
   if (abs >= 1e6) return fmt(abs / 1e6, 'M');
+  // opts.k, opcional: compacta también desde 1.000 (US$18K) — pensado para tiles angostos (3
+  // columnas dentro de una tarjeta del Dashboard, ~90px cada una) donde un importe de 5 cifras
+  // ("US$18,294") desborda a dos líneas. Sin espacio y sin decimal desde 10K (más corto que el
+  // formato M/B/T de arriba, que sí tiene espacio — ahí el contexto es más ancho). El resto de los
+  // usos de fmtUsdCompact no pasa este flag, así que su comportamiento no cambia.
+  if (opts?.k && abs >= 1e3) {
+    const v = abs / 1e3;
+    return `${sign}US$${v.toFixed(v < 10 ? 1 : 0)}K`;
+  }
   return fmtUsd(n, 0);
 };
 export const fmtNum = (n: number | null | undefined, dp = 2): string =>
