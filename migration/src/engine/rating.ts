@@ -10,10 +10,14 @@
 // con "grado de inversión nacional" como si fueran lo mismo — ver `escala` en el resultado, y cada
 // lugar de la UI que muestra el grado aclara a qué escala corresponde).
 //
-// FIX SCR (afiliada local de Fitch) y Moody's Local Argentina publican sus categorías con la MISMA
-// estructura de letras/números que sus controlantes globales (AAA(arg)...D(arg); Aaa.ar...C.ar),
-// solo que aplicada y comparada dentro del universo de emisores argentinos — así que reutilizamos
-// las mismas tablas de letras, normalizando el sufijo de escala nacional antes de buscar.
+// FIX SCR (afiliada local de Fitch) Y Moody's Local Argentina publican su escala nacional con la
+// notación de LETRAS +/- de S&P/Fitch (AAA.ar, AA+.ar, A+.ar, BBB-.ar...) — no con la notación
+// numérica (Aaa, Aa1, A2, Baa3...) que Moody's Investors Service usa en su escala GLOBAL. Verificado
+// contra la escala pública de Moody's Local Argentina (moodyslocal.com.ar) y una acción de rating real
+// (CABA: de AA+.ar a AAA.ar) — antes este archivo asumía que Moody's Local usaba la tabla numérica,
+// lo que hacía fallar silenciosamente cualquier nota con +/- (ej. "A+.ar" clasificaba null pese a ser
+// grado de inversión real, caso detectado en MIC3D). Por eso ambas calificadoras locales reusan
+// ESCALA_SP_FITCH, no ESCALA_MOODYS — la tabla numérica solo aplica a la calificadora GLOBAL "Moody's".
 // =============================================================================
 
 export type GradoCredito = 'grado_inversion' | 'especulativo' | 'default';
@@ -47,9 +51,9 @@ const ESCALA_SP_FITCH: Record<string, GradoCredito> = {
   D: 'default', RD: 'default', SD: 'default',
 };
 
-// Moody's usa notación numérica (1/2/3) en vez de +/-. Baa3 es el último escalón de grado de
-// inversión; C es el piso (default/en incumplimiento). Moody's Local Argentina usa la MISMA
-// estructura en su escala nacional (Aaa.ar...C.ar).
+// Moody's (global) usa notación numérica (1/2/3) en vez de +/-. Baa3 es el último escalón de grado
+// de inversión; C es el piso (default/en incumplimiento). Moody's Local Argentina NO usa esta tabla
+// — ver el comentario sobre ESCALA_SP_FITCH más arriba.
 const ESCALA_MOODYS: Record<string, GradoCredito> = {
   AAA: 'grado_inversion', AA1: 'grado_inversion', AA2: 'grado_inversion', AA3: 'grado_inversion',
   A1: 'grado_inversion', A2: 'grado_inversion', A3: 'grado_inversion',
@@ -86,7 +90,7 @@ export function clasificarRating(calificadora: string | null | undefined, califi
     const g = ESCALA_SP_FITCH[nota]; return g ? { grado: g, escala: 'local' } : null;
   }
   if (calificadora === "Moody's Local") {
-    const g = ESCALA_MOODYS[nota]; return g ? { grado: g, escala: 'local' } : null;
+    const g = ESCALA_SP_FITCH[nota]; return g ? { grado: g, escala: 'local' } : null;
   }
   return null; // 'Otra': no conocemos su notación, no clasificamos
 }

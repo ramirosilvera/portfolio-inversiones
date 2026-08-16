@@ -56,14 +56,27 @@ describe('clasificarRating — FIX SCR y Moody\'s Local (escala NACIONAL argenti
     expect(clasificarRating('FIX SCR', 'aaa(ARG)')).toEqual({ grado: 'grado_inversion', escala: 'local' });
   });
 
-  it('Moody\'s Local clasifica con la tabla numérica de Moody\'s, marcando escala "local"', () => {
-    expect(clasificarRating("Moody's Local", 'Baa3')).toEqual({ grado: 'grado_inversion', escala: 'local' });
-    expect(clasificarRating("Moody's Local", 'Ba1')).toEqual({ grado: 'especulativo', escala: 'local' });
+  // Moody's Local Argentina publica su escala nacional con notación de LETRAS +/- (AAA.ar, AA+.ar,
+  // A+.ar, BBB-.ar...), la misma que S&P/Fitch — NO la notación numérica (Aaa/Aa1/A2/Baa3) que usa
+  // Moody's Investors Service en su escala global. Verificado contra la escala pública de Moody's
+  // Local Argentina y una acción de rating real (CABA: de AA+.ar a AAA.ar). Caso real que detectó
+  // este bug: MIC3D (Mirgor), calificado "A+.ar" por Moody's Local, clasificaba null (parecía "sin
+  // calificar" en la UI) porque "A+" no existe en la tabla numérica de Moody's.
+  it('Moody\'s Local clasifica con la tabla de LETRAS +/- (S&P/Fitch), marcando escala "local"', () => {
+    expect(clasificarRating("Moody's Local", 'AAA')).toEqual({ grado: 'grado_inversion', escala: 'local' });
+    expect(clasificarRating("Moody's Local", 'A+')).toEqual({ grado: 'grado_inversion', escala: 'local' });
+    expect(clasificarRating("Moody's Local", 'BBB-')).toEqual({ grado: 'grado_inversion', escala: 'local' });
+    expect(clasificarRating("Moody's Local", 'BB+')).toEqual({ grado: 'especulativo', escala: 'local' });
   });
 
   it('acepta el sufijo ".ar" y lo normaliza antes de clasificar', () => {
-    expect(clasificarRating("Moody's Local", 'Baa3.ar')).toEqual({ grado: 'grado_inversion', escala: 'local' });
-    expect(clasificarRating("Moody's Local", 'Aaa.ar')).toEqual({ grado: 'grado_inversion', escala: 'local' });
+    expect(clasificarRating("Moody's Local", 'A+.ar')).toEqual({ grado: 'grado_inversion', escala: 'local' });
+    expect(clasificarRating("Moody's Local", 'AAA.ar')).toEqual({ grado: 'grado_inversion', escala: 'local' });
+  });
+
+  it('NO clasifica con la notación numérica de Moody\'s global (esa tabla es solo para la calificadora "Moody\'s")', () => {
+    expect(clasificarRating("Moody's Local", 'Baa3')).toBeNull();
+    expect(clasificarRating("Moody's Local", 'Ba1')).toBeNull();
   });
 
   it('NUNCA mezcla escala global y local en el mismo grado sin distinguir — "escala" siempre lo indica', () => {
