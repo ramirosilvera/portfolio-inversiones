@@ -72,7 +72,8 @@ export function AnalisisBonoPage() {
             <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Stat label="Precio" value={fmtUsd(calc.px)} />
               <Stat label="Paridad" value={calc.paridad != null ? `${fmtNum(calc.paridad, 1)}%` : '—'} />
-              <Stat label="TIR" value={calc.tir != null ? fmtPct(calc.tir) : '—'} />
+              <Stat label="TIR" value={calc.tir != null ? fmtPct(calc.tir) : '—'}
+                hint="Tasa efectiva anual (compone los pagos según su frecuencia) — no es directamente comparable contra el cupón nominal simple. Un bono que paga más de una vez al año puede tener TIR por encima del cupón incluso arriba de la par." />
               <Stat label="Rendimiento corriente" value={calc.rendCorriente != null ? fmtPct(calc.rendCorriente) : '—'}
                 hint="Cupón anualizado / precio — a diferencia de la TIR, ignora la ganancia/pérdida de capital hasta el vencimiento" />
               <Stat label="Duración (Macaulay)" value={calc.duracion ? `${fmtNum(calc.duracion.macaulay, 1)} años` : '—'} />
