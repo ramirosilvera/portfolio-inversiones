@@ -59,6 +59,27 @@ describe('parseAnnual — el año sale del CIERRE del período, no de `fy`', () 
   });
 });
 
+describe('parseAnnual — 20-F (emisor privado extranjero, caso real TSM/ASML) cuenta como anual', () => {
+  it('un 20-F con datos us-gaap taggeados ya NO se descarta entero (antes solo se aceptaba 10-K)', () => {
+    const serie = parseAnnual([
+      r('2023-01-01', '2023-12-31', 5000, 2025, '2026-02-20', '20-F'),
+      r('2024-01-01', '2024-12-31', 6000, 2025, '2026-02-20', '20-F'),
+    ]);
+    expect(serie.map(p => p.fy)).toEqual([2023, 2024]);
+    expect(serie.map(p => p.val)).toEqual([5000, 6000]);
+  });
+
+  it('20-F/A (enmienda) también cuenta, mismo criterio que 10-K/A', () => {
+    const serie = parseAnnual([r('2024-01-01', '2024-12-31', 100, 2024, '2025-02-20', '20-F/A')]);
+    expect(serie).toHaveLength(1);
+  });
+
+  it('6-K (el equivalente a un 10-Q para un emisor extranjero) sigue excluido — no es un informe anual', () => {
+    const serie = parseAnnual([r('2025-10-01', '2025-12-31', 999, 2025, '2026-05-01', '6-K')]);
+    expect(serie).toHaveLength(0);
+  });
+});
+
 describe('deudaRezagada — detectar totalDebt congelado vs. el balance (caso KO)', () => {
   it('totalDebt más de un año atrás del equity (mismo balance) → rezagada', () => {
     expect(deudaRezagada(A([[2023, 24846], [2024, 25332], [2025, 26000]]), A([[2021, 38116], [2022, 36377], [2023, 37507]]))).toBe(true);

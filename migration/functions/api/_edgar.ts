@@ -125,11 +125,19 @@ async function fetchFirst(env: Env, cik: string, taxonomy: string, aliases: read
   return mejor;
 }
 
-// Annual flow series: only 10-K FY points; when a period repeats across filings,
+// Formularios ANUALES reales: 10-K (emisor doméstico) y 20-F (emisor privado extranjero — ej. TSM,
+// ASML — Form 20-F es su equivalente al 10-K, la SEC lo marca así en `form` sea cual sea la
+// taxonomía usada). Antes solo se aceptaba 10-K: un 20-F que SÍ tenía us-gaap taggeado (algunos
+// emisores extranjeros lo hacen, no es exclusivo de IFRS) quedaba descartado ENTERO por esto — no
+// "faltaban algunos conceptos" (eso ya lo cubre `ungradeable`), la serie completa quedaba vacía y
+// el ticker fallaba con "EDGAR no respondió" aunque la causa fuera permanente, no un rate-limit.
+const FORM_ANUAL_RE = /^(10-K|20-F)/;
+
+// Annual flow series: only 10-K/20-F FY points; when a period repeats across filings,
 // keep the latest-filed value; sorted oldest→newest.
 export function parseAnnual(raw: Raw[] | null): AnnualPoint[] {
   if (!raw) return [];
-  const tenK = raw.filter(x => (x.form ?? '').startsWith('10-K') && (x.fp === 'FY' || x.fp == null));
+  const tenK = raw.filter(x => FORM_ANUAL_RE.test(x.form ?? '') && (x.fp === 'FY' || x.fp == null));
   // Conceptos de FLUJO (traen `start`): quedarnos solo con períodos ANUALES (~12 meses). Un 10-K
   // también publica trimestres que terminan el mismo día del cierre; sin este filtro, un Q4 podía
   // colarse como si fuera el año entero y subestimar el flujo.
