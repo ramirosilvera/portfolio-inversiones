@@ -47,7 +47,11 @@ export const CONCEPTS = {
   equity: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
   totalDebtLong: ['LongTermDebtNoncurrent', 'LongTermDebt'],
   totalDebtShort: ['LongTermDebtCurrent', 'DebtCurrent'],
-  cash: ['CashAndCashEquivalentsAtCarryingValue'],
+  // El segundo alias es el tag que reemplazó al primero para muchas empresas grandes desde la ASU
+  // 2016-18 (~2018 en adelante): reporta caja + caja restringida en una sola línea. Sin este alias,
+  // cualquier empresa que haya migrado a ese tag (caso real: V) queda con `cash` vacío entero, aunque
+  // sí reporte caja — solo bajo un nombre XBRL más nuevo que el único que se probaba antes.
+  cash: ['CashAndCashEquivalentsAtCarryingValue', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],
   shortTermInvestments: ['ShortTermInvestments', 'AvailableForSaleSecuritiesCurrent'],
   taxes: ['IncomeTaxExpenseBenefit'],
   pretaxIncome: ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments'],
