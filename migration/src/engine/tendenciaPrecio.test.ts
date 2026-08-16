@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tendenciaPrecio, contrastarConNegocio } from './tendenciaPrecio';
+import { tendenciaPrecio, contrastarConNegocio, anualizar } from './tendenciaPrecio';
 
 const semanal = (vals: number[], desde = '2021-01-01'): { fecha: string; close: number }[] =>
   vals.map((close, i) => {
@@ -64,18 +64,34 @@ describe('tendenciaPrecio', () => {
   });
 });
 
+describe('anualizar', () => {
+  it('convierte un acumulado de N años a la tasa anual equivalente (nunca N años → N × la tasa)', () => {
+    expect(anualizar(1.0, 5)).toBeCloseTo(Math.pow(2, 0.2) - 1, 6); // +100% en 5 años ≈ +14.87% anual, no +100%/año
+    expect(anualizar(0, 5)).toBeCloseTo(0, 10);
+  });
+});
+
 describe('contrastarConNegocio — el falsificador de value trap', () => {
   it('precio cayó pero el negocio (owner earnings) NO cayó → posible pánico, no deterioro', () => {
-    expect(contrastarConNegocio(-0.20, 0.12)).toBe('posible-panico');
-    expect(contrastarConNegocio(-0.20, 0)).toBe('posible-panico'); // negocio estable, no cayó
+    // -40% acumulado en 5 años ≈ -9.7% anual: una caída real, no ruido, incluso ya anualizada.
+    expect(contrastarConNegocio(-0.40, 0.12)).toBe('posible-panico');
+    expect(contrastarConNegocio(-0.40, 0)).toBe('posible-panico'); // negocio estable, no cayó
   });
 
   it('precio cayó Y el negocio también cayó → posible deterioro real, nada contradice la caída', () => {
-    expect(contrastarConNegocio(-0.20, -0.15)).toBe('posible-deterioro');
+    expect(contrastarConNegocio(-0.40, -0.15)).toBe('posible-deterioro');
   });
 
   it('precio subió pero el negocio cayó → euforia sin respaldo, también deterioro', () => {
     expect(contrastarConNegocio(0.30, -0.10)).toBe('posible-deterioro');
+  });
+
+  it('caída acumulada chica en 5 años (cruzaba el umbral SIN anualizar; ya no) → sin señal clara', () => {
+    // -20% acumulado en 5 años ≈ -4.4% anual — por debajo del umbral de 5 puntos ANUALES, aunque el
+    // "20%" crudo se vea grande a simple vista. Antes de comparar siempre tasas anualizadas, esto
+    // disparaba 'posible-panico' igual (comparaba el acumulado crudo de precio contra un umbral
+    // pensado para una tasa anual) — exactamente la inconsistencia de unidades que este test evita.
+    expect(contrastarConNegocio(-0.20, 0.12)).toBe('sin-señal-clara');
   });
 
   it('movimientos chicos (<5%) → sin señal clara, no fuerza una lectura de ruido', () => {

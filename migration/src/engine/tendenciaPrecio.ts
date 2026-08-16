@@ -60,13 +60,30 @@ export function tendenciaPrecio(puntos: PuntoPrecio[]): TendenciaPrecio {
 // varVentana mezclaría dos horizontes distintos y el cruce dejaría de ser válido.
 export type LecturaTendencia = 'posible-panico' | 'posible-deterioro' | 'posible-recalentamiento' | 'sin-señal-clara';
 
-// Umbral 5%: por debajo de eso es ruido de corto plazo, no una tendencia real que valga la pena leer.
+// Umbral 5 PUNTOS ANUALES: por debajo de eso es ruido, no una tendencia real que valga la pena leer.
+// Se aplica siempre sobre tasas anualizadas (nunca un acumulado crudo) — ver anualizar() abajo.
 const UMBRAL = 0.05;
+
+// Anualiza un retorno acumulado sobre `anios` años (ej. 1.0 acumulado en 5 años → ~14.9% anual, no
+// "100%"). Se expone porque tanto contrastarConNegocio() como la UI (tarjeta de precio, Chequeos
+// Munger) necesitan la MISMA conversión: comparar (o mostrar) un acumulado de N años contra una tasa
+// anual (un CAGR) sin convertir primero es aritmética inválida — confunde "cayó/subió X% en total en
+// N años" con "cae/sube X% CADA año", dos magnitudes muy distintas para N > 1.
+export function anualizar(varAcumulado: number, anios: number): number {
+  return Math.pow(1 + varAcumulado, 1 / anios) - 1;
+}
 
 export function contrastarConNegocio(varPrecio: number | null, cagrOwnerEarnings: number | null): LecturaTendencia | null {
   if (varPrecio == null || cagrOwnerEarnings == null) return null;
-  const precioCayo = varPrecio < -UMBRAL;
-  const precioSubio = varPrecio > UMBRAL;
+  // varPrecio es SIEMPRE un acumulado a 5 años exactos (ver arriba) — se anualiza ACÁ, una sola vez,
+  // y de ahí en más TODO el cruce compara tasas anuales entre sí (nunca el acumulado crudo contra el
+  // CAGR anual del negocio). Antes solo se anualizaba para el chequeo de recalentamiento; pánico y
+  // deterioro seguían comparando el acumulado crudo de 5 años contra el mismo umbral de 5 puntos que
+  // el CAGR anual — con eso, una caída de precio de apenas 6% ACUMULADA en 5 años (~1,2%/año, ruido)
+  // ya disparaba "posible pánico" con la misma vara que una caída del NEGOCIO del 5% POR AÑO, sostenida.
+  const priceCagr = anualizar(varPrecio, 5);
+  const precioCayo = priceCagr < -UMBRAL;
+  const precioSubio = priceCagr > UMBRAL;
   const negocioCayo = cagrOwnerEarnings < -UMBRAL;
   if (precioCayo && !negocioCayo) return 'posible-panico';     // el mercado castigó más de lo que cayó (o sin caer) el negocio
   if (precioCayo && negocioCayo) return 'posible-deterioro';   // cayeron los dos: nada contradice la caída del precio
@@ -76,12 +93,7 @@ export function contrastarConNegocio(varPrecio: number | null, cagrOwnerEarnings
   // mayor a la empresa. No es lo mismo que "cara" (eso ya lo dice el margen de seguridad arriba, con
   // el valor intrínseco de HOY) — es una advertencia distinta: sostener este precio de acá en más
   // depende de que el negocio "alcance" al múltiplo, no de que el múltiplo siga expandiéndose (Munger:
-  // no pagues por una revalorización que ya pasó esperando que se repita). varPrecio es SIEMPRE a 5
-  // años exactos (ver arriba) — se anualiza para poder compararlo contra cagrOwnerEarnings sin mezclar
-  // una variación acumulada con una tasa anual (comparar los números crudos sería aritmética inválida).
-  if (precioSubio) {
-    const priceCagr5y = Math.pow(1 + varPrecio, 1 / 5) - 1;
-    if (priceCagr5y - cagrOwnerEarnings > UMBRAL) return 'posible-recalentamiento';
-  }
+  // no pagues por una revalorización que ya pasó esperando que se repita).
+  if (precioSubio && priceCagr - cagrOwnerEarnings > UMBRAL) return 'posible-recalentamiento';
   return 'sin-señal-clara';
 }

@@ -10,7 +10,7 @@ import { usePortfolios } from '../hooks/usePortfolios';
 import { useChartTheme } from '../hooks/usePrefs';
 import { computeRatios } from '../engine/ratios';
 import { computeDcf, sensitivityTable, dcfDefaultsFor, DEFAULT_DCF_INPUTS, OE_METHOD_DEFAULT, type DcfInputs, type CapexMethod, type OeMethod, type MungerCheck } from '../engine/dcf';
-import { tendenciaPrecio, contrastarConNegocio } from '../engine/tendenciaPrecio';
+import { tendenciaPrecio, contrastarConNegocio, anualizar } from '../engine/tendenciaPrecio';
 import { useDcfInputs } from '../hooks/useDcfInputs';
 import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA';
 import { Card, CardHeader, Button, Badge, Stat, ViewToggle, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
@@ -102,6 +102,11 @@ export function AnalisisPage() {
   // intrínseco: esos dos ya incorporan el precio de hoy, cruzarlos sería comparar el precio contra sí
   // mismo). Ver engine/tendenciaPrecio.ts para el razonamiento completo.
   const lecturaTendencia = dcf ? contrastarConNegocio(var5yCruce, dcf.histCagrOE) : null;
+  // Mismo número que compara contrastarConNegocio() por dentro (var5yCruce anualizado) — se muestra
+  // en los textos de abajo para que lo que se LEE sea lo mismo que lo que se COMPARA: mostrar el
+  // acumulado crudo al lado de un CAGR anual (como antes) sugiere una comparación que en realidad
+  // nunca se hizo así.
+  const priceCagr5y = var5yCruce != null ? anualizar(var5yCruce, 5) : null;
   const etiquetaVentana = tendencia.anios == null ? 'la ventana'
     : tendencia.anios < 1 ? 'todo el historial' // IPO reciente: "0 años" leería mal
     : `${tendencia.anios} año${tendencia.anios === 1 ? '' : 's'}`;
@@ -174,9 +179,9 @@ export function AnalisisPage() {
     label: '¿El precio no se recalentó respecto al negocio? (evita pagar por un múltiplo que ya se expandió)',
     ok: lecturaTendencia != null && lecturaTendencia !== 'posible-recalentamiento',
     detail: lecturaTendencia === 'posible-recalentamiento'
-      ? `Precio ${fmtPct(var5yCruce)} en 5 años vs. Owner Earnings a un CAGR histórico de ${fmtPct(dcf.histCagrOE)} — gran parte de la suba es múltiplo, no negocio`
+      ? `Precio ${fmtPct(priceCagr5y)} anual en 5 años (acumulado ${fmtPct(var5yCruce)}) vs. Owner Earnings a un CAGR histórico de ${fmtPct(dcf.histCagrOE)} — gran parte de la suba es múltiplo, no negocio`
       : lecturaTendencia == null ? 'sin histórico de precio suficiente'
-      : `Precio (${fmtPct(var5yCruce)} en 5 años) y Owner Earnings (CAGR histórico ${fmtPct(dcf.histCagrOE)}) sin brecha relevante`,
+      : `Precio (${fmtPct(priceCagr5y)} anual en 5 años) y Owner Earnings (CAGR histórico ${fmtPct(dcf.histCagrOE)}) sin brecha relevante`,
   };
 
   // Qué base usa el DCF, en texto: sin esto el número normalizado no se podía cruzar contra la
@@ -282,11 +287,11 @@ export function AnalisisPage() {
                   : <TrendingUp className={`w-4 h-4 shrink-0 mt-0.5 ${lecturaTendencia === 'posible-recalentamiento' ? 'text-warn' : 'text-pos'}`} />}
                 <p className="text-ink-700">
                   {lecturaTendencia === 'posible-panico' &&
-                    <>Precio {fmtPct(var5yCruce)} en 5 años, pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
+                    <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
                   {lecturaTendencia === 'posible-deterioro' &&
                     <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — nada acá contradice que el negocio se haya deteriorado. Un precio bajo por sí solo no es garantía de descuento.</>}
                   {lecturaTendencia === 'posible-recalentamiento' &&
-                    <>Precio {fmtPct(var5yCruce)} en 5 años, bastante más rápido que el negocio (Owner Earnings creciendo a un CAGR histórico de {fmtPct(dcf.histCagrOE)}) — parte de la suba vino de que el mercado le puso un múltiplo mayor a la empresa, no de que el negocio haya mejorado al mismo ritmo. No es lo mismo que "cara" (eso ya lo dice el margen de seguridad de arriba, con el valor intrínseco de hoy): es una advertencia distinta — sostener este precio de acá en más depende de que el negocio siga alcanzando al múltiplo, no de que el mercado se lo siga expandiendo.</>}
+                    <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), bastante más rápido que el negocio (Owner Earnings creciendo a un CAGR histórico de {fmtPct(dcf.histCagrOE)}) — parte de la suba vino de que el mercado le puso un múltiplo mayor a la empresa, no de que el negocio haya mejorado al mismo ritmo. No es lo mismo que "cara" (eso ya lo dice el margen de seguridad de arriba, con el valor intrínseco de hoy): es una advertencia distinta — sostener este precio de acá en más depende de que el negocio siga alcanzando al múltiplo, no de que el mercado se lo siga expandiendo.</>}
                   {lecturaTendencia === 'sin-señal-clara' &&
                     <>Sin movimiento fuerte de precio ni de Owner Earnings en 5 años — no hay una lectura clara de pánico ni de deterioro.</>}
                 </p>
