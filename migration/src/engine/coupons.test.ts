@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, tirUltimoPeriodoSinAjustar, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
+import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
 import { xirr } from './irr';
 
 const semestral: CouponBond = { ticker: 'GD46', faceValue: 1000, tasaAnual: 0.08, frecuencia: 2, mesRef: 1 };
@@ -219,35 +219,23 @@ describe('ytm — TIR al vencimiento (vs current yield)', () => {
     });
   });
 
-  // El precio (data912) es SIEMPRE limpio (sin interés corrido) — todos los fixtures de arriba usan
-  // `hoy` exactamente en un límite de período (corrido = 0 por construcción), que es justo lo que
-  // dejó pasar este bug sin que ningún test lo detectara. Estos casos prueban explícitamente a mitad
-  // de período. Nota de diseño: comparar la TIR entre dos `hoy` distintos NO aísla el efecto del
-  // interés corrido (mover `hoy` también acorta el tiempo restante al vencimiento, que por sí solo
-  // ya cambia la TIR) — por eso cada caso compara contra un valor de referencia armado a mano con
-  // xirr() (mismo precio sucio esperado, mismos flujos futuros), no contra otro `hoy`.
-  describe('interés corrido (precio limpio → sucio)', () => {
-    it('a mitad de período: reproduce el precio sucio (limpio + corrido por día) armado a mano con xirr()', () => {
-      // Período en curso 2026-02-20→2026-08-20 (181 días); hoy a 91 días del inicio → fracción
-      // ≈0,5028. cupón semestral = 0,04. sucio esperado = 1,019444 + 0,04×0,5028 ≈ 1,039555.
-      const precio = 1.0194444444, tasaAnual = 0.08, frecuencia = 2, vencimiento = '2031-08-20', hoy = '2026-05-22';
-      const r = ytm({ precio, tasaAnual, frecuencia, vencimiento, hoy })!;
-      const sucioEsperado = 1.039554941637569;
+  // El precio (data912) ya es el SUCIO de mercado (coincide con dirty_price de IOL) — va tal cual a
+  // la XIRR, sin sumarle interés corrido, sin importar en qué punto del período esté `hoy`. Ver el
+  // comentario largo sobre `precio` en coupons.ts para la verificación empírica contra
+  // get_fixed_income_analytics de IOL (MIC3D, CS48D, AL35D) que llevó a esta conclusión — sumar el
+  // corrido encima (comportamiento de una versión anterior de este motor) contaba dos veces el mismo
+  // interés y producía una TIR sistemáticamente subestimada.
+  describe('el precio va tal cual a la XIRR, sin ajuste por interés corrido', () => {
+    it('a cualquier punto del período, el flujo inicial es exactamente -precio (comparado contra xirr() armada a mano)', () => {
+      const tasaAnual = 0.08, frecuencia = 2, vencimiento = '2031-08-20';
+      const precio = 1.0194444444;
       const fechas = ['2026-08-20', '2027-02-20', '2027-08-20', '2028-02-20', '2028-08-20', '2029-02-20', '2029-08-20', '2030-02-20', '2030-08-20', '2031-02-20', '2031-08-20'];
       const cupon = tasaAnual / frecuencia;
-      const referencia = xirr([{ date: hoy, amount: -sucioEsperado }, ...fechas.map(f => ({ date: f, amount: cupon })), { date: fechas.at(-1)!, amount: 1 }]);
-      expect(r).toBeCloseTo(referencia!, 8);
-    });
-
-    it('a mitad de período, la TIR es menor que si se ignorara el interés corrido (mismo precio, mismos flujos, mismo hoy)', () => {
-      const precio = 1.0194444444, tasaAnual = 0.08, frecuencia = 2, vencimiento = '2031-08-20', hoy = '2026-05-22';
-      const conAjuste = ytm({ precio, tasaAnual, frecuencia, vencimiento, hoy })!;
-      // Réplica manual del comportamiento ANTERIOR al fix (sucio = precio, sin sumar corrido) para el
-      // MISMO hoy — así se aísla el efecto del ajuste sin el confound de mover el tiempo al vencimiento.
-      const fechas = ['2026-08-20', '2027-02-20', '2027-08-20', '2028-02-20', '2028-08-20', '2029-02-20', '2029-08-20', '2030-02-20', '2030-08-20', '2031-02-20', '2031-08-20'];
-      const cupon = tasaAnual / frecuencia;
-      const sinAjuste = xirr([{ date: hoy, amount: -precio }, ...fechas.map(f => ({ date: f, amount: cupon })), { date: fechas.at(-1)!, amount: 1 }])!;
-      expect(conAjuste).toBeLessThan(sinAjuste);
+      for (const hoy of ['2026-02-21', '2026-05-22', '2026-08-19']) {
+        const r = ytm({ precio, tasaAnual, frecuencia, vencimiento, hoy })!;
+        const referencia = xirr([{ date: hoy, amount: -precio }, ...fechas.map(f => ({ date: f, amount: cupon })), { date: fechas.at(-1)!, amount: 1 }]);
+        expect(r).toBeCloseTo(referencia!, 10);
+      }
     });
   });
 });
@@ -333,88 +321,42 @@ describe('ytmFromCronograma / bondDurationFromCronograma — cronograma explíci
     expect(bondDurationFromCronograma(bulletEquivalente, 0.08, '2035-01-01')).toBeNull();
   });
 
-  // Mismo bug y misma corrección que en ytm() (ver su comentario) — acá no hay `frecuencia`
-  // explícita, así que la duración del período se infiere de la distancia entre los DOS próximos
-  // flujos del propio cronograma. Mismo criterio de test que en ytm(): comparar contra otro `hoy` no
-  // aísla el efecto (confound con el tiempo restante al vencimiento) — se compara contra una
-  // referencia armada a mano con xirr() para el MISMO hoy.
-  describe('interés corrido (precio limpio → sucio)', () => {
-    it('a mitad de período: reproduce el precio sucio esperado (inferido de la distancia entre los 2 próximos flujos)', () => {
-      const hoy = '2026-10-24';
-      const r = ytmFromCronograma(0.9, bulletEquivalente, hoy)!;
-      // futuros[0]='2027-01-24', futuros[1]='2027-07-24' → período de 181 días; el "anterior" teórico
-      // (2027-01-24 menos 181 días) cae el 2026-07-27, no el 24 — la asimetría ene↔jul/jul↔ene por
-      // los distintos largos de mes es real, por eso se verifica con la cuenta exacta, no a ojo.
-      const sucioEsperado = 0.9147513812154696;
-      const referencia = xirr([{ date: hoy, amount: -sucioEsperado }, ...bulletEquivalente.map(f => ({ date: f.fecha, amount: f.interes + f.amortizacion }))]);
-      expect(r).toBeCloseTo(referencia!, 8);
+  // El precio (data912) ya es el SUCIO de mercado — igual que en ytm(), va tal cual a la XIRR, sin
+  // ajuste por interés corrido, sin importar en qué punto del período esté `hoy` ni cuántos flujos
+  // futuros queden. Ver el comentario largo sobre `precio` en coupons.ts para la verificación
+  // empírica contra get_fixed_income_analytics de IOL que llevó a esta conclusión.
+  describe('el precio va tal cual a la XIRR, sin ajuste por interés corrido', () => {
+    it('a cualquier punto del período, el flujo inicial es exactamente -precio (comparado contra xirr() armada a mano)', () => {
+      for (const hoy of ['2026-08-25', '2026-10-24', '2026-12-01']) {
+        const r = ytmFromCronograma(0.9, bulletEquivalente, hoy)!;
+        const referencia = xirr([{ date: hoy, amount: -0.9 }, ...bulletEquivalente.map(f => ({ date: f.fecha, amount: f.interes + f.amortizacion }))])!;
+        expect(r).toBeCloseTo(referencia, 10);
+      }
     });
 
-    it('a mitad de período, la TIR es menor que si se ignorara el interés corrido (mismo precio limpio, mismo hoy)', () => {
-      const hoy = '2026-10-24';
-      const conAjuste = ytmFromCronograma(0.9, bulletEquivalente, hoy)!;
-      const sinAjuste = xirr([{ date: hoy, amount: -0.9 }, ...bulletEquivalente.map(f => ({ date: f.fecha, amount: f.interes + f.amortizacion }))])!;
-      expect(conAjuste).toBeLessThan(sinAjuste);
-    });
-
-    it('con un solo cupón futuro (último período del bono) no hay cronograma propio de dónde inferir la duración del período — se usa el precio limpio tal cual, sin crashear', () => {
+    it('con un solo cupón futuro (último período del bono) también usa el precio tal cual, sin crashear', () => {
       const ultimoCupon: CronogramaItem[] = [{ fecha: '2027-01-24', interes: 0.03, amortizacion: 1, saldo_residual: 0 }];
-      const r = ytmFromCronograma(0.9, ultimoCupon, '2026-07-24');
+      const hoy = '2026-07-24';
+      const r = ytmFromCronograma(0.9, ultimoCupon, hoy);
+      const referencia = xirr([{ date: hoy, amount: -0.9 }, { date: '2027-01-24', amount: 1.03 }]);
       expect(r).not.toBeNull();
-      expect(Number.isFinite(r)).toBe(true);
+      expect(r!).toBeCloseTo(referencia!, 10);
     });
 
-    // Caso real MIC3D (ON a ~90 días del vencimiento, cupón semestral 3.5%, precio ~par): con un solo
-    // flujo futuro, ytmFromCronograma() ahora busca el ÚLTIMO CUPÓN YA PAGADO en el propio cronograma
-    // (dato real, no un supuesto nuevo) para poder ajustar igual el interés corrido — en vez de usar
-    // precio limpio tal cual, que infla la TIR (~14.6% calculado vs. ~6-7% real).
-    describe('con el cupón anterior disponible en el cronograma (mismo mecanismo que 2+ flujos futuros)', () => {
+    // Caso real MIC3D (ON a ~90 días del vencimiento, cupón semestral 3.5%, precio ~par, un solo
+    // flujo futuro — el caso que originalmente parecía "incongruente": TIR=14.6% para una duración de
+    // apenas 0.2 años). Se auditó contra get_fixed_income_analytics de IOL: el precio de data912
+    // (1.002) coincide con el dirty_price real de IOL (100.2), y la TIR real de IOL es 14.93% — muy
+    // cerca del 14.56% que da este motor sin ningún ajuste. Antes de esta corrección, el motor SÍ
+    // intentaba ajustar por interés corrido acá (sumándolo al precio) y el resultado se alejaba más
+    // de la TIR real de IOL, no menos — quedó demostrado que el precio ya viene sucio.
+    it('caso real MIC3D: TIR sin ajuste queda cerca de la TIR real de IOL (14.93%)', () => {
       const finalFlow: CronogramaItem = { fecha: '2026-11-11', interes: 0.035, amortizacion: 1, saldo_residual: 0 };
       const hoy = '2026-08-16';
-
-      it('se ajusta el interés corrido: la TIR queda menor que sin el ajuste (mismo precio, mismo hoy)', () => {
-        const conHistoria: CronogramaItem[] = [
-          { fecha: '2026-05-11', interes: 0.035, amortizacion: 0, saldo_residual: 1 },
-          finalFlow,
-        ];
-        const soloFuturo: CronogramaItem[] = [finalFlow];
-        const tirConHistoria = ytmFromCronograma(1.002, conHistoria, hoy);
-        const tirSinHistoria = ytmFromCronograma(1.002, soloFuturo, hoy);
-        expect(tirConHistoria).not.toBeNull();
-        expect(tirConHistoria!).toBeLessThan(tirSinHistoria!);
-      });
-
-      it('sin ningún cupón anterior en el cronograma (caso real: bonos_referencia solo guarda flujos futuros) la TIR queda inflada — bastante por encima del cupón anualizado (~7%)', () => {
-        const soloFuturo: CronogramaItem[] = [finalFlow];
-        const tir = ytmFromCronograma(1.002, soloFuturo, hoy)!;
-        expect(tir).toBeGreaterThan(0.12);
-      });
-    });
-  });
-
-  describe('tirUltimoPeriodoSinAjustar — cuándo la UI debe avisar que la TIR puede estar inflada (caso real MIC3D)', () => {
-    const finalFlow: CronogramaItem = { fecha: '2026-11-11', interes: 0.035, amortizacion: 1, saldo_residual: 0 };
-    const hoy = '2026-08-16';
-
-    it('un solo flujo futuro y ningún cupón pagado en el cronograma → true (caso real de bonos_referencia hoy)', () => {
-      expect(tirUltimoPeriodoSinAjustar([finalFlow], hoy)).toBe(true);
-    });
-
-    it('un solo flujo futuro pero CON un cupón anterior en el cronograma → false (si algún día bonos_referencia guarda historial, ya no hace falta el aviso)', () => {
-      const conHistoria: CronogramaItem[] = [
-        { fecha: '2026-05-11', interes: 0.035, amortizacion: 0, saldo_residual: 1 },
-        finalFlow,
-      ];
-      expect(tirUltimoPeriodoSinAjustar(conHistoria, hoy)).toBe(false);
-    });
-
-    it('2+ flujos futuros (no es el último período) → false, aunque no haya ningún cupón ya pagado en el cronograma', () => {
-      expect(tirUltimoPeriodoSinAjustar(bulletEquivalente, '2026-07-24')).toBe(false);
-    });
-
-    it('bono vencido o cronograma vacío → false (no hay TIR de la que avisar)', () => {
-      expect(tirUltimoPeriodoSinAjustar([finalFlow], '2027-01-01')).toBe(false);
-      expect(tirUltimoPeriodoSinAjustar([], hoy)).toBe(false);
+      const tir = ytmFromCronograma(1.002, [finalFlow], hoy)!;
+      expect(tir).toBeCloseTo(0.14561934080689637, 6);
+      expect(tir).toBeGreaterThan(0.14);
+      expect(tir).toBeLessThan(0.155); // dentro de ~1pp de la TIR real de IOL (14.93%)
     });
   });
 
