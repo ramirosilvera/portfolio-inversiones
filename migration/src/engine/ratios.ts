@@ -26,7 +26,14 @@ export function eg5y(epsDiluted: AnnualPoint[], netIncome: AnnualPoint[] = []): 
   if (limpio.length < 2) return null;
   const first = limpio[0].val, last = limpio[limpio.length - 1].val;
   if (first <= 0 || last <= 0) return null;
-  return (last / first) ** (1 / (limpio.length - 1)) - 1;
+  // Años REALES entre el primer y el último punto (limpio[último].fy − limpio[primero].fy), NO
+  // "cantidad de puntos − 1": si un ejercicio intermedio falta en epsDiluted (un concepto de EDGAR
+  // que no resolvió para ese año puntual, mismo caso que histCagrOE en dcf.ts — ver ese comentario),
+  // los puntos disponibles pueden abarcar más años reales de los que hay huecos entre ellos, e
+  // inflar el CAGR si se divide por "puntos−1".
+  const anios = limpio[limpio.length - 1].fy - limpio[0].fy;
+  if (anios <= 0) return null;
+  return (last / first) ** (1 / anios) - 1;
 }
 
 // Devuelve el índice desde el cual la serie de EPS es consistente (mismas acciones en juego, sin un

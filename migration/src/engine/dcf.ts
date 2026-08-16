@@ -163,12 +163,19 @@ export function normalizarOwnerEarnings(serie: number[], metodo: OeMethod = OE_M
   }
 }
 
-// CAGR histórico de owner earnings (para el chequeo Munger de "supuesto no optimista").
-function cagr(series: number[]): number | null {
-  if (series.length < 2) return null;
+// CAGR histórico de owner earnings (para el chequeo Munger de "supuesto no optimista" y para el
+// cruce precio-vs-negocio de la tarjeta de Análisis, ver tendenciaPrecio.ts). `anios` son los años
+// REALES transcurridos entre el primer y el último punto (last5[último].fy − last5[primero].fy) —
+// NO "cantidad de puntos − 1": si algún ejercicio intermedio falta en la serie (un concepto de EDGAR,
+// ej. OCF, no resolvió para ese año puntual — pasa incluso con netIncome/revenue completos, ver
+// ownerEarningsByYear), 5 puntos pueden abarcar 5 años reales, no 4, y dividir por "puntos−1" infla
+// el CAGR. Con MRK real (OCF sin 2021, la serie salta 2020→2022) esto inflaba histCagrOE de ~9.4% a
+// 11.8% — suficiente para esconder un recalentamiento real en el cruce de la tarjeta de Análisis.
+function cagr(series: number[], anios: number): number | null {
+  if (series.length < 2 || anios <= 0) return null;
   const first = series[0], last = series[series.length - 1];
   if (first <= 0 || last <= 0) return null;
-  return (last / first) ** (1 / (series.length - 1)) - 1;
+  return (last / first) ** (1 / anios) - 1;
 }
 
 export function computeDcf(f: Fundamentals, price: number | null, wacc: number | null, inp: DcfInputs, roic: number | null = null): DcfResult {
@@ -189,7 +196,7 @@ export function computeDcf(f: Fundamentals, price: number | null, wacc: number |
   // 'margen' necesita las ventas; si no se pueden emparejar, cae al ponderado (no inventa).
   const porMargen = oeMethod === 'margen' ? normalizarPorMargen(last5, byFy(f.revenue)) : null;
   const ownerEarningsNorm = porMargen ?? normalizarOwnerEarnings(serieOe, oeMethod === 'margen' ? 'ponderado' : oeMethod);
-  const histCagrOE = cagr(last5.map(y => y.ownerEarnings));
+  const histCagrOE = cagr(last5.map(y => y.ownerEarnings), last5[last5.length - 1].fy - last5[0].fy);
 
   // Owner earnings normalizados ≤ 0 (capex agresivo / OCF < capex mant.): el DCF no
   // aplica. Sin esto, un valor intrínseco negativo produce MoS > 100% y un falso "COMPRAR".

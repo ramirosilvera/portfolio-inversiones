@@ -220,6 +220,39 @@ describe('eg5y — split no restatado en EDGAR (caso real NVDA, split 10:1 de 20
   });
 });
 
+describe('eg5y / histCagrOE — año faltante en la serie (caso real MRK: falta el OCF de 2021)', () => {
+  it('eg5y: un hueco en epsDiluted no debe inflar el CAGR dividiendo por "puntos−1" en vez de años reales transcurridos', () => {
+    // 5 puntos, pero el hueco de FY2021 hace que en realidad abarquen 5 años (2020→2025), no 4.
+    const eps = P([[2020, 1.00], [2022, 1.20], [2023, 1.30], [2024, 1.45], [2025, 1.60]]);
+    const g = eg5y(eps);
+    expect(g).not.toBeNull();
+    expect(g!).toBeCloseTo((1.60 / 1.00) ** (1 / 5) - 1, 6);       // años reales: 2025 − 2020 = 5
+    expect(g!).not.toBeCloseTo((1.60 / 1.00) ** (1 / 4) - 1, 3);   // NO "puntos − 1" = 4 (el bug)
+  });
+
+  it('histCagrOE (computeDcf): un hueco en OCF (netIncome/D&A completos, caso real MRK) no debe inflar el CAGR', () => {
+    // MRK real: netIncome y D&A tienen 2021, pero OCF salta 2020→2022 — ownerEarningsByYear() solo
+    // puede calcular owner earnings para los años en que HAY ocf, así que 2021 queda afuera de la
+    // serie (comportamiento correcto: no se puede inventar un OCF). El bug estaba en cagr(), que
+    // dividía por "cantidad de puntos − 1" (4) en vez de los años reales entre el primero y el
+    // último punto (2023 − 2018 = 5) — con datos reales de MRK esto inflaba histCagrOE de ~9.4% a
+    // ~11.8%, suficiente para esconder un recalentamiento real en el cruce precio-vs-negocio.
+    const conHueco: Fundamentals = {
+      ...MSFT,
+      ocf: P([[2018, 44000], [2019, 48000], [2020, 53000], [2022, 68000], [2023, 82000]]), // sin 2021
+      dna: P([[2018, 4000], [2019, 4000], [2020, 4000], [2021, 4000], [2022, 4000], [2023, 4000]]),
+      netIncome: P([[2018, 40000], [2019, 44000], [2020, 49000], [2021, 55000], [2022, 64000], [2023, 78000]]),
+    };
+    const d = computeDcf(conHueco, 100, 0.09, DEFAULT_DCF_INPUTS, 0.1);
+    expect(d.ownerEarningsByYear.map(y => y.fy)).toEqual([2018, 2019, 2020, 2022, 2023]); // 2021 ausente
+    expect(d.histCagrOE).not.toBeNull();
+    const first = d.ownerEarningsByYear[0].ownerEarnings;
+    const last = d.ownerEarningsByYear[d.ownerEarningsByYear.length - 1].ownerEarnings;
+    expect(d.histCagrOE!).toBeCloseTo((last / first) ** (1 / 5) - 1, 6);      // años reales: 2023 − 2018
+    expect(d.histCagrOE!).not.toBeCloseTo((last / first) ** (1 / 4) - 1, 3);  // NO "puntos − 1" (el bug)
+  });
+});
+
 describe('owner earnings + DCF', () => {
   it('owner earnings = OCF − capex mantenimiento; growth capex separado', () => {
     const oe = ownerEarningsByYear(MSFT, 'dna');
