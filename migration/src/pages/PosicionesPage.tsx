@@ -414,7 +414,10 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
             <Field label="% objetivo">
               <input placeholder="% objetivo (0-100)" type="number" onChange={e => setForm({ ...form, peso_objetivo: e.target.value ? Number(e.target.value) / 100 : null })} className={inputCls} />
             </Field>
-            <Field label="Fecha de compra">
+            {/* col-span-2: un <input type="date"> nativo no respeta el ancho de la mitad de la
+                grilla en varios navegadores (el widget de día/mes/año se desborda del modal) —
+                mismo criterio que el campo Fecha de SellModal, más abajo. */}
+            <Field label="Fecha de compra" className="col-span-2">
               <input type="date" value={form.fecha_compra ?? ''} onChange={e => setForm({ ...form, fecha_compra: e.target.value || null })} className={inputCls} />
             </Field>
             <Field label="Sector">
@@ -454,7 +457,7 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
                   ))}
                 </select>
               </Field>
-              <Field label="Vencimiento">
+              <Field label="Vencimiento" className="col-span-2">
                 <input placeholder="Vencimiento" type="date" value={form.vencimiento ?? ''}
                   onChange={e => setForm({ ...form, vencimiento: e.target.value || null })}
                   className={inputCls} />
@@ -603,7 +606,7 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
                   <option value="">—</option>{MESES_E.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
                 </select>
               </Field>
-              <Field label="Vencimiento"><input type="date" value={vto} onChange={e => setVto(e.target.value)} className={inputCls} /></Field>
+              <Field label="Vencimiento" className="col-span-2"><input type="date" value={vto} onChange={e => setVto(e.target.value)} className={inputCls} /></Field>
             </>}
             {pos.tipo === 'cash' && (
               <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada — cambia con el tiempo, actualizala cuando tu bróker la mueva.">
