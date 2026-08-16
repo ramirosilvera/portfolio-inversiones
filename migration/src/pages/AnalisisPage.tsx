@@ -9,7 +9,7 @@ import { useCikMap } from '../hooks/useCikMap';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { useChartTheme } from '../hooks/usePrefs';
 import { computeRatios } from '../engine/ratios';
-import { computeDcf, sensitivityTable, dcfDefaultsFor, DEFAULT_DCF_INPUTS, OE_METHOD_DEFAULT, type DcfInputs, type CapexMethod, type OeMethod } from '../engine/dcf';
+import { computeDcf, sensitivityTable, dcfDefaultsFor, DEFAULT_DCF_INPUTS, OE_METHOD_DEFAULT, type DcfInputs, type CapexMethod, type OeMethod, type MungerCheck } from '../engine/dcf';
 import { tendenciaPrecio, contrastarConNegocio } from '../engine/tendenciaPrecio';
 import { useDcfInputs } from '../hooks/useDcfInputs';
 import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA';
@@ -162,6 +162,22 @@ export function AnalisisPage() {
   if (!fund || !ratios || !dcf) return null;
 
   const verdictTone = dcf.verdict === 'COMPRAR' ? 'pos' : dcf.verdict === 'CARO' ? 'neg' : 'warn';
+
+  // Se arma ACÁ (no adentro de computeDcf/dcf.ts) porque depende del histórico de precio (Yahoo,
+  // ver arriba) — computeDcf es una función pura que también usa el Radar (useRadarTicker, un DCF
+  // por cada ticker en seguimiento) SIN ese histórico; forzar la dependencia ahí rompería esa otra
+  // pantalla o dejaría el chequeo apareciendo/desapareciendo según quién llame a computeDcf. La
+  // frase de la tarjeta "Precio — tendencia" ya invita a "cruzar con los Chequeos Munger de abajo"
+  // cuando hay pánico/deterioro — sin esta entrada, esa frase mandaba a una lista que no tenía nada
+  // dicho sobre el recalentamiento específicamente.
+  const checkRecalentamiento: MungerCheck = {
+    label: '¿El precio no se recalentó respecto al negocio? (evita pagar por un múltiplo que ya se expandió)',
+    ok: lecturaTendencia != null && lecturaTendencia !== 'posible-recalentamiento',
+    detail: lecturaTendencia === 'posible-recalentamiento'
+      ? `Precio ${fmtPct(var5yCruce)} en 5 años vs. Owner Earnings a un CAGR histórico de ${fmtPct(dcf.histCagrOE)} — gran parte de la suba es múltiplo, no negocio`
+      : lecturaTendencia == null ? 'sin histórico de precio suficiente'
+      : `Precio (${fmtPct(var5yCruce)} en 5 años) y Owner Earnings (CAGR histórico ${fmtPct(dcf.histCagrOE)}) sin brecha relevante`,
+  };
 
   // Qué base usa el DCF, en texto: sin esto el número normalizado no se podía cruzar contra la
   // tabla de owner earnings por año (parecía "otro" valor aunque fuera el del último ejercicio).
@@ -435,7 +451,7 @@ export function AnalisisPage() {
       <Card>
         <CardHeader title="Chequeos Munger" />
         <div className="p-4 space-y-2">
-          {dcf.mungerChecks.map((c, i) => (
+          {[...dcf.mungerChecks, checkRecalentamiento].map((c, i) => (
             // flex-col: en mobile, label + detail compitiendo por la misma fila (con ml-auto) se
             // apretujaban y quedaban centrados verticalmente de forma rara al envolver a 2 líneas
             // cada uno. Ahora el detail va siempre debajo, indentado bajo el label.
