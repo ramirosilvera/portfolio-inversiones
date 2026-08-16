@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Flame, LayoutGrid, Plus, Check } from 'lucide-react';
+import { AlertTriangle, Flame, LayoutGrid, Plus, Check, Star } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { useMacro, useDrawdowns } from '../hooks/usePosiciones';
+import { useMacro, useDrawdowns, useBonosPrecios } from '../hooks/usePosiciones';
+import { useBonosReferencia } from '../hooks/useBonosReferencia';
+import { useBonosDestacados } from '../hooks/useBonosDestacados';
+import { calcularBonoReferencia } from '../engine/rentaFija';
+import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
 import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 import { useFlujo } from '../hooks/useFlujo';
 import { useCobros } from '../hooks/useCobros';
@@ -29,7 +33,7 @@ import { redondearPct, TOLERANCIA_OBJETIVO } from '../engine/rebalance';
 import { resumenPorBroker } from '../engine/brokers';
 import { useRecordSnapshot } from '../hooks/useSnapshots';
 import { useDashboardLayout } from '../hooks/useDashboardLayout';
-import { Card, CardHeader, Stat, Badge, Field, AlertasBanner, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs, fmtArsCompact, colorDeBroker } from '../components/ui';
+import { Card, CardHeader, Stat, Badge, Field, ViewToggle, AlertasBanner, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs, fmtArsCompact, colorDeBroker } from '../components/ui';
 import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
@@ -152,7 +156,7 @@ export function DashboardPage() {
       personalizando={personalizando} />,
     cedears: <CedearsResumen personalizando={personalizando} />,
     bonos: <BonosResumen personalizando={personalizando} />,
-    radar: <RadarResumen personalizando={personalizando} />,
+    radar: <RadarResumenCombinado personalizando={personalizando} />,
     patrimonio_broker: <PatrimonioBrokers posiciones={posiciones} quotes={quotes} isLoading={qPos.isLoading} personalizando={personalizando} />,
     cobros: (cobros.length > 0 || proximoCapital) ? <CobrosResumen resumen={resumenCobrado} pendientesCount={pendientesCount} proximoCapital={proximoCapital} personalizando={personalizando} /> : null,
     liquidez_fci: flujo.length > 0 ? <FinanzasResumen resumen={flujoR} personalizando={personalizando} /> : null,
@@ -547,12 +551,20 @@ function BonosResumen({ personalizando }: { personalizando: boolean }) {
   );
 }
 
-// Resumen del Radar: cuántos tickers en seguimiento y cuántos son "compra agresiva" (margen de
-// seguridad amplio, ver engine/dcf.ts). Cada RadarProbe es invisible — solo corre el mismo cálculo
-// que una fila de RadarPage (useRadarTicker, compartido) y reporta el resultado acá arriba, así el
-// criterio nunca se desincroniza entre el Dashboard y /radar.
-function RadarResumen({ personalizando }: { personalizando: boolean }) {
-  const { data: items = [], isLoading } = useWatchlist();
+// Resumen del Radar: renta variable (watchlist + señal "compra agresiva" DCF) y renta fija (catálogo
+// de bonos + destacados con ⭐, ver RadarPage.tsx) en una sola tarjeta, con el mismo toggle 1:1 que
+// /radar — misma key de localStorage (lib/radarVista.ts), así cambiar de vista acá se recuerda allá
+// y viceversa. Los dos universos se calculan siempre (no solo el que está visible): cambiar el
+// toggle es instantáneo, sin re-fetch ni esperar a que termine de "Calcular…" de nuevo. Cada
+// RadarProbe es invisible — corre el mismo cálculo que una fila de RadarPage (useRadarTicker,
+// compartido) y reporta el resultado acá arriba, así el criterio nunca se desincroniza entre el
+// Dashboard y /radar.
+function RadarResumenCombinado({ personalizando }: { personalizando: boolean }) {
+  const [vista, setVista] = useState<Vista>(vistaInicial);
+  const cambiarVista = (v: Vista) => { setVista(v); guardarVista(v); };
+
+  // ── Renta variable ──
+  const { data: items = [], isLoading: watchLoading } = useWatchlist();
   const { map: cikMap, isLoading: cikLoading } = useCikMap();
   const { data: macro = {} } = useMacro();
   const riskFree = ((macro as Record<string, number | null>).dgs10 ?? 4.3) / 100;
@@ -563,7 +575,6 @@ function RadarResumen({ personalizando }: { personalizando: boolean }) {
   // mostraba "0" (un cero provisorio indistinguible del resultado real) mientras cada probe
   // (fundamentals/DCF, varios segundos en frío) todavía estaba resolviendo.
   const [reportados, setReportados] = useState<Set<string>>(new Set());
-
   const onProbe = useCallback((ticker: string, agresiva: boolean, listo: boolean) => {
     setAgresivos(prev => {
       if (prev.has(ticker) === agresiva) return prev;
@@ -573,11 +584,36 @@ function RadarResumen({ personalizando }: { personalizando: boolean }) {
     });
     if (listo) setReportados(prev => (prev.has(ticker) ? prev : new Set(prev).add(ticker)));
   }, []);
-
-  if (isLoading) return <Card><CardHeader title="Radar" /><p className="p-4 text-sm text-ink-600">Cargando…</p></Card>;
-  if (items.length === 0) return null;
-
   const probesListos = items.every(it => reportados.has(it.ticker.toUpperCase()));
+
+  // ── Renta fija ──
+  const { data: bonosRef = [], isLoading: bonosRefLoading } = useBonosReferencia();
+  const { data: bonosPrecios = {} } = useBonosPrecios();
+  const { destacados } = useBonosDestacados();
+  const hoy = new Date().toISOString().slice(0, 10);
+  const bonosCalc = useMemo(
+    () => bonosRef.map(ref => calcularBonoReferencia(ref, bonosPrecios[ref.ticker] ?? null, hoy)),
+    [bonosRef, bonosPrecios, hoy],
+  );
+  const destacadosBonos = useMemo(() => bonosCalc.filter(b => destacados.has(b.ref.ticker)), [bonosCalc, destacados]);
+
+  // Se oculta la tarjeta entera solo si NINGÚN universo tiene nada que mostrar (antes: se ocultaba
+  // con el watchlist vacío nomás — pero eso también tapaba la renta fija, que no depende de un
+  // watchlist personal, sino del catálogo compartido de bonos_referencia).
+  if (!watchLoading && !bonosRefLoading && items.length === 0 && bonosRef.length === 0) return null;
+
+  const loadingActivo = vista === 'variable' ? watchLoading : bonosRefLoading;
+  const badgeVariable = !probesListos
+    ? <span className="text-[11px] text-ink-500">Calculando…</span>
+    : agresivos.size > 0
+      ? <Badge tone="pos"><Flame className="w-3 h-3" /><span className="ml-1">{agresivos.size} agresiva{agresivos.size > 1 ? 's' : ''}</span></Badge>
+      : <span className="text-[11px] text-celeste-600 hover:underline">Ver radar →</span>;
+  const badgeFija = bonosRefLoading
+    ? <span className="text-[11px] text-ink-500">Cargando…</span>
+    : destacadosBonos.length > 0
+      ? <Badge tone="sol"><Star className="w-3 h-3" /><span className="ml-1">{destacadosBonos.length} destacado{destacadosBonos.length > 1 ? 's' : ''}</span></Badge>
+      : <span className="text-[11px] text-celeste-600 hover:underline">Ver radar →</span>;
+  const badgeActivo = vista === 'variable' ? badgeVariable : badgeFija;
 
   return (
     <Card>
@@ -586,18 +622,55 @@ function RadarResumen({ personalizando }: { personalizando: boolean }) {
         return <RadarProbe key={it.id} ticker={T} cik={it.cik || cikMap.get(T)?.cik} cikLoading={cikLoading}
           riskFree={riskFree} saved={dcfMap.get(T)} onResult={onProbe} />;
       })}
-      <CardHeader title="Radar" sub={`${items.length} ticker${items.length > 1 ? 's' : ''} en seguimiento.`}
-        right={(() => {
-          if (!probesListos) return <span className="text-[11px] text-ink-500">Calculando…</span>;
-          const contenido = agresivos.size > 0
-            ? <Badge tone="pos"><Flame className="w-3 h-3" /><span className="ml-1">{agresivos.size} compra agresiva{agresivos.size > 1 ? 's' : ''}</span></Badge>
-            : <span className="text-[11px] text-celeste-600 hover:underline">Ver radar →</span>;
-          return personalizando ? contenido : <Link to="/radar" className="inline-flex items-center gap-1.5">{contenido}</Link>;
-        })()} />
-      <div className="grid grid-cols-2 gap-2 p-3">
-        <Stat label="En seguimiento" value={items.length} />
-        <Stat label="Compra agresiva" value={probesListos ? agresivos.size : '…'} />
-      </div>
+      <CardHeader title="Radar"
+        sub={vista === 'variable'
+          ? `${items.length} ticker${items.length === 1 ? '' : 's'} en seguimiento.`
+          : `${bonosRef.length} bono${bonosRef.length === 1 ? '' : 's'} en catálogo.`}
+        right={
+          <div className="flex items-center gap-2">
+            <ViewToggle value={vista} onChange={cambiarVista} label="Universo"
+              options={[{ value: 'variable', label: 'Variable' }, { value: 'fija', label: 'Fija' }]} />
+            {personalizando ? badgeActivo : <Link to="/radar" className="inline-flex items-center gap-1.5">{badgeActivo}</Link>}
+          </div>
+        } />
+      {loadingActivo ? (
+        <p className="p-4 text-sm text-ink-600">Cargando…</p>
+      ) : vista === 'variable' ? (
+        items.length === 0 ? (
+          <p className="p-4 text-sm text-ink-600">Sin tickers en seguimiento — agregalos desde Radar.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2 p-3">
+              <Stat label="En seguimiento" value={items.length} />
+              <Stat label="Compra agresiva" value={probesListos ? agresivos.size : '…'} />
+            </div>
+            {probesListos && agresivos.size > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-3 pb-3">
+                {[...agresivos].slice(0, 6).map(t => personalizando
+                  ? <Badge key={t} tone="pos">{t}</Badge>
+                  : <Link key={t} to={`/analisis/${t}`}><Badge tone="pos">{t}</Badge></Link>)}
+              </div>
+            )}
+          </>
+        )
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 p-3">
+            <Stat label="En catálogo" value={bonosRef.length} />
+            <Stat label="Destacados" value={destacadosBonos.length} />
+          </div>
+          {destacadosBonos.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 px-3 pb-3">
+              {destacadosBonos.slice(0, 6).map(b => {
+                const chip = <Badge tone="sol">{b.ref.ticker}{b.tir != null ? ` · ${fmtPct(b.tir, 1)}` : ''}</Badge>;
+                return personalizando ? <span key={b.ref.ticker}>{chip}</span> : <Link key={b.ref.ticker} to="/radar">{chip}</Link>;
+              })}
+            </div>
+          ) : (
+            <p className="px-3 pb-3 text-[11px] text-ink-500">Marcá bonos con la ⭐ en Radar para verlos acá.</p>
+          )}
+        </>
+      )}
     </Card>
   );
 }

@@ -70,7 +70,7 @@ export function parseBackup(text: string): Preview {
   // v1/v2/v3 igual se pueden restaurar (solo les faltan tablas que no existían todavía, o traen
   // posiciones.broker_id que ya no se usa) — el aviso es solo para versiones FUTURAS que este
   // código todavía no sepa interpretar.
-  if (data.backup_version && data.backup_version > 8) avisos.push(`El backup es de una versión más nueva (v${data.backup_version}) que la soportada (v8).`);
+  if (data.backup_version && data.backup_version > 9) avisos.push(`El backup es de una versión más nueva (v${data.backup_version}) que la soportada (v9).`);
   if (data.backup_version != null && data.backup_version <= 7) avisos.push('Backup anterior al Dashboard personalizable (dashboard_layout): no va a traer tu layout de tarjetas guardado — la página va a mostrar el layout predeterminado hasta que lo vuelvas a personalizar.');
   if (data.backup_version === 1) avisos.push('Backup v1 (anterior a Cobros y Proyección): no va a traer el historial de dividendos/intereses/amortizaciones ni los supuestos de Proyección guardados, porque todavía no existían.');
   if (data.backup_version === 1 || data.backup_version === 2) avisos.push('Backup anterior a Brokers: las posiciones van a quedar "Sin asignar" (no había ningún broker cargado todavía).');
