@@ -86,7 +86,7 @@ function mockCalc(ticker: string, tir: number | null, macaulay: number | null, g
   return {
     ref: { ...ref, ticker }, px: 0.9, paridad: 90, tir,
     duracion: macaulay != null ? { macaulay, modified: macaulay / 1.1 } : null,
-    rendCorriente: null, tirSinAjustar: false, grado, escalaGrado: grado != null ? 'global' : null,
+    rendCorriente: null, grado, escalaGrado: grado != null ? 'global' : null,
   };
 }
 

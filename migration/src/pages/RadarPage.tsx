@@ -24,10 +24,6 @@ const RATING_TONE: Record<Rating, 'pos' | 'accent' | 'warn' | 'neg'> = { A: 'pos
 const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
 // PIE_COLORS[0]/[4]/[3] (ui.tsx) — categóricos, no compiten con pos/warn/neg (rating)
 const TIPO_COLOR: Record<BonoReferencia['tipo'], string> = { soberano: '#4F97D4', subsoberano: '#E08E6D', on: '#B08BD6' };
-// Ver tirSinAjustar en engine/rentaFija.ts (calcularBonoReferencia) — mismo criterio que el aviso
-// "sin cotización" de BonosPage.tsx (superíndice "e").
-const SIN_AJUSTAR_HINT = 'TIR estimada: último cupón antes del vencimiento sin ningún pago previo en el cronograma — se calculó con precio limpio, sin descontar el interés corrido, y puede estar inflada (sobre todo muy cerca del vencimiento).';
-
 // Orden por columna: cada fila calcula su propio score/DCF de forma independiente (fetch por
 // ticker), así que esos valores se reportan al padre (onComputed) para poder ordenar sin
 // duplicar el fetch ni levantar el cálculo entero acá arriba.
@@ -509,9 +505,6 @@ function RadarFija() {
             </tbody>
           </table>
         </div>
-        {ordenados.some(b => b.tirSinAjustar) && (
-          <p className="px-4 pb-3 text-[11px] text-ink-500"><sup className="text-[9px]">e</sup> {SIN_AJUSTAR_HINT}</p>
-        )}
       </Card>
 
       {editando && (
@@ -526,7 +519,7 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado 
   calc: ReturnType<typeof calcularBonoReferencia>; hoy: string; onEditarRating: () => void;
   destacado: boolean; onToggleDestacado: () => Promise<void>;
 }) {
-  const { ref, paridad, tir, tirSinAjustar, duracion, grado, escalaGrado } = calc;
+  const { ref, paridad, tir, duracion, grado, escalaGrado } = calc;
   const vencido = ref.vencimiento < hoy;
   const [busyDestacado, setBusyDestacado] = useState(false);
   const toggle = async () => {
@@ -560,11 +553,7 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado 
         </button>
       </td>
       <td className="text-right px-3 tnum">{paridad != null ? `${fmtNum(paridad, 1)}%` : '—'}</td>
-      <td className="text-right px-3 tnum">
-        {tir != null
-          ? <span title={tirSinAjustar ? SIN_AJUSTAR_HINT : undefined}>{fmtPct(tir)}{tirSinAjustar && <sup className="text-[9px] text-ink-500 font-normal ml-0.5">e</sup>}</span>
-          : '—'}
-      </td>
+      <td className="text-right px-3 tnum">{tir != null ? fmtPct(tir) : '—'}</td>
       <td className="text-right px-3 tnum">{duracion ? `${fmtNum(duracion.macaulay, 1)}a` : '—'}</td>
       <td className="text-right px-3 tnum">{ref.vencimiento}</td>
       <td className="px-2 text-right whitespace-nowrap">
