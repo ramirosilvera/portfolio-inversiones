@@ -235,7 +235,7 @@ export function PosicionesPage() {
       {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep}
         initial={simular.pos} initialTicker={simular.ticker} onClose={() => setSimular(null)}
         onEjecutar={async (payload) => { await add(payload); }} onAporte={addAporte} />}
-      {showForm && <AgregarModal cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} onClose={() => setShowForm(false)}
+      {showForm && <AgregarModal cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep} onClose={() => setShowForm(false)}
         onAdd={add} onSaveRatio={saveRatio} onAporte={addAporte} />}
     </div>
   );
@@ -266,8 +266,8 @@ function enrichBono(ticker: string, catalogoBonos: BonoReferencia[]): Partial<Po
 // Mismo formulario de alta que antes vivía inline en PosicionesPage, ahora en modal — mismo estilo
 // visual que "Simular compra" (ver auditoría de UX: una abría tarjeta en la página, la otra popup,
 // para la misma acción de fondo).
-function AgregarModal({ cedearRatios, catalogoBonos, onClose, onAdd, onSaveRatio, onAporte }: {
-  cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; onClose: () => void;
+function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSaveRatio, onAporte }: {
+  cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; mep: number | null; onClose: () => void;
   onAdd: (p: Partial<Posicion>) => Promise<void>;
   onSaveRatio: (ticker: string, ratio: number) => void;
   onAporte: (a: { monto: number; fecha: string; tipo: 'recurrente'; descripcion: string }) => Promise<void>;
@@ -276,6 +276,33 @@ function AgregarModal({ cedearRatios, catalogoBonos, onClose, onAdd, onSaveRatio
   const [form, setForm] = useState<Partial<Posicion>>({ tipo: 'cedear', cantidad: 0, precio_compra: 0 });
   const [formErr, setFormErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Precio USD↔ARS vinculado, mismo criterio que Comprar/Vender y Simular compra (arsFromUsd/
+  // usdFromArs más abajo): el USD sigue siendo el que de verdad viaja en `form.precio_compra` — el
+  // ARS es solo una vista de conversión para no tener que hacer la cuenta a mano. Antes este modal
+  // era el único de los tres que no lo tenía.
+  const [precioUsd, setPrecioUsd] = useState('');
+  const [precioArs, setPrecioArs] = useState('');
+  const onUsdChange = (raw: string) => {
+    setPrecioUsd(raw);
+    const n = Number(raw);
+    setForm(f => ({ ...f, precio_compra: n }));
+    setPrecioArs(Number.isFinite(n) && n > 0 ? arsFromUsd(n, mep) : '');
+  };
+  const onArsChange = (raw: string) => {
+    setPrecioArs(raw);
+    const n = Number(raw);
+    const usd = Number.isFinite(n) && n > 0 ? usdFromArs(n, mep) : '';
+    setPrecioUsd(usd);
+    setForm(f => ({ ...f, precio_compra: Number(usd) || 0 }));
+  };
+  // Si el modal se abre ANTES de que useMacro() resuelva el MEP, el campo ARS arranca deshabilitado
+  // y vacío — cuando el MEP llega, si el usuario ya tipeó un USD mientras tanto, se completa el
+  // equivalente en vez de quedar vacío al lado de un USD ya cargado (mismo criterio que SellModal).
+  useEffect(() => {
+    if (!mep || precioArs !== '') return;
+    const n = Number(precioUsd);
+    if (Number.isFinite(n) && n > 0) setPrecioArs(arsFromUsd(n, mep));
+  }, [mep]); // eslint-disable-line react-hooks/exhaustive-deps
   // Sin tildar por default: crear un aporte automático cuando en realidad se compró con plata que
   // ya estaba en el portfolio duplicaría capital en la TIR (ver portfolioTir en engine/irr.ts) —
   // más vale que el usuario lo tilde a propósito que asumirlo mal.
@@ -367,7 +394,11 @@ function AgregarModal({ cedearRatios, catalogoBonos, onClose, onAdd, onSaveRatio
               <input placeholder="Cantidad" type="number" onChange={e => setForm({ ...form, cantidad: Number(e.target.value) })} className={inputCls} />
             </Field>
             <Field label="Precio compra (USD)">
-              <input placeholder="Precio compra USD" type="number" onChange={e => setForm({ ...form, precio_compra: Number(e.target.value) })} className={inputCls} />
+              <input placeholder="Precio compra USD" type="number" value={precioUsd} onChange={e => onUsdChange(e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="Precio compra (ARS)" hint={mep ? `MEP ${fmtArs(mep)}` : 'MEP no disponible'}>
+              <input placeholder="Precio compra ARS" type="number" value={precioArs} onChange={e => onArsChange(e.target.value)} disabled={!mep}
+                className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} />
             </Field>
             {form.tipo === 'cedear' && (
               <Field label="Ratio CEDEAR">
@@ -1012,7 +1043,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
                       <Field label="Ticker"><input value={s.nTicker} onChange={e => cambiarTicker(s.key, e.target.value)} className={inputCls} placeholder="ej. GOOGL" /></Field>
                       <Field label="Tipo">
                         <select value={s.nTipo} onChange={e => patchSim(s.key, { nTipo: e.target.value as Posicion['tipo'] })} className={`${inputCls} appearance-none`}>
-                          <option value="cedear">CEDEAR</option><option value="accion">Acción (US)</option><option value="accion_ar">Acción ARG</option><option value="etf">ETF</option><option value="bono">Bono / ON</option>
+                          <option value="cedear">CEDEAR</option><option value="accion">Acción (US)</option><option value="accion_ar">Acción ARG</option><option value="etf">ETF</option><option value="bono">Bono / ON</option><option value="cash">Cash</option>
                         </select>
                       </Field>
                       {d.esNuevoCedear && <Field label="Ratio CEDEAR" className="col-span-2"><input type="number" value={s.nRatio} onChange={e => patchSim(s.key, { nRatio: e.target.value })} className={inputCls} placeholder="subyacentes por CEDEAR" /></Field>}
