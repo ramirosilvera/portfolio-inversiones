@@ -78,6 +78,14 @@ export const IFRS_CONCEPTS = {
   pretaxIncome: ['ProfitLossBeforeTax'],
   taxes: ['IncomeTaxExpenseContinuingOperations'],
   interestExpense: ['InterestExpense'],
+  // Agregados tras confirmar con datos reales (TSM) que ocf/epsDiluted/revenue ya resolvían por
+  // IFRS, pero dna/capex/totalDebt seguían vacíos — y capexMethod:'dna' es el DEFAULT del DCF, así
+  // que sin `dna` la serie de owner earnings queda vacía entera y el veredicto cae a SIN_DATOS aunque
+  // el resto de los datos esté completo (ver ownerEarningsByYear en dcf.ts, needsDna).
+  dna: ['DepreciationDepletionAndAmortisationExpense'],
+  capex: ['PurchaseOfPropertyPlantAndEquipment'],
+  totalDebtLong: ['BorrowingsNoncurrent'],
+  totalDebtShort: ['BorrowingsCurrent'],
 } as const;
 
 export interface Raw { start?: string; end: string; val: number; fy?: number; fp?: string; form?: string; filed?: string; }
@@ -265,10 +273,11 @@ export async function fetchFundamentals(env: Env, ticker: string, cik: string): 
     (await g(usGaap)) ?? (ifrs ? await fetchFirst(env, cik, 'ifrs-full', ifrs) : null);
   const [ocf, ni, dna, capex, rev, opInc, eps, dps, eq, dl, ds, cash, sti, tax, pre, intExp, sharesRaw] = await enTandas([
     () => gConIfrs(CONCEPTS.ocf, IFRS_CONCEPTS.ocf), () => gConIfrs(CONCEPTS.netIncome, IFRS_CONCEPTS.netIncome),
-    () => g(CONCEPTS.dna), () => g(CONCEPTS.capex),
+    () => gConIfrs(CONCEPTS.dna, IFRS_CONCEPTS.dna), () => gConIfrs(CONCEPTS.capex, IFRS_CONCEPTS.capex),
     () => gConIfrs(CONCEPTS.revenue, IFRS_CONCEPTS.revenue), () => gConIfrs(CONCEPTS.operatingIncome, IFRS_CONCEPTS.operatingIncome),
     () => gConIfrs(CONCEPTS.epsDiluted, IFRS_CONCEPTS.epsDiluted), () => g(CONCEPTS.dividendPerShare),
-    () => gConIfrs(CONCEPTS.equity, IFRS_CONCEPTS.equity), () => g(CONCEPTS.totalDebtLong), () => g(CONCEPTS.totalDebtShort),
+    () => gConIfrs(CONCEPTS.equity, IFRS_CONCEPTS.equity),
+    () => gConIfrs(CONCEPTS.totalDebtLong, IFRS_CONCEPTS.totalDebtLong), () => gConIfrs(CONCEPTS.totalDebtShort, IFRS_CONCEPTS.totalDebtShort),
     () => gConIfrs(CONCEPTS.cash, IFRS_CONCEPTS.cash),
     () => g(CONCEPTS.shortTermInvestments), () => gConIfrs(CONCEPTS.taxes, IFRS_CONCEPTS.taxes),
     () => gConIfrs(CONCEPTS.pretaxIncome, IFRS_CONCEPTS.pretaxIncome), () => gConIfrs(CONCEPTS.interestExpense, IFRS_CONCEPTS.interestExpense),

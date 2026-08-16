@@ -12,9 +12,27 @@ async function authHeaders(): Promise<Record<string, string>> {
   return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
+// req() (mutaciones, ver abajo) ya leía el {detail}/{error} del body en un fallo — get() lo
+// descartaba entero y tiraba un genérico "→ HTTP 503", así que el caller no tenía forma de mostrar
+// el motivo real ni de distinguir "conviene reintentar" (la Function ya manda `reintentable` cuando
+// aplica, ver fundamentals.ts) de un fallo definitivo. Costó una investigación real de EDGAR en la
+// que hubo que pedirle el texto exacto al usuario a mano más de una vez, porque la UI no lo mostraba.
+export class ApiError extends Error {
+  status: number;
+  reintentable: boolean;
+  constructor(message: string, status: number, reintentable: boolean) {
+    super(message);
+    this.status = status;
+    this.reintentable = reintentable;
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: await authHeaders() });
-  if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { detail?: string; error?: string; reintentable?: boolean };
+    throw new ApiError(data.detail ?? data.error ?? `${path} → HTTP ${res.status}`, res.status, data.reintentable ?? res.status >= 500);
+  }
   return res.json();
 }
 

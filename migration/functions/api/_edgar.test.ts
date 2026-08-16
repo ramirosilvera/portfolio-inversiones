@@ -97,6 +97,16 @@ describe('IFRS_CONCEPTS — fallback para emisores 20-F sin ningún dato us-gaap
     expect(CONCEPTS.netIncome).not.toContain('ProfitLoss');
     expect(IFRS_CONCEPTS.netIncome).toContain('ProfitLoss');
   });
+
+  it('dna tiene fallback IFRS — es el que bloqueaba a TSM con SIN_DATOS incluso con ocf/epsDiluted/revenue ya resueltos (capexMethod:\'dna\' es el default, ver ownerEarningsByYear en dcf.ts)', () => {
+    expect(IFRS_CONCEPTS.dna.length).toBeGreaterThan(0);
+  });
+
+  it('capex y totalDebt (long/short) también tienen fallback IFRS', () => {
+    expect(IFRS_CONCEPTS.capex.length).toBeGreaterThan(0);
+    expect(IFRS_CONCEPTS.totalDebtLong.length).toBeGreaterThan(0);
+    expect(IFRS_CONCEPTS.totalDebtShort.length).toBeGreaterThan(0);
+  });
 });
 
 describe('deudaRezagada — detectar totalDebt congelado vs. el balance (caso KO)', () => {
