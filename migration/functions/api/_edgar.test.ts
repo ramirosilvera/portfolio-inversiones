@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnnual, ultimoAnio, deudaRezagada, serieRezagada, type Raw } from './_edgar';
+import { parseAnnual, ultimoAnio, deudaRezagada, serieRezagada, CONCEPTS, IFRS_CONCEPTS, type Raw } from './_edgar';
 import type { AnnualPoint } from './_edgar';
 
 const A = (vals: [number, number][]): AnnualPoint[] => vals.map(([fy, val]) => ({ fy, end: `${fy}-12-31`, val }));
@@ -77,6 +77,25 @@ describe('parseAnnual — 20-F (emisor privado extranjero, caso real TSM/ASML) c
   it('6-K (el equivalente a un 10-Q para un emisor extranjero) sigue excluido — no es un informe anual', () => {
     const serie = parseAnnual([r('2025-10-01', '2025-12-31', 999, 2025, '2026-05-01', '6-K')]);
     expect(serie).toHaveLength(0);
+  });
+});
+
+describe('IFRS_CONCEPTS — fallback para emisores 20-F sin ningún dato us-gaap (caso TSM)', () => {
+  it('cada clave de IFRS_CONCEPTS existe también en CONCEPTS (mismo campo, taxonomía distinta)', () => {
+    for (const key of Object.keys(IFRS_CONCEPTS)) {
+      expect(Object.keys(CONCEPTS)).toContain(key);
+    }
+  });
+
+  it('los conceptos núcleo que bloqueaban a TSM (ocf/epsDiluted/revenue) tienen fallback IFRS', () => {
+    expect(IFRS_CONCEPTS.ocf.length).toBeGreaterThan(0);
+    expect(IFRS_CONCEPTS.epsDiluted.length).toBeGreaterThan(0);
+    expect(IFRS_CONCEPTS.revenue.length).toBeGreaterThan(0);
+  });
+
+  it('netIncome ya no depende de un alias IFRS colado en la lista us-gaap (bug previo: "ProfitLoss" ahí nunca podía resolver)', () => {
+    expect(CONCEPTS.netIncome).not.toContain('ProfitLoss');
+    expect(IFRS_CONCEPTS.netIncome).toContain('ProfitLoss');
   });
 });
 

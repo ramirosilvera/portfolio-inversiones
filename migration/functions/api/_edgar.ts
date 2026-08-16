@@ -37,7 +37,7 @@ export const DEFAULT_CIK: Record<string, string> = {
 // Concept alias lists (probamos en orden hasta que una devuelva datos).
 export const CONCEPTS = {
   ocf: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
-  netIncome: ['NetIncomeLoss', 'ProfitLoss'],
+  netIncome: ['NetIncomeLoss'],
   dna: ['DepreciationDepletionAndAmortization', 'DepreciationAmortizationAndAccretionNet', 'DepreciationAndAmortization', 'Depreciation'],
   capex: ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets', 'PaymentsForCapitalImprovements'],
   revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'SalesRevenueNet'],
@@ -52,6 +52,28 @@ export const CONCEPTS = {
   taxes: ['IncomeTaxExpenseBenefit'],
   pretaxIncome: ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments'],
   interestExpense: ['InterestExpense', 'InterestExpenseDebt', 'InterestAndDebtExpense', 'InterestExpenseNonoperating'],
+} as const;
+
+// Alias IFRS (taxonomía ifrs-full) — SOLO como fallback si ninguna alias us-gaap devolvió datos (ver
+// fetchFirstConTaxonomia más abajo). Un emisor privado extranjero (Foreign Private Issuer, Form 20-F
+// — ver parseAnnual) puede reportar en IFRS sin ninguna reconciliación a us-gaap: antes de esto, un
+// caso así (ej. TSM) quedaba con el núcleo entero vacío (ocf/epsDiluted/revenue) y el ticker fallaba
+// con "EDGAR no respondió" aunque la causa fuera permanente. Nombres de la IFRS Taxonomy (IASB) — no
+// se pudieron verificar en vivo contra un 20-F real (sin acceso de red a SEC desde este entorno), así
+// que puede hacer falta ajustar alguno si un ticker sigue sin resolver con esto puesto. Antes había un
+// intento a medias de esto: 'ProfitLoss' colado en la lista de netIncome de us-gaap (arriba) — nunca
+// podía funcionar, porque se consultaba bajo la taxonomía us-gaap, donde ese elemento no existe.
+export const IFRS_CONCEPTS = {
+  ocf: ['CashFlowsFromUsedInOperatingActivities'],
+  netIncome: ['ProfitLoss'],
+  revenue: ['Revenue'],
+  epsDiluted: ['DilutedEarningsLossPerShare'],
+  equity: ['Equity'],
+  cash: ['CashAndCashEquivalents'],
+  operatingIncome: ['ProfitLossFromOperatingActivities'],
+  pretaxIncome: ['ProfitLossBeforeTax'],
+  taxes: ['IncomeTaxExpenseContinuingOperations'],
+  interestExpense: ['InterestExpense'],
 } as const;
 
 export interface Raw { start?: string; end: string; val: number; fy?: number; fp?: string; form?: string; filed?: string; }
@@ -233,11 +255,19 @@ async function enTandas<T>(tareas: (() => Promise<T>)[], limite = 4): Promise<T[
 
 export async function fetchFundamentals(env: Env, ticker: string, cik: string): Promise<EdgarFundamentals> {
   const g = (aliases: readonly string[]) => fetchFirst(env, cik, 'us-gaap', aliases);
+  // us-gaap primero siempre (así se comporta hoy para el 99% de los tickers, domésticos); ifrs-full
+  // SOLO si us-gaap no devolvió absolutamente nada para ese concepto — ver IFRS_CONCEPTS arriba.
+  const gConIfrs = async (usGaap: readonly string[], ifrs?: readonly string[]) =>
+    (await g(usGaap)) ?? (ifrs ? await fetchFirst(env, cik, 'ifrs-full', ifrs) : null);
   const [ocf, ni, dna, capex, rev, opInc, eps, dps, eq, dl, ds, cash, sti, tax, pre, intExp, sharesRaw] = await enTandas([
-    () => g(CONCEPTS.ocf), () => g(CONCEPTS.netIncome), () => g(CONCEPTS.dna), () => g(CONCEPTS.capex),
-    () => g(CONCEPTS.revenue), () => g(CONCEPTS.operatingIncome), () => g(CONCEPTS.epsDiluted), () => g(CONCEPTS.dividendPerShare),
-    () => g(CONCEPTS.equity), () => g(CONCEPTS.totalDebtLong), () => g(CONCEPTS.totalDebtShort), () => g(CONCEPTS.cash),
-    () => g(CONCEPTS.shortTermInvestments), () => g(CONCEPTS.taxes), () => g(CONCEPTS.pretaxIncome), () => g(CONCEPTS.interestExpense),
+    () => gConIfrs(CONCEPTS.ocf, IFRS_CONCEPTS.ocf), () => gConIfrs(CONCEPTS.netIncome, IFRS_CONCEPTS.netIncome),
+    () => g(CONCEPTS.dna), () => g(CONCEPTS.capex),
+    () => gConIfrs(CONCEPTS.revenue, IFRS_CONCEPTS.revenue), () => gConIfrs(CONCEPTS.operatingIncome, IFRS_CONCEPTS.operatingIncome),
+    () => gConIfrs(CONCEPTS.epsDiluted, IFRS_CONCEPTS.epsDiluted), () => g(CONCEPTS.dividendPerShare),
+    () => gConIfrs(CONCEPTS.equity, IFRS_CONCEPTS.equity), () => g(CONCEPTS.totalDebtLong), () => g(CONCEPTS.totalDebtShort),
+    () => gConIfrs(CONCEPTS.cash, IFRS_CONCEPTS.cash),
+    () => g(CONCEPTS.shortTermInvestments), () => gConIfrs(CONCEPTS.taxes, IFRS_CONCEPTS.taxes),
+    () => gConIfrs(CONCEPTS.pretaxIncome, IFRS_CONCEPTS.pretaxIncome), () => gConIfrs(CONCEPTS.interestExpense, IFRS_CONCEPTS.interestExpense),
     () => fetchConcept(env, cik, 'dei', 'EntityCommonStockSharesOutstanding'),
   ]);
 
