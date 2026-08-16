@@ -16,6 +16,7 @@ import type { Rating } from '../engine/score';
 import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
 import { CALIFICADORAS, ETIQUETA_GRADO, type GradoCredito } from '../engine/rating';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
+import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
 import { Card, CardHeader, Button, Badge, RatingBadge, ViewToggle, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct } from '../components/ui';
 import { UpdatedAt } from '../components/UpdatedAt';
 
@@ -31,12 +32,6 @@ type SortKey = 'ticker' | 'price' | 'mos' | 'roic' | 'eg5y' | 'score';
 interface RowSortData { price: number | null; mos: number | null; roic: number | null; eg5y: number | null; score: number | null; agresiva: boolean }
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { ticker: 'asc', price: 'desc', mos: 'desc', roic: 'desc', eg5y: 'desc', score: 'desc' };
 
-type Vista = 'variable' | 'fija';
-const VISTA_KEY = 'radar_vista';
-function vistaInicial(): Vista {
-  try { return localStorage.getItem(VISTA_KEY) === 'fija' ? 'fija' : 'variable'; } catch { return 'variable'; }
-}
-
 // Radar de acciones/CEDEARs y de renta fija son dos universos completamente distintos (score DCF
 // vs. TIR/duración de un cronograma, ninguna columna en común) — un toggle en vez de dos tablas
 // apiladas, para no forzar al usuario a escanear un tipo de activo que no le interesa en ese
@@ -44,10 +39,7 @@ function vistaInicial(): Vista {
 // para un solo universo a la vez.
 export function RadarPage() {
   const [vista, setVista] = useState<Vista>(vistaInicial);
-  const cambiarVista = (v: Vista) => {
-    setVista(v);
-    try { localStorage.setItem(VISTA_KEY, v); } catch { /* localStorage puede fallar en privado/cuota — no es crítico */ }
-  };
+  const cambiarVista = (v: Vista) => { setVista(v); guardarVista(v); };
 
   return (
     <div className="space-y-4">
