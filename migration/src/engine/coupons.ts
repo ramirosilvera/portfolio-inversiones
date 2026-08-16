@@ -340,22 +340,36 @@ function cronogramaValido(cronograma: CronogramaItem[] | null | undefined): cron
 // `precio` (data912) es precio LIMPIO — mismo problema y misma corrección que en ytm() (ver su
 // comentario para el porqué y la verificación empírica contra IOL). Acá no hay `frecuencia`
 // explícita (bonos_referencia no la guarda como columna), así que la duración del período en curso
-// se infiere de la distancia entre los DOS próximos flujos del propio cronograma — exacta para
-// cualquier momento de la vida del bono salvo el último período (cuando solo queda 1 flujo futuro:
-// el rescate final), donde no hay con qué inferirla y se usa el precio limpio tal cual, igual que
-// antes de este fix. Es una aproximación menor acotada a esa única ventana, muy por debajo en
-// magnitud del sesgo que corrige el resto de la función.
+// se infiere de la distancia real entre dos flujos del propio cronograma: los DOS próximos si hay
+// (exacto para cualquier momento de la vida del bono salvo el último período), o el ÚLTIMO CUPÓN YA
+// PAGADO + el único flujo futuro que queda (el rescate final) — dato real del cronograma, nunca un
+// supuesto nuevo. Antes, en el último período (1 solo flujo futuro), no se ajustaba nada y se usaba
+// precio limpio = precio sucio — "una aproximación menor", según el comentario viejo. No lo es: caso
+// real MIC3D (ON a ~90 días del vencimiento, cupón semestral 3.5%), el interés corrido de casi medio
+// cupón que quedaba sin sumar al costo inflaba la TIR calculada a ~14.6% cuando el número correcto
+// (con el interés corrido) da ~6-7% — casi el doble, y consistente con "duración muy corta = pull-to-
+// par: la TIR de un bono a semanas del vencimiento tiene que rondar su cupón, no doblarlo".
 export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[] | null | undefined, hoy: string): number | null {
   if (!(precio > 0) || !cronogramaValido(cronograma)) return null;
   const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
   if (!futuros.length) return null;
 
   let sucio = precio;
+  const proxima = Date.parse(futuros[0].fecha);
+  let anterior: number | null = null;
   if (futuros.length >= 2) {
-    const proxima = Date.parse(futuros[0].fecha), siguiente = Date.parse(futuros[1].fecha);
+    const siguiente = Date.parse(futuros[1].fecha);
     const diasPeriodo = (siguiente - proxima) / 86_400_000;
+    if (diasPeriodo > 0) anterior = proxima - diasPeriodo * 86_400_000;
+  } else {
+    // Último período: no hay un SIGUIENTE flujo futuro del que inferir la duración, pero sí hay un
+    // ANTERIOR real en el propio cronograma (el último cupón que el bono ya pagó antes de hoy).
+    const pagados = cronograma.filter(f => f.fecha <= hoy && (f.interes + f.amortizacion) > 0);
+    if (pagados.length) anterior = Math.max(...pagados.map(f => Date.parse(f.fecha)));
+  }
+  if (anterior != null) {
+    const diasPeriodo = (proxima - anterior) / 86_400_000;
     if (diasPeriodo > 0) {
-      const anterior = proxima - diasPeriodo * 86_400_000;
       const diasCorridos = (Date.parse(hoy + 'T00:00:00Z') - anterior) / 86_400_000;
       const fraccion = Math.min(1, Math.max(0, diasCorridos / diasPeriodo));
       sucio = precio + futuros[0].interes * fraccion;
@@ -367,6 +381,22 @@ export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[] |
     ...futuros.map(f => ({ date: f.fecha, amount: f.interes + f.amortizacion })),
   ];
   return xirr(flows);
+}
+
+// ¿La TIR de arriba pudo ajustar el interés corrido en el ÚLTIMO período del bono (1 solo flujo
+// futuro restante)? false cuando el cronograma no tiene ningún cupón YA PAGADO del que inferir la
+// duración de ese período (caso real: bonos_referencia solo guarda los flujos FUTUROS que trae IOL,
+// nunca el historial) — ahí se usa precio limpio sin ajustar, lo que puede inflar bastante la TIR
+// cerca del vencimiento (caso real: MIC3D, a ~90 días del vencimiento con cupón semestral: ~14.6%
+// calculado vs. ~6-7% con el interés corrido correctamente sumado — casi el doble). Se expone para
+// que la UI pueda avisar en vez de mostrar el número sin ninguna salvedad — mismo criterio que el
+// aviso "sin cotización" de BonosPage.tsx (superíndice "e").
+export function tirUltimoPeriodoSinAjustar(cronograma: CronogramaItem[] | null | undefined, hoy: string): boolean {
+  if (!cronogramaValido(cronograma)) return false;
+  const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0);
+  if (futuros.length !== 1) return false;
+  const pagados = cronograma.filter(f => f.fecha <= hoy && (f.interes + f.amortizacion) > 0);
+  return pagados.length === 0;
 }
 
 // Rendimiento corriente (current yield) para bonos_referencia: mismo concepto que

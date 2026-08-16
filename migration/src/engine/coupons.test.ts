@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
+import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, tirUltimoPeriodoSinAjustar, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
 import { xirr } from './irr';
 
 const semestral: CouponBond = { ticker: 'GD46', faceValue: 1000, tasaAnual: 0.08, frecuencia: 2, mesRef: 1 };
@@ -362,6 +362,59 @@ describe('ytmFromCronograma / bondDurationFromCronograma — cronograma explíci
       const r = ytmFromCronograma(0.9, ultimoCupon, '2026-07-24');
       expect(r).not.toBeNull();
       expect(Number.isFinite(r)).toBe(true);
+    });
+
+    // Caso real MIC3D (ON a ~90 días del vencimiento, cupón semestral 3.5%, precio ~par): con un solo
+    // flujo futuro, ytmFromCronograma() ahora busca el ÚLTIMO CUPÓN YA PAGADO en el propio cronograma
+    // (dato real, no un supuesto nuevo) para poder ajustar igual el interés corrido — en vez de usar
+    // precio limpio tal cual, que infla la TIR (~14.6% calculado vs. ~6-7% real).
+    describe('con el cupón anterior disponible en el cronograma (mismo mecanismo que 2+ flujos futuros)', () => {
+      const finalFlow: CronogramaItem = { fecha: '2026-11-11', interes: 0.035, amortizacion: 1, saldo_residual: 0 };
+      const hoy = '2026-08-16';
+
+      it('se ajusta el interés corrido: la TIR queda menor que sin el ajuste (mismo precio, mismo hoy)', () => {
+        const conHistoria: CronogramaItem[] = [
+          { fecha: '2026-05-11', interes: 0.035, amortizacion: 0, saldo_residual: 1 },
+          finalFlow,
+        ];
+        const soloFuturo: CronogramaItem[] = [finalFlow];
+        const tirConHistoria = ytmFromCronograma(1.002, conHistoria, hoy);
+        const tirSinHistoria = ytmFromCronograma(1.002, soloFuturo, hoy);
+        expect(tirConHistoria).not.toBeNull();
+        expect(tirConHistoria!).toBeLessThan(tirSinHistoria!);
+      });
+
+      it('sin ningún cupón anterior en el cronograma (caso real: bonos_referencia solo guarda flujos futuros) la TIR queda inflada — bastante por encima del cupón anualizado (~7%)', () => {
+        const soloFuturo: CronogramaItem[] = [finalFlow];
+        const tir = ytmFromCronograma(1.002, soloFuturo, hoy)!;
+        expect(tir).toBeGreaterThan(0.12);
+      });
+    });
+  });
+
+  describe('tirUltimoPeriodoSinAjustar — cuándo la UI debe avisar que la TIR puede estar inflada (caso real MIC3D)', () => {
+    const finalFlow: CronogramaItem = { fecha: '2026-11-11', interes: 0.035, amortizacion: 1, saldo_residual: 0 };
+    const hoy = '2026-08-16';
+
+    it('un solo flujo futuro y ningún cupón pagado en el cronograma → true (caso real de bonos_referencia hoy)', () => {
+      expect(tirUltimoPeriodoSinAjustar([finalFlow], hoy)).toBe(true);
+    });
+
+    it('un solo flujo futuro pero CON un cupón anterior en el cronograma → false (si algún día bonos_referencia guarda historial, ya no hace falta el aviso)', () => {
+      const conHistoria: CronogramaItem[] = [
+        { fecha: '2026-05-11', interes: 0.035, amortizacion: 0, saldo_residual: 1 },
+        finalFlow,
+      ];
+      expect(tirUltimoPeriodoSinAjustar(conHistoria, hoy)).toBe(false);
+    });
+
+    it('2+ flujos futuros (no es el último período) → false, aunque no haya ningún cupón ya pagado en el cronograma', () => {
+      expect(tirUltimoPeriodoSinAjustar(bulletEquivalente, '2026-07-24')).toBe(false);
+    });
+
+    it('bono vencido o cronograma vacío → false (no hay TIR de la que avisar)', () => {
+      expect(tirUltimoPeriodoSinAjustar([finalFlow], '2027-01-01')).toBe(false);
+      expect(tirUltimoPeriodoSinAjustar([], hoy)).toBe(false);
     });
   });
 

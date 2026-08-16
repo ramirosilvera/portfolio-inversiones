@@ -72,7 +72,9 @@ export function AnalisisBonoPage() {
             <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Stat label="Precio" value={fmtUsd(calc.px)} />
               <Stat label="Paridad" value={calc.paridad != null ? `${fmtNum(calc.paridad, 1)}%` : '—'} />
-              <Stat label="TIR" value={calc.tir != null ? fmtPct(calc.tir) : '—'} />
+              <Stat label="TIR"
+                value={calc.tir != null ? <>{fmtPct(calc.tir)}{calc.tirSinAjustar && <sup className="text-[9px] text-ink-500 font-normal ml-0.5">e</sup>}</> : '—'}
+                hint={calc.tirSinAjustar ? 'Estimada: a esta altura del último cupón, el cronograma no tiene ningún pago previo del que inferir el interés corrido, así que se calculó con precio limpio sin ajustar — puede estar inflada, sobre todo muy cerca del vencimiento.' : undefined} />
               <Stat label="Rendimiento corriente" value={calc.rendCorriente != null ? fmtPct(calc.rendCorriente) : '—'}
                 hint="Cupón anualizado / precio — a diferencia de la TIR, ignora la ganancia/pérdida de capital hasta el vencimiento" />
               <Stat label="Duración (Macaulay)" value={calc.duracion ? `${fmtNum(calc.duracion.macaulay, 1)} años` : '—'} />
@@ -85,6 +87,11 @@ export function AnalisisBonoPage() {
             </div>
             {calc.px == null && (
               <p className="px-4 pb-2 text-[11px] text-warn">Sin cotización disponible ahora mismo — TIR, duración y rendimiento corriente no se pueden calcular sin precio de mercado.</p>
+            )}
+            {calc.tirSinAjustar && (
+              <p className="px-4 pb-2 text-[11px] text-ink-500">
+                <sup className="text-[9px]">e</sup> Último cupón antes del vencimiento sin ningún pago previo en el cronograma — la TIR se calculó con precio limpio, sin descontar el interés corrido, y puede estar inflada (sobre todo muy cerca del vencimiento).
+              </p>
             )}
             {proximoCupon && (
               <p className="px-4 pb-4 text-[11px] text-ink-600">

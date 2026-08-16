@@ -6,7 +6,7 @@
 // el universo de seguimiento (Radar) en vez de la cartera.
 // =============================================================================
 
-import { ytmFromCronograma, bondDurationFromCronograma, rendimientoCorrienteFromCronograma, type CronogramaItem } from './coupons';
+import { ytmFromCronograma, bondDurationFromCronograma, rendimientoCorrienteFromCronograma, tirUltimoPeriodoSinAjustar, type CronogramaItem } from './coupons';
 import { clasificarRating, type GradoCredito, type EscalaRating } from './rating';
 
 // Mismo criterio que Posicion en types/domain.ts: los campos mirror 1:1 las columnas de
@@ -56,6 +56,12 @@ export interface BonoReferenciaCalc {
   // rendimientoCorrienteFromCronograma(). null si no hay 2 flujos futuros de dónde inferir la
   // frecuencia (último período del bono), igual límite que tir/duracion en ese caso puntual.
   rendCorriente: number | null;
+  // true si `tir` es del último período del bono (1 solo flujo futuro) y no se pudo ajustar por
+  // interés corrido — el cronograma no tiene ningún cupón ya pagado del que inferir la duración de
+  // ese período (bonos_referencia solo guarda los flujos futuros que trae IOL). La UI debería avisar
+  // (ver tirUltimoPeriodoSinAjustar en coupons.ts) en vez de mostrar el número sin salvedad — puede
+  // estar inflado, sobre todo cuanto más cerca del vencimiento.
+  tirSinAjustar: boolean;
   // null = sin calificar, calificadora 'Otra' (notación desconocida), o nota que no matchea
   // ninguna escala conocida — nunca "adivina" un grado (ver clasificarRating).
   grado: GradoCredito | null;
@@ -71,8 +77,9 @@ export function calcularBonoReferencia(ref: BonoReferencia, px: number | null, h
   const tir = px != null ? ytmFromCronograma(px, ref.cronograma, hoy) : null;
   const duracion = tir != null ? bondDurationFromCronograma(ref.cronograma, tir, hoy) : null;
   const rendCorriente = px != null ? rendimientoCorrienteFromCronograma(px, ref.cronograma, hoy) : null;
+  const tirSinAjustar = tir != null && tirUltimoPeriodoSinAjustar(ref.cronograma, hoy);
   const clasif = clasificarRating(ref.calificadora, ref.calificacion);
-  return { ref, px, paridad, tir, duracion, rendCorriente, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null };
+  return { ref, px, paridad, tir, duracion, rendCorriente, tirSinAjustar, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null };
 }
 
 export interface Comparable extends BonoReferenciaCalc {
