@@ -93,15 +93,32 @@ export interface AnnualPoint { fy: number; end: string; val: number; }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// Presupuesto DURO de subrequests para una sola llamada a fetchFundamentals — NUNCA a nivel módulo
+// (un Worker puede reusar el mismo isolate entre invocaciones distintas; un contador a nivel módulo
+// se arrastraría de un usuario/request a otro). Cloudflare corta la invocación ENTERA con "Too many
+// subrequests" pasado cierto techo (50 en Pages Functions salvo config especial) — y ese corte NO
+// respeta ningún try/catch de acá: tira abajo hasta el fallback a la última foto cacheada
+// (cacheLast, en fundamentals.ts), porque comparte la MISMA invocación/presupuesto. Con ~17
+// conceptos × hasta 4 alias × reintentos (+1 alias IFRS más por concepto desde ese fallback), un
+// ticker genuinamente rate-limitado por EDGAR (reintentando de verdad, no solo en el peor caso
+// teórico) alcanzaba ese techo — caso real: KO, con el error de Cloudflare tal cual en el `detail`.
+// Con este presupuesto, en vez de crashear la invocación entera, los conceptos que no llegaron a
+// pedirse quedan simplemente vacíos (mismo resultado que "esa alias no tenía el dato" — ya cubierto
+// por `ungradeable`), y queda margen para que fundamentals.ts pueda leer la caché como respaldo.
+export interface SubrequestBudget { restante: number }
+export const SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS = 35;
+
 // Devuelve la serie de un concepto. Distingue "no existe" (404/403 → null definitivo) de errores
 // transitorios (429/5xx/red → reintenta con backoff), para no confundir un rate-limit del proxy
 // con ausencia real de dato. Elige la unidad correcta (USD / USD/shares / shares) explícitamente.
-async function fetchConcept(env: Env, cik: string, taxonomy: string, concept: string): Promise<Raw[] | null> {
+async function fetchConcept(env: Env, cik: string, taxonomy: string, concept: string, budget: SubrequestBudget): Promise<Raw[] | null> {
   // Normalizar la base: si el secret SEC_PROXY_BASE termina en "/", la doble barra resultante
   // hacía que el worker respondiera 400 "Ruta no permitida" para TODOS los conceptos.
   const base = (env.SEC_PROXY_BASE || '').replace(/\/+$/, '');
   const url = `${base}/api/xbrl/companyconcept/CIK${cik}/${taxonomy}/${concept}.json?k=${env.SEC_PROXY_TOKEN}`;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (budget.restante <= 0) return null;   // presupuesto agotado: no pedir más para esta invocación
+    budget.restante--;
     let res: Response;
     try {
       res = await fetch(url);
@@ -142,12 +159,13 @@ export function ultimoAnio(raw: Raw[]): number {
 // (caso WMT: owner earnings de 2015-2019 cuando ya había datos hasta hoy).
 // NO se mezclan alias entre sí: son conceptos con definiciones distintas (p. ej. "Depreciation" vs
 // "DepreciationDepletionAndAmortization") y combinarlos crearía saltos falsos en la serie.
-async function fetchFirst(env: Env, cik: string, taxonomy: string, aliases: readonly string[]): Promise<Raw[] | null> {
+async function fetchFirst(env: Env, cik: string, taxonomy: string, aliases: readonly string[], budget: SubrequestBudget): Promise<Raw[] | null> {
   const anioActual = new Date().getUTCFullYear();
   let mejor: Raw[] | null = null;
   let mejorAnio = -Infinity;
   for (const a of aliases) {
-    const r = await fetchConcept(env, cik, taxonomy, a);
+    if (budget.restante <= 0) break;   // presupuesto agotado: no seguir probando alias
+    const r = await fetchConcept(env, cik, taxonomy, a, budget);
     if (!r || !r.length) continue;
     const anio = ultimoAnio(r);
     if (anio > mejorAnio || (anio === mejorAnio && mejor && r.length > mejor.length)) {
@@ -266,11 +284,13 @@ async function enTandas<T>(tareas: (() => Promise<T>)[], limite = 4): Promise<T[
 }
 
 export async function fetchFundamentals(env: Env, ticker: string, cik: string): Promise<EdgarFundamentals> {
-  const g = (aliases: readonly string[]) => fetchFirst(env, cik, 'us-gaap', aliases);
+  // Nuevo por invocación (nunca a nivel módulo, ver SubrequestBudget arriba).
+  const budget: SubrequestBudget = { restante: SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS };
+  const g = (aliases: readonly string[]) => fetchFirst(env, cik, 'us-gaap', aliases, budget);
   // us-gaap primero siempre (así se comporta hoy para el 99% de los tickers, domésticos); ifrs-full
   // SOLO si us-gaap no devolvió absolutamente nada para ese concepto — ver IFRS_CONCEPTS arriba.
   const gConIfrs = async (usGaap: readonly string[], ifrs?: readonly string[]) =>
-    (await g(usGaap)) ?? (ifrs ? await fetchFirst(env, cik, 'ifrs-full', ifrs) : null);
+    (await g(usGaap)) ?? (ifrs ? await fetchFirst(env, cik, 'ifrs-full', ifrs, budget) : null);
   const [ocf, ni, dna, capex, rev, opInc, eps, dps, eq, dl, ds, cash, sti, tax, pre, intExp, sharesRaw] = await enTandas([
     () => gConIfrs(CONCEPTS.ocf, IFRS_CONCEPTS.ocf), () => gConIfrs(CONCEPTS.netIncome, IFRS_CONCEPTS.netIncome),
     () => gConIfrs(CONCEPTS.dna, IFRS_CONCEPTS.dna), () => gConIfrs(CONCEPTS.capex, IFRS_CONCEPTS.capex),
@@ -281,7 +301,7 @@ export async function fetchFundamentals(env: Env, ticker: string, cik: string): 
     () => gConIfrs(CONCEPTS.cash, IFRS_CONCEPTS.cash),
     () => g(CONCEPTS.shortTermInvestments), () => gConIfrs(CONCEPTS.taxes, IFRS_CONCEPTS.taxes),
     () => gConIfrs(CONCEPTS.pretaxIncome, IFRS_CONCEPTS.pretaxIncome), () => gConIfrs(CONCEPTS.interestExpense, IFRS_CONCEPTS.interestExpense),
-    () => fetchConcept(env, cik, 'dei', 'EntityCommonStockSharesOutstanding'),
+    () => fetchConcept(env, cik, 'dei', 'EntityCommonStockSharesOutstanding', budget),
   ]);
 
   const P = {

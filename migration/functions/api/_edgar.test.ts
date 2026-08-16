@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnnual, ultimoAnio, deudaRezagada, serieRezagada, CONCEPTS, IFRS_CONCEPTS, type Raw } from './_edgar';
+import { parseAnnual, ultimoAnio, deudaRezagada, serieRezagada, CONCEPTS, IFRS_CONCEPTS, SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS, type Raw } from './_edgar';
 import type { AnnualPoint } from './_edgar';
 
 const A = (vals: [number, number][]): AnnualPoint[] => vals.map(([fy, val]) => ({ fy, end: `${fy}-12-31`, val }));
@@ -106,6 +106,16 @@ describe('IFRS_CONCEPTS — fallback para emisores 20-F sin ningún dato us-gaap
     expect(IFRS_CONCEPTS.capex.length).toBeGreaterThan(0);
     expect(IFRS_CONCEPTS.totalDebtLong.length).toBeGreaterThan(0);
     expect(IFRS_CONCEPTS.totalDebtShort.length).toBeGreaterThan(0);
+  });
+});
+
+describe('SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS — margen contra el límite de Cloudflare (caso real KO)', () => {
+  it('queda bien por debajo de 50 (el límite de subrequests por invocación en Pages Functions), dejando margen para cacheFresh/cacheLast/sbUpsert alrededor', () => {
+    // Cloudflare cortó la invocación ENTERA de KO con "Too many subrequests" — con ~17 conceptos ×
+    // hasta 4 alias × reintentos (+ el fallback IFRS), el peor caso se acercaba o pasaba ese techo.
+    // Si algún día se agregan más conceptos/alias, este test avisa si el presupuesto quedó sin
+    // ajustar y el margen de seguridad se perdió.
+    expect(SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS).toBeLessThanOrEqual(40);
   });
 });
 
