@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Sparkles, CheckCircle2, AlertTriangle, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { useQuotes, useMacro } from '../hooks/usePosiciones';
 import { useCikMap } from '../hooks/useCikMap';
 import { usePortfolios } from '../hooks/usePortfolios';
@@ -139,9 +139,13 @@ export function AnalisisPage() {
 
   if (cikLoading || isLoading) return <p className="text-ink-600">Cargando fundamentals de {T}…</p>;
   if (error) {
-    // 503 = EDGAR no respondió en este intento (rate-limit): es REINTENTABLE, no "la empresa no
-    // aplica". Distinguirlo evita el diagnóstico equivocado.
-    const reintentable = /HTTP 50\d/.test(error instanceof Error ? error.message : '');
+    // reintentable viene DIRECTO de la Function (ver fundamentals.ts) — antes se inferÍa con un
+    // regex sobre el mensaje genérico "→ HTTP 503" que armaba get() (lib/api.ts), que además
+    // descartaba el {detail} real que la Function sí manda. Sin eso, diagnosticar un caso real
+    // (ej. por qué un ticker puntual no trae ciertos datos) requería pedirle a mano el texto exacto
+    // al usuario — ahora se puede mostrar directo.
+    const reintentable = error instanceof ApiError ? error.reintentable : false;
+    const detalleServidor = error instanceof ApiError ? error.message : null;
     return (
       <div className="space-y-3">
         <Link to="/analisis" className="text-xs text-celeste-600 hover:underline">← Volver a Análisis</Link>
@@ -157,6 +161,7 @@ export function AnalisisPage() {
               <p className="text-ink-600">Solo funciona con empresas que reportan a la SEC. Si es una grande de EE.UU. que no reconocemos, cargá su par ticker → CIK en <b>Configuración</b>.</p>
             </>
           )}
+          {detalleServidor && <p className="text-[11px] text-ink-500">Detalle: {detalleServidor}</p>}
           <Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} /> {isFetching ? 'Reintentando…' : 'Reintentar'}
           </Button>
