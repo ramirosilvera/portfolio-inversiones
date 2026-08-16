@@ -50,7 +50,7 @@ export const SECCION_CATALOG: SeccionDef[] = [
   { key: 'distribucion', titulo: 'Distribución', descripcion: 'Renta fija vs. variable, con objetivo editable y desvío por ticker.' },
   { key: 'cedears', titulo: 'CEDEARs', descripcion: 'Capital, concentración y diversificación sectorial.' },
   { key: 'bonos', titulo: 'Bonos', descripcion: 'Capital, TIR y duración promedio ponderada.' },
-  { key: 'radar', titulo: 'Radar', descripcion: 'Tickers en seguimiento y señales de compra agresiva (DCF).' },
+  { key: 'radar', titulo: 'Radar', descripcion: 'Renta variable (compra agresiva, DCF) y renta fija (bonos destacados) — con un toggle para cambiar de vista.' },
   { key: 'patrimonio_broker', titulo: 'Patrimonio por broker', descripcion: 'Dónde está físicamente cada posición.' },
   { key: 'cobros', titulo: 'Cobros', descripcion: 'Dividendos, intereses y amortizaciones cobrados + próximo capital proyectado.' },
   { key: 'liquidez_fci', titulo: 'Finanzas', descripcion: 'Ingresos, egresos y reserva de liquidez ya asignada — compartido entre todos tus portfolios.' },
