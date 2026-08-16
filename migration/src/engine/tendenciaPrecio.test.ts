@@ -83,6 +83,21 @@ describe('contrastarConNegocio — el falsificador de value trap', () => {
     expect(contrastarConNegocio(-0.03, 0.20)).toBe('sin-señal-clara');
   });
 
+  it('precio subió mucho más rápido que el negocio (aunque el negocio no haya caído) → posible recalentamiento de múltiplo', () => {
+    // +100% acumulado en 5 años exactos → ~14.9% anualizado (no 100%: la función anualiza antes de
+    // comparar). Owner Earnings creciendo apenas 2% anual no explica ni de cerca esa suba de precio.
+    expect(contrastarConNegocio(1.0, 0.02)).toBe('posible-recalentamiento');
+  });
+
+  it('el negocio acompaña de cerca la suba del precio (una vez anualizado) → sin señal clara, no "recalentamiento" por comparar mal las unidades', () => {
+    // +50% acumulado en 5 años ≈ 8.45% anual — Owner Earnings al 8% anual está prácticamente a la par.
+    expect(contrastarConNegocio(0.50, 0.08)).toBe('sin-señal-clara');
+  });
+
+  it('30% acumulado en 5 años (≈5.4% anual) vs. negocio al 3% anual: la brecha no llega al umbral → sin señal clara', () => {
+    expect(contrastarConNegocio(0.30, 0.03)).toBe('sin-señal-clara');
+  });
+
   it('sin datos de precio o de negocio → null (no inventa una lectura)', () => {
     expect(contrastarConNegocio(null, 0.1)).toBeNull();
     expect(contrastarConNegocio(-0.1, null)).toBeNull();

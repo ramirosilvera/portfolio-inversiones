@@ -259,15 +259,18 @@ export function AnalisisPage() {
             {lecturaTendencia && (
               <div className={`mx-4 mt-3 mb-2 rounded-xl px-3 py-2.5 text-[11px] flex items-start gap-2 ring-1 ring-inset ${
                 lecturaTendencia === 'posible-panico' ? 'bg-pos/10 ring-pos/25'
-                : lecturaTendencia === 'posible-deterioro' ? 'bg-neg/10 ring-neg/25' : 'bg-canvas ring-line'}`}>
+                : lecturaTendencia === 'posible-deterioro' ? 'bg-neg/10 ring-neg/25'
+                : lecturaTendencia === 'posible-recalentamiento' ? 'bg-warn/10 ring-warn/25' : 'bg-canvas ring-line'}`}>
                 {lecturaTendencia === 'posible-deterioro'
                   ? <TrendingDown className="w-4 h-4 shrink-0 text-neg mt-0.5" />
-                  : <TrendingUp className="w-4 h-4 shrink-0 text-pos mt-0.5" />}
+                  : <TrendingUp className={`w-4 h-4 shrink-0 mt-0.5 ${lecturaTendencia === 'posible-recalentamiento' ? 'text-warn' : 'text-pos'}`} />}
                 <p className="text-ink-700">
                   {lecturaTendencia === 'posible-panico' &&
                     <>Precio {fmtPct(var5yCruce)} en 5 años, pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
                   {lecturaTendencia === 'posible-deterioro' &&
                     <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — nada acá contradice que el negocio se haya deteriorado. Un precio bajo por sí solo no es garantía de descuento.</>}
+                  {lecturaTendencia === 'posible-recalentamiento' &&
+                    <>Precio {fmtPct(var5yCruce)} en 5 años, bastante más rápido que el negocio (Owner Earnings creciendo a un CAGR histórico de {fmtPct(dcf.histCagrOE)}) — parte de la suba vino de que el mercado le puso un múltiplo mayor a la empresa, no de que el negocio haya mejorado al mismo ritmo. No es lo mismo que "cara" (eso ya lo dice el margen de seguridad de arriba, con el valor intrínseco de hoy): es una advertencia distinta — sostener este precio de acá en más depende de que el negocio siga alcanzando al múltiplo, no de que el mercado se lo siga expandiendo.</>}
                   {lecturaTendencia === 'sin-señal-clara' &&
                     <>Sin movimiento fuerte de precio ni de Owner Earnings en 5 años — no hay una lectura clara de pánico ni de deterioro.</>}
                 </p>

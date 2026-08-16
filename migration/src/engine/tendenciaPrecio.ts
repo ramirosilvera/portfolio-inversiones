@@ -58,7 +58,7 @@ export function tendenciaPrecio(puntos: PuntoPrecio[]): TendenciaPrecio {
 // Recibe siempre var5y (nunca varVentana): histCagrOE se calcula sobre los últimos 5 ejercicios
 // (ver dcf.ts, last5) — si la ventana de precio fetcheada creciera a 10 años, comparar contra
 // varVentana mezclaría dos horizontes distintos y el cruce dejaría de ser válido.
-export type LecturaTendencia = 'posible-panico' | 'posible-deterioro' | 'sin-señal-clara';
+export type LecturaTendencia = 'posible-panico' | 'posible-deterioro' | 'posible-recalentamiento' | 'sin-señal-clara';
 
 // Umbral 5%: por debajo de eso es ruido de corto plazo, no una tendencia real que valga la pena leer.
 const UMBRAL = 0.05;
@@ -71,5 +71,17 @@ export function contrastarConNegocio(varPrecio: number | null, cagrOwnerEarnings
   if (precioCayo && !negocioCayo) return 'posible-panico';     // el mercado castigó más de lo que cayó (o sin caer) el negocio
   if (precioCayo && negocioCayo) return 'posible-deterioro';   // cayeron los dos: nada contradice la caída del precio
   if (precioSubio && negocioCayo) return 'posible-deterioro';  // subió el precio pero el negocio no acompaña — euforia sin respaldo
+  // Recalentamiento: el precio subió bastante más rápido que el NEGOCIO, aunque el negocio no haya
+  // caído — parte de la suba no vino de más Owner Earnings sino de que el mercado le puso un múltiplo
+  // mayor a la empresa. No es lo mismo que "cara" (eso ya lo dice el margen de seguridad arriba, con
+  // el valor intrínseco de HOY) — es una advertencia distinta: sostener este precio de acá en más
+  // depende de que el negocio "alcance" al múltiplo, no de que el múltiplo siga expandiéndose (Munger:
+  // no pagues por una revalorización que ya pasó esperando que se repita). varPrecio es SIEMPRE a 5
+  // años exactos (ver arriba) — se anualiza para poder compararlo contra cagrOwnerEarnings sin mezclar
+  // una variación acumulada con una tasa anual (comparar los números crudos sería aritmética inválida).
+  if (precioSubio) {
+    const priceCagr5y = Math.pow(1 + varPrecio, 1 / 5) - 1;
+    if (priceCagr5y - cagrOwnerEarnings > UMBRAL) return 'posible-recalentamiento';
+  }
   return 'sin-señal-clara';
 }
