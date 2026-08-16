@@ -310,10 +310,20 @@ export async function missReciente(
   return age >= 0 && age < ttlMs;
 }
 
+// Este es el ÚLTIMO RECURSO cuando el proveedor externo ya falló (ver fundamentals.ts): mostrar el
+// último dato bueno en vez de un error duro. Pero sbSelect() devuelve [] tanto si genuinamente no hay
+// fila como si el request a PostgREST falló (network/5xx) — sin distinguir los dos casos, un hipo
+// transitorio de Supabase hacía que ESTE fallback se saltara en silencio y el usuario viera "EDGAR no
+// respondió, sin datos" aunque hubiera una foto buena guardada (caso real: KO, fila completa de hace
+// 18 días, dentro de la ventana de 120 días — el error debería haber caído acá y no lo hizo). Un
+// reintento inmediato alcanza para el caso transitorio; si la fila genuinamente no existe, el segundo
+// intento también da [] y no cambia nada.
 export async function cacheLast<T = { updated_at: string }>(
   env: Env, table: string, keyCol: string, keyVal: string, maxAgeMs = MAX_STALE_MS,
 ): Promise<T | null> {
-  const rows = await sbSelect<T & { updated_at?: string }>(env, table, `${keyCol}=eq.${encodeURIComponent(keyVal)}&limit=1`);
+  const query = `${keyCol}=eq.${encodeURIComponent(keyVal)}&limit=1`;
+  let rows = await sbSelect<T & { updated_at?: string }>(env, table, query);
+  if (!rows.length) rows = await sbSelect<T & { updated_at?: string }>(env, table, query);
   const row = rows[0];
   if (!row) return null;
   const ts = row.updated_at ? Date.parse(row.updated_at) : NaN;
