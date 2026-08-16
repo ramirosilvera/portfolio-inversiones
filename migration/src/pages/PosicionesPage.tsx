@@ -157,6 +157,7 @@ export function PosicionesPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-ink-900">{p.ticker}</span>
                         <Badge tone="gray">{p.tipo}</Badge>
+                        {p.tipo === 'cash' && p.tir_esperada != null && <Badge tone="celeste">TIR {fmtPct(p.tir_esperada)}</Badge>}
                         {p.cantidad <= 0 && <Badge tone="neg">cerrada</Badge>}
                       </div>
                       {p.sector && <span className="text-[10px] text-ink-600">{p.sector}</span>}
@@ -373,6 +374,12 @@ function AgregarModal({ cedearRatios, catalogoBonos, onClose, onAdd, onSaveRatio
                 <input placeholder="Ratio (auto)" type="number" value={form.ratio_cedear ?? ''} onChange={e => setForm({ ...form, ratio_cedear: Number(e.target.value) || null })} className={inputCls} />
               </Field>
             )}
+            {form.tipo === 'cash' && (
+              <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada — cargala a mano, el bróker/banco la cambia sin aviso.">
+                <input placeholder="ej. 4.5" type="number" step="0.1" value={form.tir_esperada != null ? form.tir_esperada * 100 : ''}
+                  onChange={e => setForm({ ...form, tir_esperada: e.target.value ? Number(e.target.value) / 100 : null })} className={inputCls} />
+              </Field>
+            )}
             <Field label="% objetivo">
               <input placeholder="% objetivo (0-100)" type="number" onChange={e => setForm({ ...form, peso_objetivo: e.target.value ? Number(e.target.value) / 100 : null })} className={inputCls} />
             </Field>
@@ -493,6 +500,7 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
   const [cFreq, setCFreq] = useState(pos.cupon_frecuencia != null ? String(pos.cupon_frecuencia) : '');
   const [cMes, setCMes] = useState(pos.cupon_mes != null ? String(pos.cupon_mes) : '');
   const [vto, setVto] = useState(pos.vencimiento ?? '');
+  const [tir, setTir] = useState(pos.tir_esperada != null ? String(pos.tir_esperada * 100) : '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -531,6 +539,7 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
       patch.cupon_mes = cMes ? Number(cMes) : null;
       patch.vencimiento = vto || null;
     }
+    if (pos.tipo === 'cash') patch.tir_esperada = tir ? Number(tir) / 100 : null;
     try { await onSave(patch); }
     catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo guardar'); setBusy(false); }
   };
@@ -565,6 +574,11 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
               </Field>
               <Field label="Vencimiento"><input type="date" value={vto} onChange={e => setVto(e.target.value)} className={inputCls} /></Field>
             </>}
+            {pos.tipo === 'cash' && (
+              <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada — cambia con el tiempo, actualizala cuando tu bróker la mueva.">
+                <input type="number" step="0.1" value={tir} onChange={e => setTir(e.target.value)} className={inputCls} />
+              </Field>
+            )}
           </div>
           {dejaCikHuerfano && (
             <p className="px-4 pb-2 text-xs text-warn">
