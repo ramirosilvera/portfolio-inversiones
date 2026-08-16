@@ -83,21 +83,25 @@ export function AnalisisPage() {
     return { ratios: r, dcf: d, sens: s };
   }, [fund, price, beta, riskFree, inp]);
 
-  // Var. 52 sem./ventana completa/distancia al máximo, siempre sobre TODA la historia recibida (hasta
-  // 10 años) — el toggle 1A/5A/10A de abajo solo cambia qué se DIBUJA, nunca estos números (si no,
-  // "Var. X años" cambiaría de valor según qué botón esté apretado, lo cual sería confuso). var5y es la
-  // excepción: se calcula siempre sobre los últimos 5 años EXACTOS (no toda la ventana) porque es lo
-  // que se cruza contra dcf.histCagrOE más abajo, que también es un CAGR a 5 años — mezclar horizontes
-  // ahí invalidaría el cruce.
-  const tendencia = useMemo(() => tendenciaPrecio(hist?.puntos ?? []), [hist]);
   const puntosGrafico = useMemo(() => {
     const todos = hist?.puntos ?? [];
     return rangoPrecio === '1a' ? todos.slice(-53) : rangoPrecio === '5a' ? todos.slice(-261) : todos;
   }, [hist, rangoPrecio]);
+  // Las 3 métricas de abajo (Var. 52 sem. / Var. X años / Vs. máx. X años) se calculan sobre la MISMA
+  // ventana que está dibujada en el gráfico (puntosGrafico) — así el número siempre cuenta la misma
+  // historia que el botón 1A/5A/10A apretado. Antes se calculaban sobre TODA la historia recibida
+  // (hasta 10 años) sin importar el toggle: con "1 año" apretado igual se leía "Var. 10 años" al
+  // lado — una inconsistencia visual que invita a leer mal el dato (revisión Munger de esta tarjeta).
+  const tendencia = useMemo(() => tendenciaPrecio(puntosGrafico), [puntosGrafico]);
+  // var5y (para el cruce contra el NEGOCIO más abajo) es la única excepción: se calcula siempre sobre
+  // los últimos 5 años EXACTOS de TODA la historia recibida, no la ventana del toggle — porque
+  // dcf.histCagrOE también es un CAGR a 5 años fijo, y mezclar horizontes ahí invalidaría el cruce.
+  // No se muestra con una etiqueta al lado del toggle, así que no genera la misma confusión.
+  const var5yCruce = useMemo(() => tendenciaPrecio(hist?.puntos ?? []).var5y, [hist]);
   // Cruza precio vs. NEGOCIO (CAGR histórico de owner earnings, no margin of safety ni valor
   // intrínseco: esos dos ya incorporan el precio de hoy, cruzarlos sería comparar el precio contra sí
   // mismo). Ver engine/tendenciaPrecio.ts para el razonamiento completo.
-  const lecturaTendencia = dcf ? contrastarConNegocio(tendencia.var5y, dcf.histCagrOE) : null;
+  const lecturaTendencia = dcf ? contrastarConNegocio(var5yCruce, dcf.histCagrOE) : null;
   const etiquetaVentana = tendencia.anios == null ? 'la ventana'
     : tendencia.anios < 1 ? 'todo el historial' // IPO reciente: "0 años" leería mal
     : `${tendencia.anios} año${tendencia.anios === 1 ? '' : 's'}`;
@@ -261,7 +265,7 @@ export function AnalisisPage() {
                   : <TrendingUp className="w-4 h-4 shrink-0 text-pos mt-0.5" />}
                 <p className="text-ink-700">
                   {lecturaTendencia === 'posible-panico' &&
-                    <>Precio {fmtPct(tendencia.var5y)} en 5 años, pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
+                    <>Precio {fmtPct(var5yCruce)} en 5 años, pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
                   {lecturaTendencia === 'posible-deterioro' &&
                     <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — nada acá contradice que el negocio se haya deteriorado. Un precio bajo por sí solo no es garantía de descuento.</>}
                   {lecturaTendencia === 'sin-señal-clara' &&
