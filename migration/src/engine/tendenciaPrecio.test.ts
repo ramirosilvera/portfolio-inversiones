@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tendenciaPrecio, contrastarConNegocio, anualizar } from './tendenciaPrecio';
+import { tendenciaPrecio, contrastarConNegocio, anualizar, sinRecalentamiento } from './tendenciaPrecio';
 
 const semanal = (vals: number[], desde = '2021-01-01'): { fecha: string; close: number }[] =>
   vals.map((close, i) => {
@@ -117,5 +117,25 @@ describe('contrastarConNegocio — el falsificador de value trap', () => {
   it('sin datos de precio o de negocio → null (no inventa una lectura)', () => {
     expect(contrastarConNegocio(null, 0.1)).toBeNull();
     expect(contrastarConNegocio(-0.1, null)).toBeNull();
+  });
+});
+
+describe('sinRecalentamiento — el chequeo Munger no debe dar tilde verde en un deterioro real', () => {
+  it('posible-recalentamiento → false (el caso que el chequeo existe para detectar)', () => {
+    expect(sinRecalentamiento('posible-recalentamiento')).toBe(false);
+  });
+
+  it('posible-deterioro → false: no es expansión de múltiplo, pero tampoco es "sin problema" (NKE: precio y' +
+    ' Owner Earnings cayendo juntos ~-24%/año no debe leer como tilde verde de "sin brecha relevante")', () => {
+    expect(sinRecalentamiento('posible-deterioro')).toBe(false);
+  });
+
+  it('posible-panico y sin-señal-clara → true: ninguno indica que se pagó un múltiplo inflado', () => {
+    expect(sinRecalentamiento('posible-panico')).toBe(true);
+    expect(sinRecalentamiento('sin-señal-clara')).toBe(true);
+  });
+
+  it('sin lectura (null) → false: no hay histórico suficiente para afirmar que no hubo recalentamiento', () => {
+    expect(sinRecalentamiento(null)).toBe(false);
   });
 });

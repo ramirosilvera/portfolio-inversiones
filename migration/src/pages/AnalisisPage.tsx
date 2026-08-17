@@ -10,7 +10,7 @@ import { usePortfolios } from '../hooks/usePortfolios';
 import { useChartTheme } from '../hooks/usePrefs';
 import { computeRatios } from '../engine/ratios';
 import { computeDcf, sensitivityTable, dcfDefaultsFor, DEFAULT_DCF_INPUTS, OE_METHOD_DEFAULT, type DcfInputs, type CapexMethod, type OeMethod, type MungerCheck } from '../engine/dcf';
-import { tendenciaPrecio, contrastarConNegocio, anualizar } from '../engine/tendenciaPrecio';
+import { tendenciaPrecio, contrastarConNegocio, anualizar, sinRecalentamiento } from '../engine/tendenciaPrecio';
 import { useDcfInputs } from '../hooks/useDcfInputs';
 import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA';
 import { Card, CardHeader, Button, Badge, Stat, ViewToggle, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
@@ -107,6 +107,11 @@ export function AnalisisPage() {
   // acumulado crudo al lado de un CAGR anual (como antes) sugiere una comparación que en realidad
   // nunca se hizo así.
   const priceCagr5y = var5yCruce != null ? anualizar(var5yCruce, 5) : null;
+  // 'posible-deterioro' (contrastarConNegocio) cubre DOS escenarios distintos: precio y negocio cayeron
+  // juntos, O el precio SUBIÓ mientras el negocio cayó ("euforia sin respaldo" — ver tendenciaPrecio.ts).
+  // Sin distinguirlos acá, el texto/ícono de abajo asumía siempre "cayeron juntos", que es falso en el
+  // segundo caso (el precio subió, no bajó).
+  const deterioroConPrecioAlza = priceCagr5y != null && priceCagr5y > 0;
   const etiquetaVentana = tendencia.anios == null ? 'la ventana'
     : tendencia.anios < 1 ? 'todo el historial' // IPO reciente: "0 años" leería mal
     : `${tendencia.anios} año${tendencia.anios === 1 ? '' : 's'}`;
@@ -182,9 +187,15 @@ export function AnalisisPage() {
   // dicho sobre el recalentamiento específicamente.
   const checkRecalentamiento: MungerCheck = {
     label: '¿El precio no se recalentó respecto al negocio? (evita pagar por un múltiplo que ya se expandió)',
-    ok: lecturaTendencia != null && lecturaTendencia !== 'posible-recalentamiento',
+    ok: sinRecalentamiento(lecturaTendencia),
     detail: lecturaTendencia === 'posible-recalentamiento'
       ? `Precio ${fmtPct(priceCagr5y)} anual en 5 años (acumulado ${fmtPct(var5yCruce)}) vs. Owner Earnings a un CAGR histórico de ${fmtPct(dcf.histCagrOE)} — gran parte de la suba es múltiplo, no negocio`
+      : lecturaTendencia === 'posible-deterioro'
+      ? (deterioroConPrecioAlza
+          ? `Precio ${fmtPct(priceCagr5y)} anual en 5 años (acumulado ${fmtPct(var5yCruce)}) pero Owner Earnings cayó (CAGR histórico ${fmtPct(dcf.histCagrOE)}) — no es expansión de múltiplo por definición, pero el mercado igual le pagó más a un negocio que empeora (ver aviso arriba)`
+          : `Precio y Owner Earnings cayeron juntos (Owner Earnings a un CAGR histórico de ${fmtPct(dcf.histCagrOE)}) — no es expansión de múltiplo, pero tampoco descarta que el negocio se haya deteriorado (ver aviso arriba)`)
+      : lecturaTendencia === 'posible-panico'
+      ? `Precio ${fmtPct(priceCagr5y)} anual en 5 años (acumulado ${fmtPct(var5yCruce)}), pero Owner Earnings no acompañó la caída (CAGR histórico ${fmtPct(dcf.histCagrOE)}) — sin señal de múltiplo inflado`
       : lecturaTendencia == null ? 'sin histórico de precio suficiente'
       : `Precio (${fmtPct(priceCagr5y)} anual en 5 años) y Owner Earnings (CAGR histórico ${fmtPct(dcf.histCagrOE)}) sin brecha relevante`,
   };
@@ -288,13 +299,16 @@ export function AnalisisPage() {
                 : lecturaTendencia === 'posible-deterioro' ? 'bg-neg/10 ring-neg/25'
                 : lecturaTendencia === 'posible-recalentamiento' ? 'bg-warn/10 ring-warn/25' : 'bg-canvas ring-line'}`}>
                 {lecturaTendencia === 'posible-deterioro'
-                  ? <TrendingDown className="w-4 h-4 shrink-0 text-neg mt-0.5" />
+                  ? (deterioroConPrecioAlza
+                      ? <TrendingUp className="w-4 h-4 shrink-0 text-neg mt-0.5" />
+                      : <TrendingDown className="w-4 h-4 shrink-0 text-neg mt-0.5" />)
                   : <TrendingUp className={`w-4 h-4 shrink-0 mt-0.5 ${lecturaTendencia === 'posible-recalentamiento' ? 'text-warn' : 'text-pos'}`} />}
                 <p className="text-ink-700">
                   {lecturaTendencia === 'posible-panico' &&
                     <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
-                  {lecturaTendencia === 'posible-deterioro' &&
-                    <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — nada acá contradice que el negocio se haya deteriorado. Un precio bajo por sí solo no es garantía de descuento.</>}
+                  {lecturaTendencia === 'posible-deterioro' && (deterioroConPrecioAlza
+                    ? <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), pero los Owner Earnings cayeron (CAGR histórico {fmtPct(dcf.histCagrOE)}) — el mercado le pagó más a un negocio que empeora, euforia sin respaldo en los números.</>
+                    : <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — nada acá contradice que el negocio se haya deteriorado. Un precio bajo por sí solo no es garantía de descuento.</>)}
                   {lecturaTendencia === 'posible-recalentamiento' &&
                     <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), bastante más rápido que el negocio (Owner Earnings creciendo a un CAGR histórico de {fmtPct(dcf.histCagrOE)}) — parte de la suba vino de que el mercado le puso un múltiplo mayor a la empresa, no de que el negocio haya mejorado al mismo ritmo. No es lo mismo que "cara" (eso ya lo dice el margen de seguridad de arriba, con el valor intrínseco de hoy): es una advertencia distinta — sostener este precio de acá en más depende de que el negocio siga alcanzando al múltiplo, no de que el mercado se lo siga expandiendo.</>}
                   {lecturaTendencia === 'sin-señal-clara' &&

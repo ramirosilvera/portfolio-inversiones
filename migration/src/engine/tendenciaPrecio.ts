@@ -97,3 +97,15 @@ export function contrastarConNegocio(varPrecio: number | null, cagrOwnerEarnings
   if (precioSubio && priceCagr - cagrOwnerEarnings > UMBRAL) return 'posible-recalentamiento';
   return 'sin-señal-clara';
 }
+
+// El chequeo Munger "¿el precio no se recalentó?" (AnalisisPage.tsx) pregunta puntualmente por
+// EXPANSIÓN DE MÚLTIPLO — no por si el negocio en sí se deterioró (eso ya lo dice, en rojo, el aviso
+// de la tarjeta "Precio — tendencia"). Antes esta función no existía y el chequeo trataba
+// 'posible-deterioro' igual que 'sin-señal-clara' (ok:true, "sin brecha relevante"): una tilde verde
+// con un texto que negaba la brecha que el propio código acababa de detectar y mostrar en rojo dos
+// párrafos más arriba. Es cierto que 'posible-deterioro' no es recalentamiento de múltiplo — pero
+// pagar por un negocio que se deteriora tampoco es la ausencia de problema que sugiere una tilde
+// verde, así que se lo trata como la misma alerta.
+export function sinRecalentamiento(lectura: LecturaTendencia | null): boolean {
+  return lectura != null && lectura !== 'posible-recalentamiento' && lectura !== 'posible-deterioro';
+}
