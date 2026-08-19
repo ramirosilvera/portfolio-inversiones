@@ -8,6 +8,7 @@
 
 import { ytmFromCronograma, bondDurationFromCronograma, rendimientoCorrienteFromCronograma, type CronogramaItem } from './coupons';
 import { clasificarRating, type GradoCredito, type EscalaRating } from './rating';
+import { volumenStatsFromRef, type VolumenStats } from './volumenRentaFija';
 
 // Mismo criterio que Posicion en types/domain.ts: los campos mirror 1:1 las columnas de
 // bonos_referencia (snake_case) — sin capa de mapeo entre la fila de Supabase y el tipo de TS.
@@ -38,6 +39,14 @@ export interface BonoReferencia {
   // clasificarRating() de engine/rating.ts, no reinventar la escala acá.
   calificadora: string | null;
   calificacion: string | null;
+  // Volumen operado (USD, últimas ~20 ruedas) — mismo criterio que cronograma: lo puebla el proceso
+  // de actualización con service-role (IOL get_price_history, ver migración 0040), nunca el
+  // cliente. null en las 4 columnas = catálogo todavía no refrescado con esta feature, o ticker sin
+  // historial de precio suficiente — ver volumenStatsFromRef (engine/volumenRentaFija.ts).
+  vol_media_usd: number | null;
+  vol_mediana_usd: number | null;
+  vol_minimo_usd: number | null;
+  vol_dias_con_datos: number | null;
 }
 
 export const TIPO_LABEL: Record<BonoReferencia['tipo'], string> = {
@@ -60,6 +69,8 @@ export interface BonoReferenciaCalc {
   // ninguna escala conocida — nunca "adivina" un grado (ver clasificarRating).
   grado: GradoCredito | null;
   escalaGrado: EscalaRating | null;
+  // null = catálogo todavía no refrescado con volumen para este ticker (ver BonoReferencia arriba).
+  volumen: VolumenStats | null;
 }
 
 // `px` es SIEMPRE en USD (misma convención que el resto de la app — ver esHardDollar en
@@ -72,7 +83,8 @@ export function calcularBonoReferencia(ref: BonoReferencia, px: number | null, h
   const duracion = tir != null ? bondDurationFromCronograma(ref.cronograma, tir, hoy) : null;
   const rendCorriente = px != null ? rendimientoCorrienteFromCronograma(px, ref.cronograma, hoy) : null;
   const clasif = clasificarRating(ref.calificadora, ref.calificacion);
-  return { ref, px, paridad, tir, duracion, rendCorriente, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null };
+  const volumen = volumenStatsFromRef(ref);
+  return { ref, px, paridad, tir, duracion, rendCorriente, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null, volumen };
 }
 
 export interface Comparable extends BonoReferenciaCalc {

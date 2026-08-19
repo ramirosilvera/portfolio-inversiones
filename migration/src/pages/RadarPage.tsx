@@ -14,6 +14,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
 import type { Rating } from '../engine/score';
 import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
+import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
 import { CALIFICADORAS, ETIQUETA_GRADO, type GradoCredito } from '../engine/rating';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
 import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
@@ -280,6 +281,17 @@ const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', parid
 type FiltroGrado = 'todos' | GradoCredito | 'sin_calificar';
 const SIN_CALIFICAR_COLOR = '#8B96A5'; // mismo gris que RatingBadge/BonosPage para "sin calificar"
 const FILTRO_GRADO_LABEL: Record<FiltroGrado, string> = { todos: 'Todos', ...ETIQUETA_GRADO, sin_calificar: 'Sin calificar' };
+// Mismo criterio de color que MacroPage/TasasPage (engine/semaforos.ts) para Luz — acá es
+// OperabilidadNivel (engine/volumenRentaFija.ts), un tipo distinto pero con las mismas 3
+// categorías, así que se reusa la misma paleta para que el usuario no tenga que aprender un
+// código de colores nuevo.
+const OPERABLE_DOT: Record<OperabilidadNivel, string> = { verde: 'bg-pos', amarillo: 'bg-warn', rojo: 'bg-neg' };
+const OPERABLE_LABEL: Record<OperabilidadNivel, string> = {
+  verde: 'Operable con holgura para este monto',
+  amarillo: 'Operable, pero con riesgo de spread ancho en un día flojo',
+  rojo: 'Poco líquido para este monto — alto riesgo de mal precio de entrada/salida',
+};
+const MONTO_OPERAR_DEFAULT = 1000;
 
 function RadarFija() {
   const { data: bonosRef = [], isLoading: bonosRefLoading, isError: bonosRefError, actualizarRating } = useBonosReferencia();
@@ -317,6 +329,10 @@ function RadarFija() {
   const [filtroDuracionMin, setFiltroDuracionMin] = useState('');
   const [filtroDuracionMax, setFiltroDuracionMax] = useState('');
   const [colorPor, setColorPor] = useState<'tipo' | 'calificacion'>('tipo');
+  // String (no number) por el mismo motivo que filtroDuracionMin/Max: dejar el campo vacío sin que
+  // se interprete como "monto 0". Vacío o inválido cae al default, no bloquea la columna.
+  const [montoOperarStr, setMontoOperarStr] = useState(String(MONTO_OPERAR_DEFAULT));
+  const montoOperar = Number(montoOperarStr) > 0 ? Number(montoOperarStr) : MONTO_OPERAR_DEFAULT;
   const [sortRF, setSortRF] = useState<{ key: SortKeyRF; dir: 'asc' | 'desc' } | null>(null);
   const [editando, setEditando] = useState<ReturnType<typeof calcularBonoReferencia> | null>(null);
 
@@ -416,6 +432,10 @@ function RadarFija() {
                 onChange={e => setFiltroDuracionMax(e.target.value)} className={`${inputCls} w-20`} />
             </div>
           </Field>
+          <Field label="Monto a operar (USD)" hint="Para la columna Operable: ¿alcanza el volumen real reciente para este monto?">
+            <input type="number" min="0" step="100" value={montoOperarStr}
+              onChange={e => setMontoOperarStr(e.target.value)} className={`${inputCls} w-28`} />
+          </Field>
         </div>
       </Card>
 
@@ -485,22 +505,24 @@ function RadarFija() {
                 <ThSort<SortKeyRF> label="TIR" sortKey="tir" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Duración" sortKey="duracion" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Vencimiento" sortKey="vencimiento" sort={sortRF} onClick={handleSortRF} />
+                <th className="px-3" title="¿Alcanza el volumen real reciente para el monto de arriba?">Operable</th>
                 <th className="px-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {ordenados.map(b => (
                 <RentaFijaRow key={b.ref.ticker} calc={b} hoy={hoy} onEditarRating={() => setEditando(b)}
-                  destacado={destacados.has(b.ref.ticker)} onToggleDestacado={() => toggleDestacado(b.ref.ticker, !destacados.has(b.ref.ticker))} />
+                  destacado={destacados.has(b.ref.ticker)} onToggleDestacado={() => toggleDestacado(b.ref.ticker, !destacados.has(b.ref.ticker))}
+                  montoOperar={montoOperar} />
               ))}
               {bonosRefError && (
-                <tr><td colSpan={10}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
+                <tr><td colSpan={11}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length === 0 && (
-                <tr><td colSpan={10}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
+                <tr><td colSpan={11}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length > 0 && ordenados.length === 0 && (
-                <tr><td colSpan={10}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
+                <tr><td colSpan={11}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
               )}
             </tbody>
           </table>
@@ -515,11 +537,12 @@ function RadarFija() {
   );
 }
 
-function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado }: {
+function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado, montoOperar }: {
   calc: ReturnType<typeof calcularBonoReferencia>; hoy: string; onEditarRating: () => void;
-  destacado: boolean; onToggleDestacado: () => Promise<void>;
+  destacado: boolean; onToggleDestacado: () => Promise<void>; montoOperar: number;
 }) {
-  const { ref, paridad, tir, duracion, grado, escalaGrado } = calc;
+  const { ref, paridad, tir, duracion, grado, escalaGrado, volumen } = calc;
+  const operable = volumen ? evaluarOperabilidad(montoOperar, volumen) : null;
   const vencido = ref.vencimiento < hoy;
   const [busyDestacado, setBusyDestacado] = useState(false);
   const toggle = async () => {
@@ -556,6 +579,13 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado 
       <td className="text-right px-3 tnum">{tir != null ? fmtPct(tir) : '—'}</td>
       <td className="text-right px-3 tnum">{duracion ? `${fmtNum(duracion.macaulay, 1)}a` : '—'}</td>
       <td className="text-right px-3 tnum">{ref.vencimiento}</td>
+      <td className="px-3">
+        {operable ? (
+          <span className="inline-flex items-center gap-1.5" title={`${OPERABLE_LABEL[operable]} · mediana ${fmtUsd(volumen!.medianaUsd, 0)}/día, peor día reciente ${fmtUsd(volumen!.minimoUsd, 0)} (últimas ${volumen!.diasConDatos} ruedas)`}>
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${OPERABLE_DOT[operable]}`} />
+          </span>
+        ) : <span className="text-ink-500 text-xs" title="Catálogo todavía sin volumen refrescado para este ticker">—</span>}
+      </td>
       <td className="px-2 text-right whitespace-nowrap">
         <Link to={`/analisis/bono/${ref.ticker}`} className="text-ink-600 hover:text-accent inline-flex items-center justify-center w-9 h-9" title="Análisis" aria-label="Análisis del bono"><LineChart className="w-4 h-4" /></Link>
       </td>

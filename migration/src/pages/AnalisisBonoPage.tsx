@@ -7,10 +7,19 @@ import { useBonosPrecios, useMacro } from '../hooks/usePosiciones';
 import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA';
 import { calcularBonoReferencia, comparables, tirPromedioComparables, TIPO_LABEL, type BonoReferencia, type BonoReferenciaCalc } from '../engine/rentaFija';
 import { ETIQUETA_GRADO } from '../engine/rating';
-import { Card, CardHeader, Stat, Badge, RatingBadge, Button, Empty, fmtUsd, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
+import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
+import { Card, CardHeader, Stat, Badge, RatingBadge, Button, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
 import { api } from '../lib/api';
 
 const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
+// Mismo criterio de color que RadarPage/MacroPage/TasasPage para las 3 categorías de Luz-like.
+const OPERABLE_DOT: Record<OperabilidadNivel, string> = { verde: 'bg-pos', amarillo: 'bg-warn', rojo: 'bg-neg' };
+const OPERABLE_TEXTO: Record<OperabilidadNivel, string> = {
+  verde: 'entra holgado incluso en el peor día reciente de la ventana',
+  amarillo: 'supera el peor día reciente, pero sigue por debajo de un día típico — riesgo de spread ancho si cae un día flojo',
+  rojo: 'supera incluso un día típico (mediana) — alto riesgo de mal precio de entrada/salida',
+};
+const MONTO_OPERAR_DEFAULT = 1000;
 
 // Análisis de un bono/ON del catálogo de referencia (bonos_referencia): cronograma completo +
 // TIR/duración/paridad, calculados por engine/rentaFija.ts — no hay DCF acá (Owner Earnings no
@@ -26,6 +35,10 @@ export function AnalisisBonoPage() {
 
   const ref = catalogo.find(b => b.ticker === T);
   const calc = useMemo(() => ref ? calcularBonoReferencia(ref, precios[T] ?? null, hoy) : null, [ref, precios, T, hoy]);
+
+  const [montoOperarStr, setMontoOperarStr] = useState(String(MONTO_OPERAR_DEFAULT));
+  const montoOperar = Number(montoOperarStr) > 0 ? Number(montoOperarStr) : MONTO_OPERAR_DEFAULT;
+  const operable = calc?.volumen ? evaluarOperabilidad(montoOperar, calc.volumen) : null;
 
   const catalogoCalc = useMemo(
     () => catalogo.map(r => calcularBonoReferencia(r, precios[r.ticker] ?? null, hoy)),
@@ -94,6 +107,33 @@ export function AnalisisBonoPage() {
                 {proximoCupon.amortizacion > 0 && ` + ${fmtNum(proximoCupon.amortizacion * 100, 1)}% amortización`}
                 {' del nominal original.'}
               </p>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Volumen operado"
+              sub="Media/mediana/mínimo de los últimos días con dato (USD) — fuente: IOL. No es %ADV institucional: compara tu monto contra el PEOR día reciente, la señal relevante para un ticket minorista, no contra un promedio pensado para no mover vos el mercado con órdenes grandes."
+              right={<Field label="Monto a operar (USD)" className="mb-0">
+                <input type="number" min="0" step="100" value={montoOperarStr}
+                  onChange={e => setMontoOperarStr(e.target.value)} className={`${inputCls} w-28`} />
+              </Field>} />
+            {calc.volumen ? (
+              <>
+                <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Stat label="Promedio diario" value={fmtUsd(calc.volumen.mediaUsd, 0)} />
+                  <Stat label="Mediana diaria" value={fmtUsd(calc.volumen.medianaUsd, 0)} />
+                  <Stat label="Peor día reciente" value={fmtUsd(calc.volumen.minimoUsd, 0)} />
+                  <Stat label="Ruedas con dato" value={String(calc.volumen.diasConDatos)} />
+                </div>
+                {operable && (
+                  <div className="mx-4 mb-4 rounded-xl px-3 py-2.5 text-[11px] flex items-start gap-2 ring-1 ring-inset bg-canvas ring-line">
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 ${OPERABLE_DOT[operable]}`} />
+                    <p className="text-ink-700">Con US${montoOperar.toLocaleString('en-US')}: {OPERABLE_TEXTO[operable]}.</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="p-4 text-sm text-ink-600">Catálogo todavía sin volumen refrescado para {ref.ticker}.</p>
             )}
           </Card>
 
