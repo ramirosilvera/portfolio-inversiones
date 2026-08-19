@@ -24,6 +24,10 @@ const ref: BonoReferencia = {
   actualizado_en: '2026-08-01T00:00:00Z',
   calificadora: 'S&P',
   calificacion: 'BB+',
+  vol_media_usd: null,
+  vol_mediana_usd: null,
+  vol_minimo_usd: null,
+  vol_dias_con_datos: null,
 };
 
 describe('calcularBonoReferencia', () => {
@@ -77,6 +81,17 @@ describe('calcularBonoReferencia', () => {
     const r = calcularBonoReferencia(sinRating, 0.9, '2026-07-24');
     expect(r.grado).toBeNull();
     expect(r.escalaGrado).toBeNull();
+  });
+
+  it('sin refrescar volumen (columnas null): volumen null, no rompe el resto del cálculo', () => {
+    const r = calcularBonoReferencia(ref, 0.9, '2026-07-24');
+    expect(r.volumen).toBeNull();
+  });
+
+  it('con volumen ya refrescado: arma VolumenStats desde las columnas de la fila', () => {
+    const conVolumen: BonoReferencia = { ...ref, vol_media_usd: 100, vol_mediana_usd: 90, vol_minimo_usd: 50, vol_dias_con_datos: 20 };
+    const r = calcularBonoReferencia(conVolumen, 0.9, '2026-07-24');
+    expect(r.volumen).toEqual({ mediaUsd: 100, medianaUsd: 90, minimoUsd: 50, diasConDatos: 20 });
   });
 });
 
