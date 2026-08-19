@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Plus, Trash2, LineChart, Radar, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, ShoppingCart, Flame, Search, X, Star } from 'lucide-react';
+import { Plus, Trash2, LineChart, Radar, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, ShoppingCart, Flame, Search, X, Star, Download } from 'lucide-react';
 import { useMacro, useBonosPrecios } from '../hooks/usePosiciones';
 import { useCikMap } from '../hooks/useCikMap';
 import { useWatchlist, type WatchItem } from '../hooks/useWatchlist';
@@ -15,9 +15,11 @@ import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
 import type { Rating } from '../engine/score';
 import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
 import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
+import { bonosACSV, nombreArchivoCsv } from '../engine/exportRentaFija';
 import { CALIFICADORAS, ETIQUETA_GRADO, type GradoCredito } from '../engine/rating';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
 import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
+import { descargarTexto } from '../lib/download';
 import { Card, CardHeader, Button, Badge, RatingBadge, ViewToggle, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct } from '../components/ui';
 import { UpdatedAt } from '../components/UpdatedAt';
 
@@ -489,9 +491,20 @@ function RadarFija() {
 
       <Card>
         <CardHeader title="Catálogo de referencia" sub={`${ordenados.length} de ${bonosRef.length} instrumentos · TIR y duración calculadas por el código, no cargás cupón a mano.`}
-          right={<Button variant="ghost" onClick={refrescarRF} disabled={refreshingRF}>
-            <RefreshCw className={`w-4 h-4 ${refreshingRF ? 'animate-spin' : ''}`} /> {refreshingRF ? 'Actualizando…' : 'Refrescar'}
-          </Button>} />
+          right={<div className="flex items-center gap-1.5">
+            {/* Exporta EXACTAMENTE lo que está en pantalla — mismo filtro/orden/destacados que
+                `ordenados`, así "catálogo completo o filtrado" no necesita un modo separado: sin
+                filtros aplicados ya es el completo. */}
+            <span title="Exporta a CSV (Excel/Sheets) exactamente lo que se ve en la tabla de abajo">
+              <Button variant="ghost" onClick={() => descargarTexto(bonosACSV(ordenados), nombreArchivoCsv(hoy), 'text/csv;charset=utf-8')}
+                disabled={ordenados.length === 0}>
+                <Download className="w-4 h-4" /> Exportar CSV
+              </Button>
+            </span>
+            <Button variant="ghost" onClick={refrescarRF} disabled={refreshingRF}>
+              <RefreshCw className={`w-4 h-4 ${refreshingRF ? 'animate-spin' : ''}`} /> {refreshingRF ? 'Actualizando…' : 'Refrescar'}
+            </Button>
+          </div>} />
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[920px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
