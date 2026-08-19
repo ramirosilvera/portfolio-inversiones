@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { descargarTexto } from './download';
 
 // Backup completo de los datos del usuario. Todo pasa por el cliente con RLS (user_id = auth.uid()),
 // así que cada select('*') devuelve SOLO los datos del usuario. Se excluyen los caches de mercado
@@ -113,13 +114,5 @@ export async function buildBackup(email: string | null): Promise<BackupResult> {
 
 // Dispara la descarga del archivo en el navegador (sin subir nada a ningún lado).
 export function descargarBackup(r: BackupResult) {
-  const blob = new Blob([r.json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = r.filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  descargarTexto(r.json, r.filename, 'application/json');
 }
