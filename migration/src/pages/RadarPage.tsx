@@ -5,6 +5,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { Plus, Trash2, LineChart, Radar, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, ShoppingCart, Flame, Search, X, Star, Download } from 'lucide-react';
 import { useMacro, useBonosPrecios } from '../hooks/usePosiciones';
 import { useCikMap } from '../hooks/useCikMap';
+import { DEFAULT_CIK } from '../lib/defaultCik';
 import { useWatchlist, type WatchItem } from '../hooks/useWatchlist';
 import { useRadarTicker } from '../hooks/useRadarTicker';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
@@ -22,6 +23,68 @@ import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
 import { descargarTexto } from '../lib/download';
 import { Card, CardHeader, Button, Badge, RatingBadge, ViewToggle, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct } from '../components/ui';
 import { UpdatedAt } from '../components/UpdatedAt';
+
+// Tickers conocidos para el desplegable de "agregar" — derivados de DEFAULT_CIK (única fuente de
+// verdad, no una lista aparte para no duplicar mantenimiento). Deduplicados por CIK: BRKB/BRK.B
+// son 2 formas de escribir el mismo ticker (Berkshire) — mostrar ambos como si fueran empresas
+// distintas se leería como un bug, no como una lista curada. Un Map(cik → ticker), recorriendo
+// DEFAULT_CIK en orden, se queda con el ÚLTIMO ticker visto por cada CIK — en el objeto fuente
+// 'BRK.B' aparece después de 'BRKB', así que gana la forma con punto (el formato real de mercado).
+const TICKERS_CONOCIDOS: string[] = [...new Map(Object.entries(DEFAULT_CIK).map(([t, cik]) => [cik, t])).values()].sort();
+
+// Desplegable de tickers conocidos (DEFAULT_CIK) con autocompletado — SIEMPRE se puede seguir
+// escribiendo cualquier otra cosa (la resolución automática de CIK, ver fundamentals.ts, ya cubre
+// tickers fuera de esta lista): esto es una ayuda para elegir rápido entre los ~80 verificados, no
+// un límite de lo que se puede cargar. Si lo tipeado no matchea ningún conocido, el propio
+// desplegable ofrece "Agregar '…' como nuevo" — mismo campo, sin un flujo separado.
+function TickerCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const q = value.trim().toUpperCase();
+  const matches = (q ? TICKERS_CONOCIDOS.filter(t => t.startsWith(q)) : TICKERS_CONOCIDOS).slice(0, 8);
+  const esConocido = q !== '' && TICKERS_CONOCIDOS.includes(q);
+  const mostrarAgregarNuevo = q !== '' && !esConocido;
+  const items = mostrarAgregarNuevo ? [...matches, '__nuevo__'] : matches;
+
+  useEffect(() => { setActiveIndex(0); }, [value, open]);
+
+  const elegir = (item: string) => {
+    if (item !== '__nuevo__') onChange(item);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open) { if (e.key === 'ArrowDown') setOpen(true); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, items.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && items[activeIndex]) { e.preventDefault(); elegir(items[activeIndex]); }
+    else if (e.key === 'Escape') setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <input placeholder="Ticker (ej. GOOGL)" value={value} autoComplete="off"
+        onChange={e => { onChange(e.target.value.toUpperCase()); setOpen(true); }}
+        onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
+        className={`${inputCls} w-32`} aria-expanded={open} aria-autocomplete="list" />
+      {open && items.length > 0 && (
+        <ul className="absolute z-10 mt-1 max-h-56 w-48 overflow-y-auto rounded-xl border border-line bg-surface shadow-soft py-1 text-sm">
+          {items.map((item, i) => (
+            <li key={item}>
+              {/* onMouseDown (no onClick) + preventDefault: evita que el input pierda foco (onBlur)
+                  ANTES de que el click en la opción llegue a dispararse — truco estándar de combobox. */}
+              <button type="button" onMouseDown={e => { e.preventDefault(); elegir(item); }}
+                className={`w-full text-left px-3 py-1.5 ${i === activeIndex ? 'bg-canvas' : ''} ${item === '__nuevo__' ? 'text-accent' : 'tnum'}`}>
+                {item === '__nuevo__' ? <><Plus className="w-3.5 h-3.5 inline mr-1" />Agregar "{q}" como nuevo</> : item}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 const RATING_TONE: Record<Rating, 'pos' | 'accent' | 'warn' | 'neg'> = { A: 'pos', B: 'accent', C: 'warn', D: 'neg' };
 const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
@@ -134,9 +197,8 @@ function RadarVariable() {
     <div className="space-y-4">
       <Card>
         <div className="p-4 flex flex-wrap gap-2 items-end text-sm">
-          <Field label="Ticker">
-            <input placeholder="Ticker (ej. GOOGL)" value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())}
-              className={`${inputCls} w-32`} />
+          <Field label="Ticker" hint={`${TICKERS_CONOCIDOS.length} verificadas, o escribí cualquier otro ticker`}>
+            <TickerCombobox value={ticker} onChange={setTicker} />
           </Field>
           <Field label="Nota (opcional)" className="flex-1 min-w-[140px]">
             <input placeholder="Nota (opcional)" value={nota} onChange={e => setNota(e.target.value)}
