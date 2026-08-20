@@ -236,7 +236,7 @@ function sharesFromEps(ni: AnnualPoint[], eps: AnnualPoint[]): number | null {
 }
 
 // Sum two annual series by fiscal year (long + short debt → total debt).
-function sumByFy(a: AnnualPoint[], b: AnnualPoint[]): AnnualPoint[] {
+export function sumByFy(a: AnnualPoint[], b: AnnualPoint[]): AnnualPoint[] {
   const m = new Map<number, AnnualPoint>();
   for (const p of a) m.set(p.fy, { ...p });
   for (const p of b) { const e = m.get(p.fy); if (e) e.val += p.val; else m.set(p.fy, { ...p }); }
@@ -268,6 +268,42 @@ export interface EdgarFundamentals {
   dividendPerShare: AnnualPoint[]; equity: AnnualPoint[]; totalDebt: AnnualPoint[];
   cash: AnnualPoint[]; shortTermInvestments: AnnualPoint[]; taxes: AnnualPoint[];
   pretaxIncome: AnnualPoint[]; interestExpense: AnnualPoint[]; ungradeable: string[];
+}
+
+type SeriesParaUngradeable = Pick<EdgarFundamentals,
+  'ocf' | 'epsDiluted' | 'revenue' | 'dna' | 'capex' | 'equity' | 'totalDebt' | 'cash' | 'operatingIncome' | 'interestExpense'>;
+
+// Campos críticos que, VACÍOS, se marcan "ungradeable" (dispara el badge "datos incompletos EDGAR").
+// totalDebt NO está acá — a diferencia de ocf/eps/revenue/dna/capex/equity/cash, que ninguna empresa
+// operativa real reporta genuinamente en cero, la deuda SÍ puede ser legítimamente $0 (caso real
+// verificado: ISRG — Intuitive Surgical no tiene deuda de largo ni corto plazo en su balance, según
+// sus propios estados contables). Antes, totalDebt vacío se trataba igual que cualquier otro campo
+// vacío ("EDGAR no encontró la etiqueta vigente") — pero acá "vacío" y "cero" son la MISMA
+// representación en XBRL (una empresa sin deuda no publica una etiqueta LongTermDebt con valor 0,
+// directamente no la publica), así que el chequeo daba un falso "datos incompletos" en una empresa
+// con TODOS sus demás campos completos. ratios.ts ya trata totalDebt vacío como "sin deuda" (debtSafe
+// = 0, WACC solo con equity) — este fix solo alinea la señal de advertencia con lo que el cálculo ya
+// hace, no cambia ningún número. totalDebt SIGUE flageado si está REZAGADO (con datos, pero viejos —
+// ver `rezagados` abajo, caso real KO): eso sí es siempre una señal real de alias EDGAR desactualizado,
+// nunca "la empresa no tiene deuda" (si tuviera $0 hoy, no habría ningún punto viejo para empezar).
+const CRITICOS_SI_VACIOS: (keyof SeriesParaUngradeable)[] = ['ocf', 'epsDiluted', 'revenue', 'dna', 'capex', 'equity', 'cash'];
+
+// Puro y testeado — extraído de fetchFundamentals (que hace I/O) para poder probar los 3 patrones
+// reales encontrados (ISRG: totalDebt vacío pero no debería avisar; KO: totalDebt viejo SÍ debería
+// avisar; TSM: varios campos vacíos a la vez SÍ debería avisar) sin depender de un fetch real.
+export function calcularUngradeable(P: SeriesParaUngradeable): string[] {
+  const ungradeable: string[] = CRITICOS_SI_VACIOS.filter(k => P[k].length === 0);
+  // Mismos 3 pares que ratios.ts descarta por año cruzado (ver computeRatios): equity/totalDebt
+  // (balance), operatingIncome/revenue (resultados), totalDebt/interestExpense (deuda vs. su interés).
+  const rezagados: [AnnualPoint[], AnnualPoint[], string][] = [
+    [P.equity, P.totalDebt, 'totalDebt'],
+    [P.operatingIncome, P.revenue, 'revenue'],
+    [P.totalDebt, P.interestExpense, 'interestExpense'],
+  ];
+  for (const [ancla, serie, campo] of rezagados) {
+    if (serieRezagada(ancla, serie) && !ungradeable.includes(campo)) ungradeable.push(campo);
+  }
+  return ungradeable;
 }
 
 // Ejecuta las tareas de a `limite` en simultáneo. EDGAR/el proxy limitan por tasa: disparar los ~17
@@ -312,23 +348,7 @@ export async function fetchFundamentals(env: Env, ticker: string, cik: string): 
     pretaxIncome: parseAnnual(pre), interestExpense: parseAnnual(intExp),
   };
 
-  // Marcamos como "ungradeable" TODO campo crítico que alimenta el DCF (owner earnings) o los
-  // ratios (ROIC, P/B) — no solo ocf/eps/revenue — para poder avisar cuando falta algo clave.
-  const criticos: [string, AnnualPoint[]][] = [
-    ['ocf', P.ocf], ['epsDiluted', P.epsDiluted], ['revenue', P.revenue],
-    ['dna', P.dna], ['capex', P.capex], ['equity', P.equity], ['totalDebt', P.totalDebt], ['cash', P.cash],
-  ];
-  const ungradeable = criticos.filter(([, v]) => v.length === 0).map(([k]) => k);
-  // Mismos 3 pares que ratios.ts descarta por año cruzado (ver computeRatios): equity/totalDebt
-  // (balance), operatingIncome/revenue (resultados), totalDebt/interestExpense (deuda vs. su interés).
-  const rezagados: [AnnualPoint[], AnnualPoint[], string][] = [
-    [P.equity, P.totalDebt, 'totalDebt'],
-    [P.operatingIncome, P.revenue, 'revenue'],
-    [P.totalDebt, P.interestExpense, 'interestExpense'],
-  ];
-  for (const [ancla, serie, campo] of rezagados) {
-    if (serieRezagada(ancla, serie) && !ungradeable.includes(campo)) ungradeable.push(campo);
-  }
+  const ungradeable = calcularUngradeable(P);
 
   // Acciones: total de dei; si falta (multi-clase), se deriva de netIncome / EPS diluido.
   const sharesDei = parseLatest(sharesRaw);

@@ -225,7 +225,12 @@ export function AnalisisPage() {
         <h1 className="text-2xl font-bold text-ink-900 font-display">{T}</h1>
         <span className="text-sm text-ink-600">{(fund as Fundamentals).entityName ?? ''}</span>
         <Badge tone={verdictTone as 'pos'|'neg'|'warn'}>{dcf.verdict}</Badge>
-        {(fund as { warning?: string }).warning && <Badge tone="warn">datos incompletos EDGAR</Badge>}
+        {/* fuente:'fmp' = EDGAR no devolvió nada (ni en caché) y se usó FMP como último recurso (ver
+            fundamentals.ts) — badge propio, nunca el genérico de EDGAR: decir "EDGAR" acá sería
+            insinuar una fuente que el código no usó para este dato. */}
+        {(fund as { fuente?: string }).fuente === 'fmp'
+          ? <Badge tone="warn">datos de FMP, no de EDGAR</Badge>
+          : (fund as { warning?: string }).warning && <Badge tone="warn">datos incompletos EDGAR</Badge>}
         {(fund as { stale?: boolean }).stale && <Badge tone="warn">EDGAR no respondió — mostrando la última foto guardada</Badge>}
         <Button variant="ghost" onClick={actualizar} disabled={refreshing} className="ml-auto">
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} /> {refreshing ? 'Actualizando…' : 'Actualizar datos'}

@@ -1,6 +1,7 @@
 import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbSelect, sbUpsert, usuarioId, fetchJson, TICKER_RE, CIK_RE } from '../_shared';
-import { DEFAULT_CIK, fetchFundamentals } from '../_edgar';
+import { DEFAULT_CIK, fetchFundamentals, calcularUngradeable, type EdgarFundamentals } from '../_edgar';
 import { extraerCikDeFmpProfile } from '../_cikResolve';
+import { mapearFmpAFundamentals, type FilaFmp } from '../_fmpFallback';
 
 const TTL = 12 * 60 * 60 * 1000; // 12h
 // CIK es una asignación PERMANENTE de la SEC — no hace falta un TTL corto, un valor de hace meses
@@ -55,6 +56,34 @@ async function resolverCikAutomatico(env: Env, ticker: string, uid: string | nul
 // (caso KO: cache de 16 días, con series completas hasta FY2025, descartada solo por la edad).
 const FUNDAMENTALS_STALE_MS = 120 * 24 * 60 * 60 * 1000; // 120 días
 
+// Último recurso: EDGAR no devolvió NADA del núcleo (ni ahora, ni en ningún cache previo — ver los
+// 2 lugares donde se llama). Antes, acá terminaba todo: pantalla vacía con "EDGAR no devolvió
+// datos" hasta que el usuario reintentara a mano. FMP (mismo secret, mismo proveedor que ya usa
+// beta.ts/quotes.ts/_cikResolve.ts) tiene los 3 estados contables ya consolidados — no es el XBRL
+// crudo de la SEC, es un agregador de terceros, así que el resultado SIEMPRE queda marcado con
+// fuente:'fmp' y su propio warning (nunca se hace pasar por un dato de EDGAR). Devuelve null si FMP
+// tampoco tiene nada (ticker sin cobertura en ningún proveedor, o sin FMP_API_KEY configurado) —
+// ahí sí no queda otra que el error de siempre.
+async function intentarFallbackFmp(env: Env, ticker: string, cik: string): Promise<(EdgarFundamentals & { fuente: string; warning: string }) | null> {
+  if (!env.FMP_API_KEY) return null;
+  try {
+    const k = env.FMP_API_KEY;
+    const [income, balance, cashflow] = await Promise.all([
+      fetchJson<FilaFmp[]>(`https://financialmodelingprep.com/api/v3/income-statement/${ticker}?limit=6&apikey=${k}`),
+      fetchJson<FilaFmp[]>(`https://financialmodelingprep.com/api/v3/balance-sheet-statement/${ticker}?limit=6&apikey=${k}`),
+      fetchJson<FilaFmp[]>(`https://financialmodelingprep.com/api/v3/cash-flow-statement/${ticker}?limit=6&apikey=${k}`),
+    ]);
+    const P = mapearFmpAFundamentals(income ?? [], balance ?? [], cashflow ?? []);
+    if (!P.ocf.length && !P.epsDiluted.length && !P.revenue.length) return null; // FMP tampoco cubre este ticker
+    return {
+      ticker, cik, entityName: null, ...P,
+      ungradeable: calcularUngradeable(P),
+      fuente: 'fmp',
+      warning: `EDGAR no devolvió datos de ${ticker} en este intento — mostrando estados contables de FMP (un agregador de terceros, no la fuente primaria de la SEC). Pueden diferir levemente del filing oficial; probá "Actualizar datos" más tarde para reintentar EDGAR.`,
+    };
+  } catch { return null; }
+}
+
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
 // GET /api/market/fundamentals?ticker=MSFT[&cik=...][&fresh=1]
@@ -107,6 +136,11 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
     if (!data.ocf.length && !data.epsDiluted.length && !data.revenue.length) {
       const last = await cacheLast<{ data_json: object }>(env, 'fundamentals_cache', 'ticker', ticker, FUNDAMENTALS_STALE_MS);
       if (last?.data_json) return json({ ...(last.data_json as object), cached: true, stale: true });
+      const fmp = await intentarFallbackFmp(env, ticker, cik);
+      if (fmp) {
+        if (cacheable) await sbUpsert(env, 'fundamentals_cache', [{ ticker, cik, data_json: fmp, updated_at: new Date().toISOString() }], 'ticker');
+        return json(fmp);
+      }
       return json({
         error: 'edgar-sin-datos',
         detail: `EDGAR no devolvió datos de ${ticker} en este intento (suele ser rate-limit). Probá "Actualizar datos" en unos segundos.`,
@@ -119,9 +153,14 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
     return json(data);
   } catch (e) {
     // EDGAR caído: si hay algo cacheado (aunque vencido), lo servimos en vez de un error que vacía
-    // la pantalla. Solo devolvemos 502 si nunca tuvimos fundamentals de este ticker.
+    // la pantalla. Antes de rendirnos del todo, probamos FMP — mismo criterio que la rama de arriba.
     const last = await cacheLast<{ data_json: object }>(env, 'fundamentals_cache', 'ticker', ticker, FUNDAMENTALS_STALE_MS);
     if (last?.data_json) return json({ ...(last.data_json as object), cached: true, stale: true });
+    const fmp = await intentarFallbackFmp(env, ticker, cik);
+    if (fmp) {
+      if (cacheable) await sbUpsert(env, 'fundamentals_cache', [{ ticker, cik, data_json: fmp, updated_at: new Date().toISOString() }], 'ticker');
+      return json(fmp);
+    }
     return json({ error: 'edgar-fetch-failed', detail: String(e) }, 502);
   }
 });
