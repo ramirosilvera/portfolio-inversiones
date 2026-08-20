@@ -2,7 +2,7 @@
 // el CIK por defecto a partir del ticker, pero el frontend necesita conocerlo para HABILITAR el
 // fetch de fundamentals y saber cuándo un ticker realmente no tiene CIK. MANTENER EN SYNC con el
 // server. Set estándar: mayores empresas del S&P que reportan a la SEC (us-gaap). Los que reportan
-// 20-F/IFRS (ASML, MELI) pueden venir incompletos. El usuario puede sobrescribir/añadir en Config.
+// 20-F/IFRS (ASML, MELI, TSM) pueden venir incompletos. El usuario puede sobrescribir/añadir en Config.
 export const DEFAULT_CIK: Record<string, string> = {
   // --- set original ---
   UNH: '0000731766', MA: '0001141391', MSFT: '0000789019', GOOGL: '0001652044',
@@ -16,6 +16,10 @@ export const DEFAULT_CIK: Record<string, string> = {
   IBM: '0000051143', INTC: '0000050863', CSCO: '0000858877', AMD: '0000002488',
   QCOM: '0000804328', TXN: '0000097476', AVGO: '0001730168', NFLX: '0001065280',
   PYPL: '0001633917', NOW: '0001373715', INTU: '0000896878', PLTR: '0001321655',
+  // TSM (Taiwan Semiconductor): CIK verificado contra fundamentals_cache en Supabase (ya tiene un
+  // fetch real exitoso, no un valor supuesto). Reporta Form 20-F — parseAnnual()/IFRS_CONCEPTS en
+  // el server (_edgar.ts) ya lo soportan (ver commits "fix: TSM SIN_DATOS...").
+  TSM: '0001046179',
   // --- salud ---
   ABT: '0000001800', ABBV: '0001551152', TMO: '0000097745', PFE: '0000078003',
   AMGN: '0000318154', GILD: '0000882095', BMY: '0000014272', CVS: '0000064803',

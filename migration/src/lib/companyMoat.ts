@@ -132,6 +132,8 @@ export const COMPANY_MOAT: Record<string, ClasificacionMoat> = {
     nota: 'Portafolio amplio de IP en semiconductores + software enterprise (VMware) con switching costs propios.' },
   NFLX: { sector: 'Comunicación', fosos: ['costos', 'costos_cambio'], amplitud: 'estrecho',
     nota: 'Escala en producción de contenido y datos de recomendación, pero streaming es un sector de competencia intensa (Disney+, HBO Max, Prime Video).' },
+  TSM: { sector: 'Tecnología', fosos: ['costos_cambio', 'intangibles', 'escala_eficiente'], amplitud: 'ancho',
+    nota: 'Fundidora dominante de semiconductores de borde de proceso (>60% del mercado de foundry avanzado) — los clientes fabless diseñan sus chips alrededor del proceso de TSM (costo de cambio real) y el capex para competir a ese nodo es tan alto que hoy solo TSM/Samsung/Intel lo intentan.' },
   PYPL: { sector: 'Financiero', fosos: ['red'], amplitud: 'estrecho',
     nota: 'Efecto de red real pero más débil que Visa/Mastercard — presión creciente de Apple Pay y billeteras nativas de cada banco.' },
   NOW: { sector: 'Tecnología', fosos: ['costos_cambio'], amplitud: 'ancho',
