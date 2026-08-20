@@ -1,7 +1,51 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, TICKER_RE, CIK_RE } from '../_shared';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbSelect, sbUpsert, usuarioId, fetchJson, TICKER_RE, CIK_RE } from '../_shared';
 import { DEFAULT_CIK, fetchFundamentals } from '../_edgar';
+import { extraerCikDeFmpProfile } from '../_cikResolve';
 
 const TTL = 12 * 60 * 60 * 1000; // 12h
+// CIK es una asignación PERMANENTE de la SEC — no hace falta un TTL corto, un valor de hace meses
+// sigue siendo válido. TTL largo solo para no re-consultar edgar_ticker_cik en cada request.
+const CIK_CACHE_TTL = 90 * 24 * 60 * 60 * 1000; // 90 días
+
+// Resuelve el CIK "oficial" (confiable, cacheable en fundamentals_cache) de un ticker que NO está
+// en el DEFAULT_CIK hardcodeado — antes, esto era SIEMPRE un callejón sin salida: cualquier ticker
+// fuera de esas ~70 empresas quedaba "sin CIK" hasta que el usuario lo buscara a mano en el sitio de
+// la SEC y lo cargara en Configuración. Prueba, en orden, 3 fuentes verificables por el SERVIDOR
+// (nunca confía en el ?cik= que manda el cliente para esto — ver `cacheable` más abajo):
+//   1. edgar_ticker_cik: cache GLOBAL de resoluciones automáticas previas (de cualquier ticker, de
+//      cualquier corrida) — así un ticker resuelto una vez no vuelve a pagar el costo del paso 3.
+//   2. cik_map del USUARIO AUTENTICADO (verificado server-side contra su propio user_id, no un
+//      parámetro de URL que cualquiera podría falsificar) — lo que ya cargó a mano en Configuración.
+//   3. FMP /api/v3/profile/{ticker}: mismo secret (FMP_API_KEY) y mismo endpoint que ya usa
+//      beta.ts, que expone `cik` en su respuesta (confirmado: FMP devuelve "0000320193" para AAPL,
+//      igual al DEFAULT_CIK hardcodeado de este proyecto). Se probó ANTES que el archivo bulk de
+//      ticker→CIK de la SEC (company_tickers.json) porque ese archivo vive en www.sec.gov, un host
+//      distinto al que ya prueba alcanzable el proxy actual (data.sec.gov) — hubiera sido apostar a
+//      algo sin verificar, cuando FMP ya es una vía probada en este mismo proyecto.
+// Si resuelve por 1 o 3, lo persiste en edgar_ticker_cik para que el próximo ticker (de cualquier
+// corrida futura) no vuelva a pagar el costo. Devuelve null si ninguna fuente lo tiene — ahí sí cae
+// al flujo manual de siempre (Configuración).
+async function resolverCikAutomatico(env: Env, ticker: string, uid: string | null): Promise<string | null> {
+  const cacheado = await cacheFresh<{ cik: string }>(env, 'edgar_ticker_cik', 'ticker', ticker, CIK_CACHE_TTL);
+  if (cacheado?.cik) return cacheado.cik;
+
+  if (uid) {
+    const propio = await sbSelect<{ cik: string }>(env, 'cik_map', `user_id=eq.${uid}&ticker=eq.${encodeURIComponent(ticker)}&select=cik&limit=1`);
+    if (propio[0]?.cik && CIK_RE.test(propio[0].cik)) return propio[0].cik;
+  }
+
+  if (env.FMP_API_KEY) {
+    try {
+      const profile = await fetchJson<unknown>(`https://financialmodelingprep.com/api/v3/profile/${ticker}?apikey=${env.FMP_API_KEY}`);
+      const cik = extraerCikDeFmpProfile(profile);
+      if (cik) {
+        await sbUpsert(env, 'edgar_ticker_cik', [{ ticker, cik, fuente: 'fmp', updated_at: new Date().toISOString() }], 'ticker');
+        return cik;
+      }
+    } catch { /* FMP caído o sin cobertura de este ticker — cae al flujo manual */ }
+  }
+  return null;
+}
 
 // A diferencia de un precio de mercado (que "miente" si se muestra viejo), un balance/10-K sigue
 // siendo el dato correcto durante meses — recién se reemplaza con la próxima presentación trimestral
@@ -17,18 +61,23 @@ export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 export const onRequestGet = guardAuth(async ({ request, env }) => {
   const url = new URL(request.url);
   const ticker = (url.searchParams.get('ticker') || '').toUpperCase().trim();
-  // Para tickers conocidos usamos SIEMPRE el CIK oficial (ignoramos el ?cik del query) para que
-  // nadie pueda envenenar fundamentals_cache[ticker] con el CIK de otra empresa.
-  const cikOficial = DEFAULT_CIK[ticker] || '';
-  const cik = cikOficial || url.searchParams.get('cik') || '';
-  // Solo se persiste en el cache COMPARTIDO si el CIK es el oficial: con un ?cik= arbitrario
-  // cualquiera podía envenenar fundamentals_cache[ticker] con los datos de otra empresa.
-  const cacheable = !!cikOficial;
   const force = url.searchParams.get('fresh') === '1';
 
   if (!ticker) return json({ error: 'ticker requerido' }, 400);
   if (!TICKER_RE.test(ticker)) return json({ error: 'ticker-invalido' }, 400);
-  if (!cik) return json({ error: `sin CIK para ${ticker} — cargá el par ticker/CIK en Configuración` }, 400);
+
+  // Para tickers conocidos usamos SIEMPRE un CIK verificado por el SERVIDOR (ignoramos el ?cik del
+  // query para esto) para que nadie pueda envenenar fundamentals_cache[ticker] con el CIK de otra
+  // empresa — ver resolverCikAutomatico arriba para las 3 fuentes que prueba antes de rendirse.
+  const uid = await usuarioId(env, request);
+  const cikOficial = DEFAULT_CIK[ticker] || (await resolverCikAutomatico(env, ticker, uid)) || '';
+  const cik = cikOficial || url.searchParams.get('cik') || '';
+  // Solo se persiste en el cache COMPARTIDO si el CIK es el oficial (verificado server-side): con un
+  // ?cik= arbitrario sin verificar, cualquiera podía envenenar fundamentals_cache[ticker] con los
+  // datos de otra empresa.
+  const cacheable = !!cikOficial;
+
+  if (!cik) return json({ error: `No pudimos identificar el CIK de ${ticker} automáticamente — cargalo a mano en Configuración.` }, 400);
   if (!CIK_RE.test(cik)) return json({ error: 'cik-invalido', detail: 'El CIK debe ser 10 dígitos.' }, 400);
   // (El modo debug que probaba variantes contra el proxy se eliminó tras encontrar la causa raíz:
   // era un amplificador de requests públicos sin autenticación.)
