@@ -32,6 +32,10 @@ import { descargarTexto } from './download';
 // v9: agrega bonos_destacados (tickers de renta fija marcados como destacados en el Radar — ver
 // 0038_bonos_destacados.sql). Tabla nueva, per-user (no forma parte de bonos_referencia, que es el
 // catálogo global y no se exporta) — mismo motivo que v7/v8, hace falta sumarla a TABLAS.
+// Al sumar una tabla nueva acá (bump de versión): agregar también el aviso correspondiente en
+// parseBackup() (restore.ts) para backups <= la versión anterior — si no, un backup viejo restaura
+// esa tabla vacía EN SILENCIO, sin que el usuario sepa que ese pedazo no volvió (bug real
+// encontrado en revisión de Consejo: a v7→v9 les faltaban esos 2 avisos).
 export const BACKUP_VERSION = 9;
 
 const TABLAS = [
