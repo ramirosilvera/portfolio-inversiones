@@ -17,6 +17,7 @@ import type { Rating } from '../engine/score';
 import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
 import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
 import { bonosACSV, nombreArchivoCsv } from '../engine/exportRentaFija';
+import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, type Sector, type TipoFoso } from '../lib/companyMoat';
 import { CALIFICADORAS, ETIQUETA_GRADO, type GradoCredito } from '../engine/rating';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
 import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
@@ -37,7 +38,9 @@ const TICKERS_CONOCIDOS: string[] = [...new Map(Object.entries(DEFAULT_CIK).map(
 // tickers fuera de esta lista): esto es una ayuda para elegir rápido entre los ~80 verificados, no
 // un límite de lo que se puede cargar. Si lo tipeado no matchea ningún conocido, el propio
 // desplegable ofrece "Agregar '…' como nuevo" — mismo campo, sin un flujo separado.
-function TickerCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// `tickers`: lista sobre la que autocompletar — el padre puede pasar un subconjunto ya filtrado
+// por sector/foso económico (ver filtroSector/filtroFoso en RadarVariable); default: todos los conocidos.
+function TickerCombobox({ value, onChange, tickers = TICKERS_CONOCIDOS }: { value: string; onChange: (v: string) => void; tickers?: string[] }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -45,7 +48,10 @@ function TickerCombobox({ value, onChange }: { value: string; onChange: (v: stri
   // Sin cap artificial: son ~83 tickers en total, nada que justifique cortar la lista (bug real
   // reportado — con cap en 8 y el campo vacío, "AAPL..AMGN" son EXACTAMENTE los primeros 8
   // alfabéticos: no era un problema de scroll, la lista de verdad terminaba ahí).
-  const matches = q ? TICKERS_CONOCIDOS.filter(t => t.startsWith(q)) : TICKERS_CONOCIDOS;
+  const matches = q ? tickers.filter(t => t.startsWith(q)) : tickers;
+  // "Conocido" se sigue evaluando contra TODOS los tickers de DEFAULT_CIK (no solo el subconjunto
+  // filtrado) — si el usuario tipeó un ticker real que el filtro de sector/foso dejó afuera, sigue
+  // siendo un ticker conocido y no corresponde ofrecerle "agregar como nuevo".
   const esConocido = q !== '' && TICKERS_CONOCIDOS.includes(q);
   const mostrarAgregarNuevo = q !== '' && !esConocido;
   const items = mostrarAgregarNuevo ? [...matches, '__nuevo__'] : matches;
@@ -142,6 +148,19 @@ function RadarVariable() {
   const [ticker, setTicker] = useState('');
   const [nota, setNota] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Filtro de sector/foso económico — solo para acotar el desplegable al buscar QUÉ empresa
+  // seguir (pedido explícito del usuario), no un filtro de la tabla de seguimiento de abajo: una
+  // vez agregado, un ticker se sigue viendo en la tabla sin importar estos filtros.
+  const [filtroSector, setFiltroSector] = useState<'todos' | Sector>('todos');
+  const [filtroFoso, setFiltroFoso] = useState<'todos' | TipoFoso>('todos');
+  const tickersFiltrados = useMemo(() => TICKERS_CONOCIDOS.filter(t => {
+    const m = COMPANY_MOAT[t];
+    if (!m) return false;
+    if (filtroSector !== 'todos' && m.sector !== filtroSector) return false;
+    if (filtroFoso !== 'todos' && !m.fosos.includes(filtroFoso)) return false;
+    return true;
+  }), [filtroSector, filtroFoso]);
+  const moatDelTicker = COMPANY_MOAT[ticker.trim().toUpperCase()];
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [rowData, setRowData] = useState<Record<string, RowSortData>>({});
@@ -211,8 +230,24 @@ function RadarVariable() {
     <div className="space-y-4">
       <Card>
         <div className="p-4 flex flex-wrap gap-2 items-end text-sm">
-          <Field label="Ticker" hint={`${TICKERS_CONOCIDOS.length} verificadas, o escribí cualquier otro ticker`}>
-            <TickerCombobox value={ticker} onChange={setTicker} />
+          {/* Filtros de sector/foso: acotan el desplegable de Ticker antes de tipear, para poder
+              explorar "qué empresas de Salud con foso ancho no estoy siguiendo todavía" en vez de
+              tener que conocer el ticker de antemano. Clasificación cualitativa curada a mano
+              (ver src/lib/companyMoat.ts) — no calculada por el código. */}
+          <Field label="Sector">
+            <select value={filtroSector} onChange={e => setFiltroSector(e.target.value as typeof filtroSector)} className={`${inputCls} w-40`}>
+              <option value="todos">Todos</option>
+              {(Object.keys(SECTOR_LABEL) as Sector[]).map(s => <option key={s} value={s}>{SECTOR_LABEL[s]}</option>)}
+            </select>
+          </Field>
+          <Field label="Foso económico">
+            <select value={filtroFoso} onChange={e => setFiltroFoso(e.target.value as typeof filtroFoso)} className={`${inputCls} w-48`}>
+              <option value="todos">Todos</option>
+              {(Object.keys(FOSO_LABEL) as TipoFoso[]).map(f => <option key={f} value={f}>{FOSO_LABEL[f]}</option>)}
+            </select>
+          </Field>
+          <Field label="Ticker" hint={`${tickersFiltrados.length} de ${TICKERS_CONOCIDOS.length} verificadas con este filtro, o escribí cualquier otro ticker`}>
+            <TickerCombobox value={ticker} onChange={setTicker} tickers={tickersFiltrados} />
           </Field>
           <Field label="Nota (opcional)" className="flex-1 min-w-[140px]">
             <input placeholder="Nota (opcional)" value={nota} onChange={e => setNota(e.target.value)}
@@ -222,6 +257,11 @@ function RadarVariable() {
             <Button onClick={agregar} disabled={busy}><Plus className="w-4 h-4" /> Seguir</Button>
           </div>
         </div>
+        {moatDelTicker && (
+          <p className="px-4 pb-3 text-[11px] text-ink-600">
+            {SECTOR_LABEL[moatDelTicker.sector]} · {moatDelTicker.fosos.length > 0 ? moatDelTicker.fosos.map(f => FOSO_LABEL[f]).join(', ') : 'sin foso claro'} — {moatDelTicker.nota}
+          </p>
+        )}
         {err && <p className="px-4 pb-3 text-xs text-warn">{err}</p>}
       </Card>
 
