@@ -42,7 +42,10 @@ function TickerCombobox({ value, onChange }: { value: string; onChange: (v: stri
   const [activeIndex, setActiveIndex] = useState(0);
 
   const q = value.trim().toUpperCase();
-  const matches = (q ? TICKERS_CONOCIDOS.filter(t => t.startsWith(q)) : TICKERS_CONOCIDOS).slice(0, 8);
+  // Sin cap artificial: son ~83 tickers en total, nada que justifique cortar la lista (bug real
+  // reportado — con cap en 8 y el campo vacío, "AAPL..AMGN" son EXACTAMENTE los primeros 8
+  // alfabéticos: no era un problema de scroll, la lista de verdad terminaba ahí).
+  const matches = q ? TICKERS_CONOCIDOS.filter(t => t.startsWith(q)) : TICKERS_CONOCIDOS;
   const esConocido = q !== '' && TICKERS_CONOCIDOS.includes(q);
   const mostrarAgregarNuevo = q !== '' && !esConocido;
   const items = mostrarAgregarNuevo ? [...matches, '__nuevo__'] : matches;
@@ -69,18 +72,29 @@ function TickerCombobox({ value, onChange }: { value: string; onChange: (v: stri
         onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={onKeyDown}
         className={`${inputCls} w-32`} aria-expanded={open} aria-autocomplete="list" />
       {open && items.length > 0 && (
-        <ul className="absolute z-10 mt-1 max-h-56 w-48 overflow-y-auto rounded-xl border border-line bg-surface shadow-soft py-1 text-sm">
-          {items.map((item, i) => (
-            <li key={item}>
-              {/* onMouseDown (no onClick) + preventDefault: evita que el input pierda foco (onBlur)
-                  ANTES de que el click en la opción llegue a dispararse — truco estándar de combobox. */}
-              <button type="button" onMouseDown={e => { e.preventDefault(); elegir(item); }}
-                className={`w-full text-left px-3 py-1.5 ${i === activeIndex ? 'bg-canvas' : ''} ${item === '__nuevo__' ? 'text-accent' : 'tnum'}`}>
-                {item === '__nuevo__' ? <><Plus className="w-3.5 h-3.5 inline mr-1" />Agregar "{q}" como nuevo</> : item}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          {/* Scrim: sin esto, en mobile con el teclado abierto (pantalla útil muy chica) el
+              desplegable quedaba flotando SOBRE el botón "Seguir" y la tarjeta de abajo sin ninguna
+              separación visual clara — se leía como que el desplegable "rompía" el layout, cuando en
+              realidad era el resto de la página quedando visible detrás (bug real reportado con
+              captura). Oscurece el fondo para que quede inequívoco qué es overlay y qué no — mismo
+              patrón que un modal. z-index por debajo de la lista, por encima de todo lo demás.
+              onMouseDown (no onClick): cierra ANTES de que el blur del input dispare, mismo truco
+              que las opciones de abajo. */}
+          <div className="fixed inset-0 z-40 bg-ink-900/20" onMouseDown={e => { e.preventDefault(); setOpen(false); }} />
+          <ul className="absolute z-50 mt-1 max-h-64 w-64 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface shadow-soft py-1 text-sm">
+            {items.map((item, i) => (
+              <li key={item}>
+                {/* onMouseDown (no onClick) + preventDefault: evita que el input pierda foco (onBlur)
+                    ANTES de que el click en la opción llegue a dispararse — truco estándar de combobox. */}
+                <button type="button" onMouseDown={e => { e.preventDefault(); elegir(item); }}
+                  className={`w-full text-left px-3 py-1.5 ${i === activeIndex ? 'bg-canvas' : ''} ${item === '__nuevo__' ? 'text-accent' : 'tnum'}`}>
+                  {item === '__nuevo__' ? <><Plus className="w-3.5 h-3.5 inline mr-1" />Agregar "{q}" como nuevo</> : item}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
