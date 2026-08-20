@@ -17,7 +17,7 @@ import type { Rating } from '../engine/score';
 import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
 import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
 import { bonosACSV, nombreArchivoCsv } from '../engine/exportRentaFija';
-import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, type Sector, type TipoFoso } from '../lib/companyMoat';
+import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, AMPLITUD_LABEL, AMPLITUD_TONE, type Sector, type AmplitudFoso } from '../lib/companyMoat';
 import { CALIFICADORAS, ETIQUETA_GRADO, type GradoCredito } from '../engine/rating';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
 import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
@@ -110,12 +110,16 @@ const RATING_TONE: Record<Rating, 'pos' | 'accent' | 'warn' | 'neg'> = { A: 'pos
 const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
 // PIE_COLORS[0]/[4]/[3] (ui.tsx) — categóricos, no compiten con pos/warn/neg (rating)
 const TIPO_COLOR: Record<BonoReferencia['tipo'], string> = { soberano: '#4F97D4', subsoberano: '#E08E6D', on: '#B08BD6' };
+// Para ordenar la columna Foso: ancho primero (lo que se quiere ver arriba al pedir "todas las
+// anchas") — ver DEFAULT_DIR.amplitud = 'desc'.
+const AMPLITUD_ORDEN: Record<AmplitudFoso, number> = { ancho: 3, estrecho: 2, ninguno: 1 };
 // Orden por columna: cada fila calcula su propio score/DCF de forma independiente (fetch por
 // ticker), así que esos valores se reportan al padre (onComputed) para poder ordenar sin
-// duplicar el fetch ni levantar el cálculo entero acá arriba.
-type SortKey = 'ticker' | 'price' | 'mos' | 'roic' | 'eg5y' | 'score';
+// duplicar el fetch ni levantar el cálculo entero acá arriba. Sector/amplitud NO dependen de ese
+// fetch (son estáticos de companyMoat.ts) — se resuelven directo por ticker al ordenar.
+type SortKey = 'ticker' | 'sector' | 'amplitud' | 'price' | 'mos' | 'roic' | 'eg5y' | 'score';
 interface RowSortData { price: number | null; mos: number | null; roic: number | null; eg5y: number | null; score: number | null; agresiva: boolean }
-const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { ticker: 'asc', price: 'desc', mos: 'desc', roic: 'desc', eg5y: 'desc', score: 'desc' };
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = { ticker: 'asc', sector: 'asc', amplitud: 'desc', price: 'desc', mos: 'desc', roic: 'desc', eg5y: 'desc', score: 'desc' };
 
 // Radar de acciones/CEDEARs y de renta fija son dos universos completamente distintos (score DCF
 // vs. TIR/duración de un cronograma, ninguna columna en común) — un toggle en vez de dos tablas
@@ -148,18 +152,21 @@ function RadarVariable() {
   const [ticker, setTicker] = useState('');
   const [nota, setNota] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  // Filtro de sector/foso económico — solo para acotar el desplegable al buscar QUÉ empresa
+  // Filtro de sector/amplitud de foso — solo para acotar el desplegable al buscar QUÉ empresa
   // seguir (pedido explícito del usuario), no un filtro de la tabla de seguimiento de abajo: una
   // vez agregado, un ticker se sigue viendo en la tabla sin importar estos filtros.
+  // Amplitud, no tipo de foso: el usuario aclaró que para FILTRAR le alcanza con "ancho / estrecho
+  // / ninguno" (ej. "quiero seguir todas las anchas") — los tipos de foso (red, costos_cambio, etc.)
+  // le interesan como INFORMACIÓN, no como criterio de búsqueda, y se siguen mostrando debajo.
   const [filtroSector, setFiltroSector] = useState<'todos' | Sector>('todos');
-  const [filtroFoso, setFiltroFoso] = useState<'todos' | TipoFoso>('todos');
+  const [filtroAmplitud, setFiltroAmplitud] = useState<'todos' | AmplitudFoso>('todos');
   const tickersFiltrados = useMemo(() => TICKERS_CONOCIDOS.filter(t => {
     const m = COMPANY_MOAT[t];
     if (!m) return false;
     if (filtroSector !== 'todos' && m.sector !== filtroSector) return false;
-    if (filtroFoso !== 'todos' && !m.fosos.includes(filtroFoso)) return false;
+    if (filtroAmplitud !== 'todos' && m.amplitud !== filtroAmplitud) return false;
     return true;
-  }), [filtroSector, filtroFoso]);
+  }), [filtroSector, filtroAmplitud]);
   const moatDelTicker = COMPANY_MOAT[ticker.trim().toUpperCase()];
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -193,6 +200,27 @@ function RadarVariable() {
     const factor = dir === 'asc' ? 1 : -1;
     return [...items].sort((a, b) => {
       if (key === 'ticker') return a.ticker.localeCompare(b.ticker) * factor;
+      // Sector/amplitud son estáticos (companyMoat.ts) — no dependen de rowData/fetch. Tickers sin
+      // clasificación (agregados a mano, fuera del hardcodeado) quedan siempre al final, mismo
+      // criterio que "sin dato" en las columnas numéricas de abajo.
+      if (key === 'sector') {
+        const as = COMPANY_MOAT[a.ticker.toUpperCase()]?.sector;
+        const bs = COMPANY_MOAT[b.ticker.toUpperCase()]?.sector;
+        if (as == null && bs == null) return 0;
+        if (as == null) return 1;
+        if (bs == null) return -1;
+        return SECTOR_LABEL[as].localeCompare(SECTOR_LABEL[bs]) * factor;
+      }
+      if (key === 'amplitud') {
+        const aa = COMPANY_MOAT[a.ticker.toUpperCase()]?.amplitud;
+        const ba = COMPANY_MOAT[b.ticker.toUpperCase()]?.amplitud;
+        const av = aa != null ? AMPLITUD_ORDEN[aa] : null;
+        const bv = ba != null ? AMPLITUD_ORDEN[ba] : null;
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return (av - bv) * factor;
+      }
       const av = rowData[a.ticker.toUpperCase()]?.[key] ?? null;
       const bv = rowData[b.ticker.toUpperCase()]?.[key] ?? null;
       if (av == null && bv == null) return 0;
@@ -240,10 +268,10 @@ function RadarVariable() {
               {(Object.keys(SECTOR_LABEL) as Sector[]).map(s => <option key={s} value={s}>{SECTOR_LABEL[s]}</option>)}
             </select>
           </Field>
-          <Field label="Foso económico">
-            <select value={filtroFoso} onChange={e => setFiltroFoso(e.target.value as typeof filtroFoso)} className={`${inputCls} w-48`}>
-              <option value="todos">Todos</option>
-              {(Object.keys(FOSO_LABEL) as TipoFoso[]).map(f => <option key={f} value={f}>{FOSO_LABEL[f]}</option>)}
+          <Field label="Amplitud de foso">
+            <select value={filtroAmplitud} onChange={e => setFiltroAmplitud(e.target.value as typeof filtroAmplitud)} className={`${inputCls} w-40`}>
+              <option value="todos">Todas</option>
+              {(Object.keys(AMPLITUD_LABEL) as AmplitudFoso[]).map(a => <option key={a} value={a}>{AMPLITUD_LABEL[a]}</option>)}
             </select>
           </Field>
           <Field label="Ticker" hint={`${tickersFiltrados.length} de ${TICKERS_CONOCIDOS.length} verificadas con este filtro, o escribí cualquier otro ticker`}>
@@ -276,10 +304,12 @@ function RadarVariable() {
             </Button>
           </div>} />
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[720px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
               <tr>
                 <ThSort label="Ticker" align="left" sortKey="ticker" sort={sort} onClick={handleSort} />
+                <ThSort label="Sector" align="left" sortKey="sector" sort={sort} onClick={handleSort} />
+                <ThSort label="Foso" sortKey="amplitud" sort={sort} onClick={handleSort} />
                 <ThSort label="Precio" sortKey="price" sort={sort} onClick={handleSort} />
                 <ThSort label="MoS" sortKey="mos" sort={sort} onClick={handleSort} />
                 <ThSort label="ROIC" sortKey="roic" sort={sort} onClick={handleSort} />
@@ -292,7 +322,7 @@ function RadarVariable() {
             <tbody className="divide-y divide-line">
               {sortedItems.map(it => <RadarRow key={it.id} item={it} riskFree={riskFree} saved={dcfMap.get(it.ticker.toUpperCase())} onRemove={() => remove(it.id)} onComputed={onRowComputed} />)}
               {!isLoading && items.length === 0 && (
-                <tr><td colSpan={8}><Empty icon={Radar} title="Radar vacío">Agregá un ticker arriba para ver su score.</Empty></td></tr>
+                <tr><td colSpan={10}><Empty icon={Radar} title="Radar vacío">Agregá un ticker arriba para ver su score.</Empty></td></tr>
               )}
             </tbody>
           </table>
@@ -343,6 +373,9 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
   };
 
   const { price, ratios, dcf, score, agresiva, isFetching, isError } = useRadarTicker(T, cik, cikLoading, riskFree, saved);
+  // Solo existe para las empresas hardcodeadas de companyMoat.ts — un ticker agregado a mano fuera
+  // de esa lista (resolución automática de CIK) simplemente no tiene sector/foso clasificado.
+  const moat = COMPANY_MOAT[T];
 
   useEffect(() => {
     onComputed(T, { price, mos: dcf?.marginOfSafety ?? null, roic: ratios?.roic ?? null, eg5y: ratios?.eg5y ?? null, score: score?.score ?? null, agresiva });
@@ -362,6 +395,14 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
           <span className="font-semibold text-ink-900">{T}</span>
           {item.nota && <span className="text-[10px] text-ink-600 truncate max-w-[160px]">{item.nota}</span>}
         </div>
+      </td>
+      <td className="px-3 text-ink-700 truncate max-w-[130px]">{moat ? SECTOR_LABEL[moat.sector] : <span className="text-ink-500">—</span>}</td>
+      <td className="px-3">
+        {moat
+          ? <span title={`${AMPLITUD_LABEL[moat.amplitud]} · ${moat.fosos.length > 0 ? moat.fosos.map(f => FOSO_LABEL[f]).join(', ') : 'sin foso claro'} — ${moat.nota}`}>
+              <Badge tone={AMPLITUD_TONE[moat.amplitud]}>{AMPLITUD_LABEL[moat.amplitud]}</Badge>
+            </span>
+          : <span className="text-ink-500 text-xs" title="Ticker agregado a mano, fuera del listado hardcodeado clasificado">—</span>}
       </td>
       <td className="text-right px-3 tnum">{fmtUsd(price)}</td>
       <td className="text-right px-3 tnum">{dcf ? fmtPct(dcf.marginOfSafety) : '—'}</td>

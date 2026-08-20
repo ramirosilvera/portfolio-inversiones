@@ -13,6 +13,7 @@ import { computeDcf, sensitivityTable, dcfDefaultsFor, DEFAULT_DCF_INPUTS, OE_ME
 import { tendenciaPrecio, contrastarConNegocio, anualizar, sinRecalentamiento } from '../engine/tendenciaPrecio';
 import { useDcfInputs } from '../hooks/useDcfInputs';
 import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA';
+import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, AMPLITUD_LABEL, AMPLITUD_TONE } from '../lib/companyMoat';
 import { Card, CardHeader, Button, Badge, Stat, ViewToggle, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
 import type { Fundamentals } from '../types/domain';
 
@@ -177,6 +178,11 @@ export function AnalisisPage() {
   if (!fund || !ratios || !dcf) return null;
 
   const verdictTone = dcf.verdict === 'COMPRAR' ? 'pos' : dcf.verdict === 'CARO' ? 'neg' : 'warn';
+  // Solo existe para las empresas hardcodeadas de companyMoat.ts (clasificación curada a mano,
+  // Buffett/Munger) — un ticker agregado a mano fuera de esa lista no tiene sector/foso clasificado,
+  // y la tarjeta de abajo directamente no se muestra (no hay nada honesto que decir sobre un foso
+  // que nadie evaluó).
+  const moat = COMPANY_MOAT[T];
 
   // Se arma ACÁ (no adentro de computeDcf/dcf.ts) porque depende del histórico de precio (Yahoo,
   // ver arriba) — computeDcf es una función pura que también usa el Radar (useRadarTicker, un DCF
@@ -256,6 +262,30 @@ export function AnalisisPage() {
         <Stat label="Margen de seguridad" value={fmtPct(dcf.marginOfSafety)} hint={`exigido ${fmtPct(inp.mosRequired)}`} />
         <Stat label="Owner earnings norm." value={fmtUsdCompact(dcf.ownerEarningsNorm)} hint={oeHint} />
       </div>
+
+      {/* Foso económico — contexto cualitativo (Buffett/Munger) para leer todo lo demás: un veredicto
+          COMPRAR con margen de seguridad amplio pesa distinto en un negocio con foso ancho que en uno
+          sin foso claro, aunque el DCF diga lo mismo hoy. Curada a mano en companyMoat.ts, no
+          calculada por el código (Regla de oro #1) — por eso va ANTES de los números, marcando que es
+          otro tipo de dato. Solo aparece para las ~84 empresas hardcodeadas ya clasificadas. */}
+      {moat && (
+        <Card>
+          <CardHeader title="Foso económico" sub="Buffett/Munger — juicio cualitativo curado a mano, no calculado por el código." />
+          <div className="p-4 space-y-2 text-sm">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge tone="gray">{SECTOR_LABEL[moat.sector]}</Badge>
+              <Badge tone={AMPLITUD_TONE[moat.amplitud]}>{AMPLITUD_LABEL[moat.amplitud]}</Badge>
+            </div>
+            {moat.fosos.length > 0 && (
+              <p className="text-ink-700">
+                <span className="text-ink-600">Tipo(s) de foso: </span>
+                {moat.fosos.map(f => FOSO_LABEL[f]).join(', ')}
+              </p>
+            )}
+            <p className="text-[11px] text-ink-600">{moat.nota}</p>
+          </div>
+        </Card>
+      )}
 
       {/* Precio — tendencia. Deliberadamente NO se dibuja el valor intrínseco sobre el gráfico: esa
           línea se calcula con datos de HOY (shares, owner earnings actuales) y pintarla cruzando 5

@@ -58,6 +58,12 @@ export const AMPLITUD_LABEL: Record<AmplitudFoso, string> = {
   ancho: 'Foso ancho', estrecho: 'Foso estrecho', ninguno: 'Sin foso claro',
 };
 
+// Tono compartido por RadarPage (columna Foso) y AnalisisPage (tarjeta de foso) — mismo criterio
+// que el grado de crédito de bonos (RatingBadge, ui.tsx): ancho = más durable = pos, estrecho =
+// warn (real pero bajo presión), ninguno = gray (no necesariamente un negocio malo, solo sin
+// barrera estructural — no amerita el rojo de "default").
+export const AMPLITUD_TONE: Record<AmplitudFoso, 'pos' | 'warn' | 'gray'> = { ancho: 'pos', estrecho: 'warn', ninguno: 'gray' };
+
 // Ticker deduplicado (BRK.B, no BRKB — ver TICKERS_CONOCIDOS en RadarPage.tsx) → clasificación.
 export const COMPANY_MOAT: Record<string, ClasificacionMoat> = {
   UNH: { sector: 'Salud', fosos: ['escala_eficiente', 'costos_cambio'], amplitud: 'ancho',
