@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAnnual, ultimoAnio, deudaRezagada, serieRezagada, CONCEPTS, IFRS_CONCEPTS, SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS, type Raw } from './_edgar';
+import { parseAnnual, ultimoAnio, deudaRezagada, serieRezagada, calcularUngradeable, CONCEPTS, IFRS_CONCEPTS, SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS, type Raw } from './_edgar';
 import type { AnnualPoint } from './_edgar';
 
 const A = (vals: [number, number][]): AnnualPoint[] => vals.map(([fy, val]) => ({ fy, end: `${fy}-12-31`, val }));
@@ -158,5 +158,50 @@ describe('ultimoAnio — detectar un alias XBRL desactualizado (caso WMT)', () =
   });
   it('serie vacía → -Infinity (nunca gana la selección)', () => {
     expect(ultimoAnio([])).toBe(-Infinity);
+  });
+});
+
+// Empresa "sana": todo con datos hasta el mismo año — el caso base contra el que se comparan los
+// 3 casos reales de abajo (ninguno de los 3 debería ensuciar esta base).
+const SERIE_SANA = A([[2023, 100], [2024, 110], [2025, 120]]);
+const seriesCompletas = () => ({
+  ocf: SERIE_SANA, epsDiluted: SERIE_SANA, revenue: SERIE_SANA, dna: SERIE_SANA, capex: SERIE_SANA,
+  equity: SERIE_SANA, totalDebt: SERIE_SANA, cash: SERIE_SANA, operatingIncome: SERIE_SANA, interestExpense: SERIE_SANA,
+});
+
+describe('calcularUngradeable — 3 patrones reales encontrados en el catálogo (2026-08-20)', () => {
+  it('catálogo completo y sano → sin ungradeable', () => {
+    expect(calcularUngradeable(seriesCompletas())).toEqual([]);
+  });
+
+  it('caso ISRG: totalDebt VACÍO pero todo lo demás completo → NO ungradeable (Intuitive Surgical no tiene deuda, verificado externamente — un balance sin deuda no es un dato incompleto)', () => {
+    const isrg = { ...seriesCompletas(), totalDebt: [] };
+    expect(calcularUngradeable(isrg)).toEqual([]);
+  });
+
+  it('caso KO: totalDebt PRESENTE pero rezagado varios años respecto de equity → SÍ ungradeable (a diferencia de ISRG, acá hay un valor viejo, no ausencia real de deuda)', () => {
+    const ko = { ...seriesCompletas(), totalDebt: A([[2023, 100]]) }; // equity/etc siguen hasta 2025
+    expect(calcularUngradeable(ko)).toContain('totalDebt');
+  });
+
+  it('caso GOOGL: revenue rezagado respecto de operatingIncome → SÍ ungradeable', () => {
+    const googl = { ...seriesCompletas(), revenue: A([[2023, 100], [2024, 110]]) }; // operatingIncome sigue hasta 2025
+    expect(calcularUngradeable(googl)).toContain('revenue');
+  });
+
+  it('caso MELI: interestExpense rezagado respecto de totalDebt → SÍ ungradeable', () => {
+    const meli = { ...seriesCompletas(), interestExpense: A([[2017, 10]]) }; // totalDebt sigue hasta 2025
+    expect(calcularUngradeable(meli)).toContain('interestExpense');
+  });
+
+  it('caso TSM: varios campos genuinamente vacíos a la vez (dna/capex/totalDebt/cash) → SÍ ungradeable en los 4, el fix de ISRG no los tapa', () => {
+    const tsm = { ...seriesCompletas(), dna: [], capex: [], totalDebt: [], cash: [] };
+    const resultado = calcularUngradeable(tsm);
+    expect(resultado).toEqual(expect.arrayContaining(['dna', 'capex', 'cash']));
+    // totalDebt NUNCA se flagea solo por estar vacío (ver CRITICOS_SI_VACIOS) — acá igual el warning
+    // "datos incompletos EDGAR" sigue disparando porque dna/capex/cash SÍ están en la lista y
+    // TAMBIÉN están vacíos: el fix de ISRG no esconde el problema real de TSM, lo siguen
+    // detectando los otros 3 campos.
+    expect(resultado).not.toContain('totalDebt');
   });
 });
