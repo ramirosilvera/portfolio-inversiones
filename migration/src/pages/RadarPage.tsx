@@ -255,12 +255,20 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
       <td className="text-right px-3 tnum">{ratios ? fmtPct(ratios.eg5y) : '—'}</td>
       <td className="text-right px-3">{dcf ? <Badge tone={verdictTone as 'pos' | 'neg' | 'warn'}>{dcf.verdict}</Badge> : <span className="text-ink-600">—</span>}</td>
       <td className="text-right px-3">
+        {/* Orden importa: mientras el fetch está en vuelo (isFetching) el servidor puede estar
+            todavía intentando resolver el CIK solo (cache global → cik_map propio → FMP, ver
+            resolverCikAutomatico en fundamentals.ts) — mostrar "sin CIK" ANTES de que termine de
+            intentarlo (como antes, cuando la resolución era 100% local) sería un falso negativo. La
+            distinción "sin CIK" vs. "falló" recién tiene sentido DESPUÉS de asentarse: si isError y
+            localmente tampoco conocíamos un CIK, lo más probable es que ninguna fuente automática lo
+            tenga — ahí sí vale mandar a Configuración. Si isError con un CIK sí conocido, el problema
+            es otra cosa (EDGAR/rate-limit), no el CIK. */}
         {score?.score != null
           ? <span className="inline-flex items-center gap-1.5"><span className="tnum font-bold text-ink-900">{score.score}</span><Badge tone={RATING_TONE[score.rating!]}>{score.rating}</Badge></span>
-          : !cik
-            ? <Link to="/config" className="text-[10px] text-warn hover:underline" title="Cargá el CIK en Configuración">sin CIK</Link>
-            : isFetching
-              ? <span className="text-ink-500 text-xs" title="Cargando fundamentals de EDGAR…">…</span>
+          : isFetching
+            ? <span className="text-ink-500 text-xs" title="Cargando fundamentals de EDGAR (probando resolver el CIK solo, si hace falta)…">…</span>
+            : isError && !cik
+              ? <Link to="/config" className="text-[10px] text-warn hover:underline" title="No pudimos identificar el CIK automáticamente — cargalo a mano en Configuración">sin CIK</Link>
               : isError
                 ? <span className="text-neg text-[10px]" title="No se pudo cargar (ya reintentó solo) — probá 'Refrescar' arriba">falló</span>
                 : <span className="text-ink-600">—</span>}

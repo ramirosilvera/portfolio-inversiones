@@ -27,7 +27,11 @@ export function useRadarTicker(
   const T = ticker.toUpperCase();
   const { data: fund, isFetching, isError } = useQuery({
     queryKey: ['fundamentals', T, cik ?? ''],
-    enabled: !cikLoading && !!cik,   // sin CIK no hay fundamentals que pedir
+    // Se pide igual sin CIK local: el servidor intenta resolverlo solo (cache global, cik_map propio,
+    // FMP) antes de rendirse — ver resolverCikAutomatico en fundamentals.ts. Antes esto se cortaba
+    // acá mismo para cualquier ticker fuera de las ~70 empresas hardcodeadas, sin darle chance al
+    // servidor de resolverlo.
+    enabled: !cikLoading,
     queryFn: () => api.fundamentals(T, cik),
     staleTime: 12 * 60 * 60_000,
     // Un 502/503 transitorio del proxy de EDGAR (o de Finnhub/FMP) no debe quedar "atascado" hasta
