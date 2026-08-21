@@ -32,6 +32,11 @@ import { descargarTexto } from './download';
 // v9: agrega bonos_destacados (tickers de renta fija marcados como destacados en el Radar — ver
 // 0038_bonos_destacados.sql). Tabla nueva, per-user (no forma parte de bonos_referencia, que es el
 // catálogo global y no se exporta) — mismo motivo que v7/v8, hace falta sumarla a TABLAS.
+// posiciones.ley (0044_posiciones_ley.sql) tampoco requirió bump: mismo caso que calificadora/
+// calificacion/amortizable/valor_residual arriba — 1 columna nueva en `posiciones`, tabla ya
+// incluida, cubierta sola por select('*')/upsert genérico. bonos_referencia.ley (0042) ni entra en
+// esta discusión: esa tabla es el catálogo global, nunca se exporta (mismo motivo que
+// cedear_ratios/fundamentals_cache).
 // Al sumar una tabla nueva acá (bump de versión): agregar también el aviso correspondiente en
 // parseBackup() (restore.ts) para backups <= la versión anterior — si no, un backup viejo restaura
 // esa tabla vacía EN SILENCIO, sin que el usuario sepa que ese pedazo no volvió (bug real
