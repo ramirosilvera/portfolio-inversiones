@@ -234,6 +234,26 @@ function BonosGradoInversionMetric({ viz, titulo, sub, detalleHref, personalizan
   return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
 }
 
+// Mismos 2 colores que la barra "Ley aplicable" de BonosPage (LEY_TONE ahí es accent/sol de Badge —
+// acá hace falta el hex porque DonutViz/BarViz pintan con `color`, no con clases de Tailwind).
+const LEY_LOCAL_COLOR = '#4F97D4';    // accent (tailwind.config.ts)
+const LEY_EXTRANJERA_COLOR = '#F4C752'; // sol (tailwind.config.ts)
+
+function BonosDistribucionLeyMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
+  const { resumen, isLoading } = useBonosResumenValue();
+  const mv: MetricValue = isLoading ? { status: 'loading' }
+    : !resumen ? { status: 'empty', motivo: 'Sin bonos en este portfolio.' }
+    : {
+        status: 'ok', shape: 'categorico', format: 'usd-compact',
+        items: [
+          { label: 'Local', value: resumen.distribucionLey.local * resumen.totalMkt, color: LEY_LOCAL_COLOR },
+          { label: 'Extranjera', value: resumen.distribucionLey.extranjera * resumen.totalMkt, color: LEY_EXTRANJERA_COLOR },
+          { label: 'Sin clasificar', value: resumen.distribucionLey.sinClasificar * resumen.totalMkt, color: SIN_CLASIFICAR_COLOR },
+        ].filter(i => i.value > 0),
+      };
+  return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
+}
+
 // Mismo cálculo EXACTO que `proximoCapital` en DashboardPage.tsx (capitalCalendar sobre
 // amortizaciones_programadas, filtrando cuotas ya cobradas) — reusado acá para que esta tarjeta
 // atómica también muestre un número real, no solo un remito a la tarjeta Cobros.
@@ -473,6 +493,7 @@ export const METRIC_COMPONENTS: Partial<Record<MetricKey, MetricComponent>> = {
   bonos_tir_promedio: BonosTirPromedioMetric,
   bonos_duracion_promedio: BonosDuracionPromedioMetric,
   bonos_grado_inversion: BonosGradoInversionMetric,
+  bonos_distribucion_ley: BonosDistribucionLeyMetric,
   bonos_proximo_capital: BonosProximoCapitalMetric,
   radar_compra_agresiva: RadarCompraAgresivaMetric,
   cobros_total: CobrosTotalMetric,

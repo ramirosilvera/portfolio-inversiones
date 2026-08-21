@@ -258,6 +258,7 @@ function enrichBono(ticker: string, catalogoBonos: BonoReferencia[]): Partial<Po
     vencimiento: ref.vencimiento,
     calificadora: ref.calificadora,
     calificacion: ref.calificacion,
+    ley: ref.ley,
     amortizable: ref.amortizable,
     valor_residual: ref.amortizable ? ref.valor_residual : null,
   };
@@ -326,6 +327,7 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
           vencimiento: f.vencimiento ?? auto.vencimiento,
           calificadora: f.calificadora ?? auto.calificadora,
           calificacion: f.calificacion ?? auto.calificacion,
+          ley: f.ley ?? auto.ley,
           amortizable: f.amortizable ?? auto.amortizable,
           valor_residual: f.valor_residual ?? auto.valor_residual,
         };

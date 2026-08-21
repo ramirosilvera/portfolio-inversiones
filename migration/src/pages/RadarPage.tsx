@@ -14,7 +14,7 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
 import type { Rating } from '../engine/score';
-import { calcularBonoReferencia, TIPO_LABEL, LEY_LABEL, type BonoReferencia } from '../engine/rentaFija';
+import { calcularBonoReferencia, TIPO_LABEL, LEY_LABEL, LEY_TONE, type BonoReferencia } from '../engine/rentaFija';
 import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
 import { bonosACSV, nombreArchivoCsv } from '../engine/exportRentaFija';
 import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, AMPLITUD_LABEL, AMPLITUD_TONE, type Sector, type AmplitudFoso } from '../lib/companyMoat';
@@ -457,9 +457,6 @@ const FILTRO_GRADO_LABEL: Record<FiltroGrado, string> = { todos: 'Todos', ...ETI
 // repetirlo en cada opción sería redundante, a diferencia de LEY_LABEL que sí necesita ser
 // autoexplicativo donde aparece suelto (badge de la tabla, CSV).
 const FILTRO_LEY_LABEL: Record<FiltroLey, string> = { todos: 'Todas', local: 'Local', extranjera: 'Extranjera', sin_clasificar: 'Sin clasificar' };
-// Ninguna de las 2 leyes es "mejor" en sí (a diferencia de un rating) — mismo criterio neutral que
-// TIPO_TONE (accent/sol/gray), no pos/warn/neg.
-const LEY_TONE: Record<'local' | 'extranjera', 'accent' | 'sol'> = { local: 'accent', extranjera: 'sol' };
 // Mismo criterio de color que MacroPage/TasasPage (engine/semaforos.ts) para Luz — acá es
 // OperabilidadNivel (engine/volumenRentaFija.ts), un tipo distinto pero con las mismas 3
 // categorías, así que se reusa la misma paleta para que el usuario no tenga que aprender un
