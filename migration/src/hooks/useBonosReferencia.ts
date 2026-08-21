@@ -5,8 +5,9 @@ import type { BonoReferencia } from '../engine/rentaFija';
 // Catálogo global de renta fija (bonos_referencia, ver migración 0034) — lectura directa a
 // Supabase, mismo criterio que useCedearRatios: es una base compartida, no aislada por portfolio.
 // El cliente NUNCA escribe cronograma/vencimiento/etc. (los puebla el proceso de actualización
-// mensual vía IOL) — la única excepción es calificadora/calificacion, editable a mano (ver
-// migración 0036: grant column-level, no toda la fila) porque no hay API gratuita de rating.
+// mensual vía IOL) — las únicas excepciones son calificadora/calificacion (migración 0036) y ley
+// (migración 0042), editables a mano (grant column-level, no toda la fila) porque ninguna API
+// gratuita las da.
 export function useBonosReferencia() {
   const qc = useQueryClient();
   const query = useQuery({
@@ -25,13 +26,13 @@ export function useBonosReferencia() {
   });
   return {
     ...query,
-    // update() en vez de un nombre "guardar rating": el grant column-level de la migración 0036
-    // hace que cualquier otro campo en el payload sea rechazado por Postgres, así que solo estos 2
-    // deberían pasarse nunca — si algún día hace falta editar más campos desde acá, hace falta
+    // update() en vez de un nombre "guardar rating": el grant column-level de las migraciones 0036/
+    // 0042 hace que cualquier otro campo en el payload sea rechazado por Postgres, así que solo estos
+    // 3 deberían pasarse nunca — si algún día hace falta editar más campos desde acá, hace falta
     // ampliar el grant primero, no alcanza con tocar esta función.
-    actualizarRating: async (ticker: string, calificadora: string | null, calificacion: string | null) => {
+    actualizarClasificacion: async (ticker: string, calificadora: string | null, calificacion: string | null, ley: 'local' | 'extranjera' | null) => {
       const { error } = await supabase.from('bonos_referencia')
-        .update({ calificadora: calificadora || null, calificacion: calificacion || null })
+        .update({ calificadora: calificadora || null, calificacion: calificacion || null, ley })
         .eq('ticker', ticker);
       if (error) throw error;
       qc.invalidateQueries({ queryKey: ['bonos_referencia'] });

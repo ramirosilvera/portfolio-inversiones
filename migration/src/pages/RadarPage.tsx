@@ -14,7 +14,7 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { MARGEN_COMPRA_AGRESIVA } from '../engine/dcf';
 import type { Rating } from '../engine/score';
-import { calcularBonoReferencia, TIPO_LABEL, type BonoReferencia } from '../engine/rentaFija';
+import { calcularBonoReferencia, TIPO_LABEL, LEY_LABEL, type BonoReferencia } from '../engine/rentaFija';
 import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
 import { bonosACSV, nombreArchivoCsv } from '../engine/exportRentaFija';
 import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, AMPLITUD_LABEL, AMPLITUD_TONE, type Sector, type AmplitudFoso } from '../lib/companyMoat';
@@ -443,11 +443,19 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
 }
 
 // ── Renta fija: catálogo de referencia, búsqueda/filtro + curva TIR-duración ──────────────────
-type SortKeyRF = 'ticker' | 'paridad' | 'tir' | 'duracion' | 'vencimiento';
-const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
+type SortKeyRF = 'ticker' | 'ley' | 'paridad' | 'tir' | 'duracion' | 'vencimiento';
+const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', ley: 'asc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
 type FiltroGrado = 'todos' | GradoCredito | 'sin_calificar';
+type FiltroLey = 'todos' | 'local' | 'extranjera' | 'sin_clasificar';
 const SIN_CALIFICAR_COLOR = '#8B96A5'; // mismo gris que RatingBadge/BonosPage para "sin calificar"
 const FILTRO_GRADO_LABEL: Record<FiltroGrado, string> = { todos: 'Todos', ...ETIQUETA_GRADO, sin_calificar: 'Sin calificar' };
+// Texto corto (no "Ley local"/"Ley extranjera" — el propio <select> ya está bajo el label "Ley",
+// repetirlo en cada opción sería redundante, a diferencia de LEY_LABEL que sí necesita ser
+// autoexplicativo donde aparece suelto (badge de la tabla, CSV).
+const FILTRO_LEY_LABEL: Record<FiltroLey, string> = { todos: 'Todas', local: 'Local', extranjera: 'Extranjera', sin_clasificar: 'Sin clasificar' };
+// Ninguna de las 2 leyes es "mejor" en sí (a diferencia de un rating) — mismo criterio neutral que
+// TIPO_TONE (accent/sol/gray), no pos/warn/neg.
+const LEY_TONE: Record<'local' | 'extranjera', 'accent' | 'sol'> = { local: 'accent', extranjera: 'sol' };
 // Mismo criterio de color que MacroPage/TasasPage (engine/semaforos.ts) para Luz — acá es
 // OperabilidadNivel (engine/volumenRentaFija.ts), un tipo distinto pero con las mismas 3
 // categorías, así que se reusa la misma paleta para que el usuario no tenga que aprender un
@@ -461,7 +469,7 @@ const OPERABLE_LABEL: Record<OperabilidadNivel, string> = {
 const MONTO_OPERAR_DEFAULT = 1000;
 
 function RadarFija() {
-  const { data: bonosRef = [], isLoading: bonosRefLoading, isError: bonosRefError, actualizarRating } = useBonosReferencia();
+  const { data: bonosRef = [], isLoading: bonosRefLoading, isError: bonosRefError, actualizarClasificacion } = useBonosReferencia();
   const { data: bonosPrecios = {} } = useBonosPrecios();
   const { destacados, toggle: toggleDestacado } = useBonosDestacados();
   const qc = useQueryClient();
@@ -489,6 +497,7 @@ function RadarFija() {
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | BonoReferencia['tipo']>('todos');
   const [filtroGrado, setFiltroGrado] = useState<FiltroGrado>('todos');
+  const [filtroLey, setFiltroLey] = useState<FiltroLey>('todos');
   // Duración en años (Macaulay) — string, no number, para poder dejar el campo vacío sin que un 0
   // se interprete como "duración exactamente 0" (mismo criterio que `busqueda`). Un bono sin
   // duración calculable (sin cotización de mercado) no puede verificarse contra el rango, así que
@@ -508,6 +517,7 @@ function RadarFija() {
   const filtrados = useMemo(() => bonosCalc.filter(b => {
     if (filtroTipo !== 'todos' && b.ref.tipo !== filtroTipo) return false;
     if (filtroGrado !== 'todos' && (filtroGrado === 'sin_calificar' ? b.grado != null : b.grado !== filtroGrado)) return false;
+    if (filtroLey !== 'todos' && (filtroLey === 'sin_clasificar' ? b.ref.ley != null : b.ref.ley !== filtroLey)) return false;
     if (durMin != null || durMax != null) {
       const d = b.duracion?.macaulay;
       if (d == null || !Number.isFinite(d)) return false;
@@ -517,7 +527,7 @@ function RadarFija() {
     const q = busqueda.trim().toUpperCase();
     if (q && !b.ref.ticker.includes(q) && !(b.ref.emisor?.toUpperCase().includes(q)) && !(b.ref.nombre?.toUpperCase().includes(q))) return false;
     return true;
-  }), [bonosCalc, filtroTipo, filtroGrado, durMin, durMax, busqueda]);
+  }), [bonosCalc, filtroTipo, filtroGrado, filtroLey, durMin, durMax, busqueda]);
 
   const handleSortRF = (key: SortKeyRF) => setSortRF(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR_RF[key] });
   const ordenadosPorColumna = useMemo(() => {
@@ -526,6 +536,7 @@ function RadarFija() {
     const factor = dir === 'asc' ? 1 : -1;
     const val = (b: typeof filtrados[number]): number | string | null => {
       if (key === 'ticker') return b.ref.ticker;
+      if (key === 'ley') return b.ref.ley ? LEY_LABEL[b.ref.ley] : null;
       if (key === 'paridad') return b.paridad;
       if (key === 'tir') return b.tir;
       if (key === 'duracion') { const m = b.duracion?.macaulay; return m != null && Number.isFinite(m) ? m : null; }
@@ -588,6 +599,11 @@ function RadarFija() {
           <Field label="Calificación">
             <select value={filtroGrado} onChange={e => setFiltroGrado(e.target.value as FiltroGrado)} className={`${inputCls} w-44`}>
               {(Object.keys(FILTRO_GRADO_LABEL) as FiltroGrado[]).map(g => <option key={g} value={g}>{FILTRO_GRADO_LABEL[g]}</option>)}
+            </select>
+          </Field>
+          <Field label="Ley" hint="Jurisdicción aplicable — Bonares/Globales en soberanos, y su equivalente en ONs">
+            <select value={filtroLey} onChange={e => setFiltroLey(e.target.value as FiltroLey)} className={`${inputCls} w-32`}>
+              {(Object.keys(FILTRO_LEY_LABEL) as FiltroLey[]).map(l => <option key={l} value={l}>{FILTRO_LEY_LABEL[l]}</option>)}
             </select>
           </Field>
           <Field label="Duración (años)">
@@ -671,13 +687,14 @@ function RadarFija() {
             </Button>
           </div>} />
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[920px]">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
               <tr>
                 <th className="px-2" title="Destacado"><span className="sr-only">Destacado</span></th>
                 <ThSort<SortKeyRF> label="Ticker" align="left" sortKey="ticker" sort={sortRF} onClick={handleSortRF} />
                 <th className="text-left px-3">Emisor</th>
                 <th className="text-right px-3">Tipo</th>
+                <ThSort<SortKeyRF> label="Ley" sortKey="ley" sort={sortRF} onClick={handleSortRF} />
                 <th className="text-left px-3">Rating</th>
                 <ThSort<SortKeyRF> label="Paridad" sortKey="paridad" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="TIR" sortKey="tir" sort={sortRF} onClick={handleSortRF} />
@@ -694,13 +711,13 @@ function RadarFija() {
                   montoOperar={montoOperar} />
               ))}
               {bonosRefError && (
-                <tr><td colSpan={11}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
+                <tr><td colSpan={12}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length === 0 && (
-                <tr><td colSpan={11}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
+                <tr><td colSpan={12}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length > 0 && ordenados.length === 0 && (
-                <tr><td colSpan={11}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
+                <tr><td colSpan={12}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
               )}
             </tbody>
           </table>
@@ -708,8 +725,8 @@ function RadarFija() {
       </Card>
 
       {editando && (
-        <EditarRatingModal calc={editando} onClose={() => setEditando(null)}
-          onGuardar={async (calificadora, calificacion) => actualizarRating(editando.ref.ticker, calificadora, calificacion)} />
+        <EditarClasificacionModal calc={editando} onClose={() => setEditando(null)}
+          onGuardar={async (calificadora, calificacion, ley) => actualizarClasificacion(editando.ref.ticker, calificadora, calificacion, ley)} />
       )}
     </div>
   );
@@ -748,6 +765,11 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado,
       </td>
       <td className="px-3 text-ink-700 truncate max-w-[160px]" title={ref.emisor ?? undefined}>{ref.emisor ?? <span className="text-ink-500">—</span>}</td>
       <td className="text-right px-3"><Badge tone={TIPO_TONE[ref.tipo]}>{TIPO_LABEL[ref.tipo]}</Badge></td>
+      <td className="text-right px-3">
+        <button onClick={onEditarRating} className="hover:opacity-75 transition-opacity" title="Editar ley aplicable" aria-label={`Editar ley aplicable de ${ref.ticker}`}>
+          {ref.ley ? <Badge tone={LEY_TONE[ref.ley]}>{LEY_LABEL[ref.ley]}</Badge> : <span className="text-ink-500 text-xs">sin clasificar</span>}
+        </button>
+      </td>
       <td className="px-3">
         <button onClick={onEditarRating} className="hover:opacity-75 transition-opacity" title="Editar calificación" aria-label={`Editar calificación de ${ref.ticker}`}>
           <RatingBadge calificadora={ref.calificadora} calificacion={ref.calificacion} grado={grado} escala={escalaGrado} />
@@ -771,35 +793,43 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado,
   );
 }
 
-// Editar calificadora/calificación — único campo de bonos_referencia editable desde la app (el
-// resto del catálogo lo puebla el proceso mensual vía IOL, ver migración 0036). No hay API
-// gratuita de rating para renta fija argentina, así que se carga a mano — mismo criterio que
-// cedear_ratios.
-function EditarRatingModal({ calc, onClose, onGuardar }: {
+// Editar calificadora/calificación/ley — los únicos campos de bonos_referencia editables desde la
+// app (el resto del catálogo lo puebla el proceso mensual vía IOL, ver migración 0036/0042). No hay
+// API gratuita que dé rating ni ley aplicable para renta fija argentina, así que se cargan a mano —
+// mismo criterio que cedear_ratios.
+function EditarClasificacionModal({ calc, onClose, onGuardar }: {
   calc: ReturnType<typeof calcularBonoReferencia>;
   onClose: () => void;
-  onGuardar: (calificadora: string | null, calificacion: string | null) => Promise<void>;
+  onGuardar: (calificadora: string | null, calificacion: string | null, ley: 'local' | 'extranjera' | null) => Promise<void>;
 }) {
   useEscapeClose(onClose);
   const [calificadora, setCalificadora] = useState(calc.ref.calificadora ?? '');
   const [calificacion, setCalificacion] = useState(calc.ref.calificacion ?? '');
+  const [ley, setLey] = useState<'' | 'local' | 'extranjera'>(calc.ref.ley ?? '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const guardar = async () => {
     setBusy(true); setErr(null);
-    try { await onGuardar(calificadora.trim() || null, calificacion.trim() || null); onClose(); }
+    try { await onGuardar(calificadora.trim() || null, calificacion.trim() || null, ley || null); onClose(); }
     catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo guardar'); setBusy(false); }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-sm" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Calificación de ${calc.ref.ticker}`}>
+      <div className="w-full max-w-sm" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Clasificación de ${calc.ref.ticker}`}>
         <Card className="animate-rise">
-          <CardHeader title={`Calificación · ${calc.ref.ticker}`}
-            sub="Cargada a mano — no hay API gratuita de rating para renta fija argentina."
+          <CardHeader title={`Clasificación · ${calc.ref.ticker}`}
+            sub="Cargada a mano — no hay API gratuita de rating ni de ley aplicable para renta fija argentina."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 space-y-3">
+            <Field label="Ley aplicable" hint="Jurisdicción — Bonares/Globales en soberanos, y su equivalente en ONs">
+              <select value={ley} onChange={e => setLey(e.target.value as typeof ley)} className={inputCls}>
+                <option value="">Sin clasificar</option>
+                <option value="local">{LEY_LABEL.local}</option>
+                <option value="extranjera">{LEY_LABEL.extranjera}</option>
+              </select>
+            </Field>
             <Field label="Calificadora">
               <select value={calificadora} onChange={e => setCalificadora(e.target.value)} className={inputCls}>
                 <option value="">Sin calificadora</option>
