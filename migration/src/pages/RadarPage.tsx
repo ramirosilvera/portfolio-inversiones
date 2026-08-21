@@ -110,6 +110,8 @@ const RATING_TONE: Record<Rating, 'pos' | 'accent' | 'warn' | 'neg'> = { A: 'pos
 const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
 // PIE_COLORS[0]/[4]/[3] (ui.tsx) — categóricos, no compiten con pos/warn/neg (rating)
 const TIPO_COLOR: Record<BonoReferencia['tipo'], string> = { soberano: '#4F97D4', subsoberano: '#E08E6D', on: '#B08BD6' };
+// PIE_COLORS[2]/[1] — mismos índices categóricos, sin pisar los 3 ya usados por TIPO_COLOR arriba.
+const LEY_COLOR: Record<'local' | 'extranjera', string> = { local: '#5FB49C', extranjera: '#F4C752' };
 // Para ordenar la columna Foso: ancho primero (lo que se quiere ver arriba al pedir "todas las
 // anchas") — ver DEFAULT_DIR.amplitud = 'desc'.
 const AMPLITUD_ORDEN: Record<AmplitudFoso, number> = { ancho: 3, estrecho: 2, ninguno: 1 };
@@ -447,7 +449,9 @@ type SortKeyRF = 'ticker' | 'ley' | 'paridad' | 'tir' | 'duracion' | 'vencimient
 const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', ley: 'asc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
 type FiltroGrado = 'todos' | GradoCredito | 'sin_calificar';
 type FiltroLey = 'todos' | 'local' | 'extranjera' | 'sin_clasificar';
-const SIN_CALIFICAR_COLOR = '#8B96A5'; // mismo gris que RatingBadge/BonosPage para "sin calificar"
+// Mismo gris que RatingBadge/BonosPage para "sin calificar" — reusado también para "sin
+// clasificar" (ley), mismo concepto de "sin dato" en un eje categórico distinto.
+const SIN_DATO_COLOR = '#8B96A5';
 const FILTRO_GRADO_LABEL: Record<FiltroGrado, string> = { todos: 'Todos', ...ETIQUETA_GRADO, sin_calificar: 'Sin calificar' };
 // Texto corto (no "Ley local"/"Ley extranjera" — el propio <select> ya está bajo el label "Ley",
 // repetirlo en cada opción sería redundante, a diferencia de LEY_LABEL que sí necesita ser
@@ -504,7 +508,7 @@ function RadarFija() {
   // se excluye en vez de asumir que "sí" o "no" entra.
   const [filtroDuracionMin, setFiltroDuracionMin] = useState('');
   const [filtroDuracionMax, setFiltroDuracionMax] = useState('');
-  const [colorPor, setColorPor] = useState<'tipo' | 'calificacion'>('tipo');
+  const [colorPor, setColorPor] = useState<'tipo' | 'calificacion' | 'ley'>('tipo');
   // String (no number) por el mismo motivo que filtroDuracionMin/Max: dejar el campo vacío sin que
   // se interprete como "monto 0". Vacío o inválido cae al default, no bloquea la columna.
   const [montoOperarStr, setMontoOperarStr] = useState(String(MONTO_OPERAR_DEFAULT));
@@ -569,14 +573,17 @@ function RadarFija() {
   );
   const colorDePunto = (b: (typeof puntos)[number]): string => {
     if (colorPor === 'tipo') return TIPO_COLOR[b.ref.tipo];
+    if (colorPor === 'ley') return b.ref.ley ? LEY_COLOR[b.ref.ley] : SIN_DATO_COLOR;
     if (b.grado === 'grado_inversion') return chart.pos;
     if (b.grado === 'especulativo') return chart.warn;
     if (b.grado === 'default') return chart.neg;
-    return SIN_CALIFICAR_COLOR;
+    return SIN_DATO_COLOR;
   };
   const leyenda: { color: string; label: string }[] = colorPor === 'tipo'
     ? (Object.keys(TIPO_LABEL) as BonoReferencia['tipo'][]).map(t => ({ color: TIPO_COLOR[t], label: TIPO_LABEL[t] }))
-    : [{ color: chart.pos, label: 'Grado de inversión' }, { color: chart.warn, label: 'Especulativo' }, { color: chart.neg, label: 'Default' }, { color: SIN_CALIFICAR_COLOR, label: 'Sin calificar' }];
+    : colorPor === 'ley'
+    ? [{ color: LEY_COLOR.local, label: LEY_LABEL.local }, { color: LEY_COLOR.extranjera, label: LEY_LABEL.extranjera }, { color: SIN_DATO_COLOR, label: 'Sin clasificar' }]
+    : [{ color: chart.pos, label: 'Grado de inversión' }, { color: chart.warn, label: 'Especulativo' }, { color: chart.neg, label: 'Default' }, { color: SIN_DATO_COLOR, label: 'Sin calificar' }];
 
   return (
     <div className="space-y-4">
@@ -627,7 +634,7 @@ function RadarFija() {
           right={<div className="flex items-center gap-1.5">
             <span className="text-[11px] text-ink-600 mr-1">Colorear por</span>
             <ViewToggle value={colorPor} onChange={setColorPor} label="Colorear por"
-              options={[{ value: 'tipo', label: 'Tipo' }, { value: 'calificacion', label: 'Calificación' }]} />
+              options={[{ value: 'tipo', label: 'Tipo' }, { value: 'calificacion', label: 'Calificación' }, { value: 'ley', label: 'Ley' }]} />
           </div>} />
         {puntos.length > 0 ? (
           <>
@@ -647,6 +654,7 @@ function RadarFija() {
                         <p>TIR: <b className="tnum">{fmtPct(b.tir)}</b> · Duración: <b className="tnum">{fmtNum(b.duracionAnios, 1)}a</b></p>
                         <p>Paridad: <b className="tnum">{fmtNum(b.paridad, 1)}%</b> · Vence {b.ref.vencimiento}</p>
                         {(b.ref.calificadora || b.ref.calificacion) && <p>Rating: {b.ref.calificacion} ({b.ref.calificadora})</p>}
+                        {b.ref.ley && <p>{LEY_LABEL[b.ref.ley]}</p>}
                       </div>
                     );
                   }} />
