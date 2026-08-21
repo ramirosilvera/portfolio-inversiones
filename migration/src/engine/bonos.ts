@@ -141,10 +141,10 @@ export function resumenBonos(bonosCalc: BonoCalc[], riskFree?: number | null): R
 // Alertas de riesgo/calidad de datos sobre la cartera de bonos — mismos umbrales que ya coloreaban
 // los Stats de BonosPage, ahora en un único lugar para que BonosPage y el resumen del Dashboard
 // muestren EXACTAMENTE la misma lista. `minGradoInversionPct`, `maxDuracionAnios` y
-// `maxLeyExtranjeraPct` son umbrales PERSONALES del usuario (no una constante fija del motor, a
+// `minLeyExtranjeraPct` son umbrales PERSONALES del usuario (no una constante fija del motor, a
 // diferencia de los de arriba) — se piden como parámetro obligatorio, y quien llama los trae de
 // useObjetivoDuracion (localStorage por portfolio).
-export function alertasBonos(r: ResumenBonos, minGradoInversionPct: number, maxDuracionAnios: number, maxLeyExtranjeraPct: number): Alerta[] {
+export function alertasBonos(r: ResumenBonos, minGradoInversionPct: number, maxDuracionAnios: number, minLeyExtranjeraPct: number): Alerta[] {
   const alertas: Alerta[] = [];
 
   if (r.mayorPosicion && r.mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA) {
@@ -167,8 +167,11 @@ export function alertasBonos(r: ResumenBonos, minGradoInversionPct: number, maxD
     alertas.push({ severidad: 'warn', texto: `Duración promedio de ${r.duracionPromedio.toFixed(1)} años — por encima de tu máximo personal de ${maxDuracionAnios} años (mayor sensibilidad a suba de tasas).` });
   }
 
-  if (r.totalMkt > 0 && r.distribucionLey.extranjera * 100 > maxLeyExtranjeraPct) {
-    alertas.push({ severidad: 'warn', texto: `${Math.round(r.distribucionLey.extranjera * 100)}% del capital en bonos está bajo ley extranjera — por encima de tu máximo personal de ${maxLeyExtranjeraPct}%.` });
+  // Umbral MÍNIMO (no máximo): ley extranjera es la opción más segura (jurisdicción de cobro fuera
+  // de Argentina) pero rinde menos que ley local — se avisa si te quedaste con MUY POCA cobertura
+  // "segura" para el balance riesgo/rendimiento que buscás, no si tenés demasiada.
+  if (r.totalMkt > 0 && r.distribucionLey.extranjera * 100 < minLeyExtranjeraPct) {
+    alertas.push({ severidad: 'warn', texto: `Solo ${Math.round(r.distribucionLey.extranjera * 100)}% del capital en bonos está bajo ley extranjera (más segura) — por debajo de tu mínimo personal de ${minLeyExtranjeraPct}%.` });
   }
 
   if (r.spreadPromedio != null && r.spreadPromedio < 0) {
