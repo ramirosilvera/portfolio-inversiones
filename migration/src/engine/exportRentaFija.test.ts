@@ -7,7 +7,7 @@ const ref: BonoReferencia = {
   nombre: 'Obligación negociable USD (MIC3D)', emisor: 'Mirgor S.A.C.I.F.I.A.',
   emision: '2024-11-11', vencimiento: '2026-11-11', amortizable: false, valor_residual: 1,
   cronograma: [], fuente: 'IOL', actualizado_en: '2026-08-13T00:00:00Z',
-  calificadora: "Moody's Local", calificacion: 'A+.ar',
+  calificadora: "Moody's Local", calificacion: 'A+.ar', ley: null,
   vol_media_usd: 36812.56, vol_mediana_usd: 14739.09, vol_minimo_usd: 677.03, vol_dias_con_datos: 22,
 };
 

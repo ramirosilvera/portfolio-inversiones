@@ -39,6 +39,10 @@ export interface BonoReferencia {
   // clasificarRating() de engine/rating.ts, no reinventar la escala acá.
   calificadora: string | null;
   calificacion: string | null;
+  // Jurisdicción aplicable (Bonares/ley Argentina vs. Globales/ley Nueva York, y su equivalente en
+  // subsoberanos/ONs) — ver migración 0042. Igual que calificadora/calificacion: cargada A MANO
+  // (ninguna API gratuita la da), null = todavía sin clasificar (la mayoría de las ONs hoy).
+  ley: 'local' | 'extranjera' | null;
   // Volumen operado (USD, últimas ~20 ruedas) — mismo criterio que cronograma: lo puebla el proceso
   // de actualización con service-role (IOL get_price_history, ver migración 0040), nunca el
   // cliente. null en las 4 columnas = catálogo todavía no refrescado con esta feature, o ticker sin
@@ -53,6 +57,11 @@ export const TIPO_LABEL: Record<BonoReferencia['tipo'], string> = {
   soberano: 'Soberano',
   subsoberano: 'Subsoberano',
   on: 'ON',
+};
+
+export const LEY_LABEL: Record<'local' | 'extranjera', string> = {
+  local: 'Ley local',
+  extranjera: 'Ley extranjera',
 };
 
 export interface BonoReferenciaCalc {

@@ -24,6 +24,7 @@ const ref: BonoReferencia = {
   actualizado_en: '2026-08-01T00:00:00Z',
   calificadora: 'S&P',
   calificacion: 'BB+',
+  ley: 'local',
   vol_media_usd: null,
   vol_mediana_usd: null,
   vol_minimo_usd: null,

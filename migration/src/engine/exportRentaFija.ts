@@ -10,7 +10,7 @@
 // =============================================================================
 
 import type { BonoReferenciaCalc } from './rentaFija';
-import { TIPO_LABEL } from './rentaFija';
+import { TIPO_LABEL, LEY_LABEL } from './rentaFija';
 import { ETIQUETA_GRADO } from './rating';
 
 const SEP = ';';
@@ -25,7 +25,7 @@ function csvField(v: string | number | null): string {
 }
 
 const HEADERS = [
-  'Ticker', 'Tipo', 'Emisor', 'Nombre', 'Moneda', 'Vencimiento',
+  'Ticker', 'Tipo', 'Ley', 'Emisor', 'Nombre', 'Moneda', 'Vencimiento',
   'Calificadora', 'Calificación', 'Grado', 'Escala',
   'Paridad (%)', 'TIR (%)', 'Duración Macaulay (años)', 'Rendimiento corriente (%)',
   'Volumen promedio (USD)', 'Volumen mediana (USD)', 'Volumen mínimo reciente (USD)', 'Ruedas con dato',
@@ -39,6 +39,7 @@ export function bonosACSV(calcs: BonoReferenciaCalc[]): string {
   const filas = calcs.map(c => [
     c.ref.ticker,
     TIPO_LABEL[c.ref.tipo],
+    c.ref.ley ? LEY_LABEL[c.ref.ley] : '',
     c.ref.emisor ?? '',
     c.ref.nombre ?? '',
     c.ref.moneda,
