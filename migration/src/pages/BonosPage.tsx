@@ -3,7 +3,7 @@ import { Landmark, Pencil, X, CalendarClock, Trash2, Plus } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosicionMutations, useMacro } from '../hooks/usePosiciones';
-import { useBonosCalc, useObjetivoDuracion, resumenBonos, alertasBonos, DEFAULT_MIN_GRADO_INVERSION_PCT, DEFAULT_MAX_DURACION_ANIOS } from '../hooks/useBonos';
+import { useBonosCalc, useObjetivoDuracion, resumenBonos, alertasBonos, DEFAULT_MIN_GRADO_INVERSION_PCT, DEFAULT_MAX_DURACION_ANIOS, DEFAULT_MAX_LEY_EXTRANJERA_PCT } from '../hooks/useBonos';
 import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { CONCENTRACION_POSICION_ALERTA } from '../engine/bonos';
 import { CALIFICADORAS } from '../engine/rating';
@@ -45,7 +45,8 @@ export function BonosPage() {
   const [editBono, setEditBono] = useState<Posicion | null>(null);
   const hoy = new Date().toISOString().slice(0, 10);
   const {
-    minGradoInversionPct, maxDuracionAnios, setMinGradoInversionPct, setMaxDuracionAnios,
+    minGradoInversionPct, maxDuracionAnios, maxLeyExtranjeraPct,
+    setMinGradoInversionPct, setMaxDuracionAnios, setMaxLeyExtranjeraPct,
   } = useObjetivoDuracion(active?.id);
   const chart = useChartTheme();
   const { data: macro = {} } = useMacro();
@@ -55,7 +56,7 @@ export function BonosPage() {
 
   const resumen = resumenBonos(bonosCalc, riskFree);
   const { totalCapital, totalMkt, duracionPromedio, tirPromedio, rendCorrientePromedio, spreadPromedio, mayorPosicion, distribucionGrado, distribucionLey } = resumen;
-  const alertas = alertasBonos(resumen, minGradoInversionPct, maxDuracionAnios);
+  const alertas = alertasBonos(resumen, minGradoInversionPct, maxDuracionAnios, maxLeyExtranjeraPct);
   const haySinCotizacion = bonosCalc.some(bc => bc.mkt == null && bc.tir != null);
 
   // Gráfico: solo entran los bonos con duración calculable (cupón + vencimiento cargados, y no
@@ -175,7 +176,7 @@ export function BonosPage() {
 
       {bonos.length > 0 && (
         <Card>
-          <CardHeader title="Indicadores clave" sub="Rendimiento, riesgo de crédito y concentración de la cartera de renta fija." />
+          <CardHeader title="Indicadores clave" sub="Rendimiento, riesgo de crédito, jurisdicción y concentración de la cartera de renta fija." />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
             <Stat label="TIR promedio" value={tirPromedio != null
               ? <span className={tirPromedio >= 0 ? 'text-pos' : 'text-neg'}>{fmtPct(tirPromedio)}</span>
@@ -249,6 +250,17 @@ export function BonosPage() {
                 <p className="text-[10px] text-ink-500 mt-1.5">
                   Se pre-llena sola desde el catálogo de referencia si el ticker matchea (Radar); para los que no, editala con el ✏️ de la tabla de arriba.
                 </p>
+                <div className="flex items-end gap-3 mt-3">
+                  <Field label="Ley extranjera máxima (%)">
+                    <input type="number" min="0" max="100" step="5" value={maxLeyExtranjeraPct}
+                      onChange={e => {
+                        if (e.target.value === '') { setMaxLeyExtranjeraPct(DEFAULT_MAX_LEY_EXTRANJERA_PCT); return; }
+                        setMaxLeyExtranjeraPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
+                      }}
+                      className={`${inputCls} w-24`} />
+                  </Field>
+                  <p className="text-[11px] text-ink-500">Alerta si el % del capital bajo ley extranjera supera tu máximo personal.</p>
+                </div>
               </>
             ) : <p className="text-[11px] text-ink-500">Sin capital valuado todavía.</p>}
           </div>
