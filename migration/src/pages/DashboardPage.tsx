@@ -252,7 +252,7 @@ function AlertasResumen({ alloc, patrimonio, objetivoFijaPct, toleranciaDistribu
   const { active } = usePortfolios();
   const { cedearsCalc, isLoading: cedearsLoading } = useCedearsCalc(active?.id);
   const { bonosCalc, isLoading: bonosLoading } = useBonosCalc(active?.id);
-  const { minGradoInversionPct, maxDuracionAnios } = useObjetivoDuracion(active?.id);
+  const { minGradoInversionPct, maxDuracionAnios, maxLeyExtranjeraPct } = useObjetivoDuracion(active?.id);
   const { sectorPct: concentracionSectorPct, estiloPct: concentracionEstiloPct } = useObjetivoConcentracion(active?.id);
   // Mismo risk-free que BonosPage (tasa a 10 años UST) — sin esto, spreadPromedio siempre da null
   // acá y la alerta de "spread negativo" nunca podría aparecer en el Dashboard aunque sí en /bonos.
@@ -263,7 +263,7 @@ function AlertasResumen({ alloc, patrimonio, objetivoFijaPct, toleranciaDistribu
 
   const alertas = [
     ...alertasCedears(resumenCedears(cedearsCalc), concentracionSectorPct, concentracionEstiloPct),
-    ...alertasBonos(resumenBonos(bonosCalc, riskFree), minGradoInversionPct, maxDuracionAnios),
+    ...alertasBonos(resumenBonos(bonosCalc, riskFree), minGradoInversionPct, maxDuracionAnios, maxLeyExtranjeraPct),
     ...alertasDistribucion(pctRentaFija(alloc, patrimonio), objetivoFijaPct, toleranciaDistribucionPct),
   ];
   if (alertas.length === 0) return null;

@@ -168,9 +168,10 @@ describe('alertasBonos', () => {
   const conRating = (ticker: string, cantidad: number, calificadora: string | null, calificacion: string | null) =>
     calcularBono({ ...basePos, ticker, cantidad, calificadora, calificacion }, 1, HOY); // precio=1 -> capitalUsado = cantidad
   // Umbrales personales por defecto usados en la mayoría de los tests (50% mínimo grado inversión,
-  // 100 años máximo de duración = prácticamente deshabilitado) — los tests que apuntan a estas 2
-  // condiciones pasan umbrales ajustados explícitos.
-  const MIN_GRADO = 50, MAX_DURACION = 100;
+  // 100 años máximo de duración = prácticamente deshabilitado, 100% máximo ley extranjera =
+  // prácticamente deshabilitado) — los tests que apuntan a alguna de estas 3 condiciones pasan
+  // umbrales ajustados explícitos.
+  const MIN_GRADO = 50, MAX_DURACION = 100, MAX_LEY_EXTRANJERA = 100;
 
   it('cartera balanceada, sin bonos especulativos/default, duración corta: sin alertas', () => {
     // 3 posiciones parejas (~33% c/u) para que ninguna sola pase el umbral de concentración (40%).
@@ -178,20 +179,20 @@ describe('alertasBonos', () => {
     const b = conRating('GD30', 330, 'S&P', 'AAA');
     const c = conRating('AL35', 330, 'S&P', 'AAA');
     const r = resumenBonos([a, b, c]);
-    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION)).toHaveLength(0);
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA)).toHaveLength(0);
   });
 
   it('mayor posición ≥40%: alerta warn', () => {
     const dominante = conRating('AL30', 500, 'S&P', 'AAA');
     const resto = conRating('GD30', 500, 'S&P', 'AAA');
     const r = resumenBonos([dominante, resto]);
-    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION).some(a => a.severidad === 'warn' && a.texto.includes('AL30'))).toBe(true);
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA).some(a => a.severidad === 'warn' && a.texto.includes('AL30'))).toBe(true);
   });
 
   it('capital en default: alerta neg (severidad alta)', () => {
     const enDefault = conRating('DEF1', 100, 'S&P', 'D');
     const r = resumenBonos([enDefault]);
-    const alertas = alertasBonos(r, MIN_GRADO, MAX_DURACION);
+    const alertas = alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA);
     expect(alertas.some(a => a.severidad === 'neg' && a.texto.includes('DEFAULT'))).toBe(true);
   });
 
@@ -199,7 +200,7 @@ describe('alertasBonos', () => {
     const especulativo = conRating('SPEC', 500, 'S&P', 'BB');
     const inversionGrade = conRating('SAFE', 500, 'S&P', 'AAA');
     const r = resumenBonos([especulativo, inversionGrade]);
-    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION).some(a => a.texto.includes('especulativo'))).toBe(true);
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA).some(a => a.texto.includes('especulativo'))).toBe(true);
   });
 
   it('grado de inversión por debajo del mínimo personal: alerta warn', () => {
@@ -208,47 +209,57 @@ describe('alertasBonos', () => {
     const inversionGrade = conRating('SAFE', 400, 'S&P', 'AAA');
     const sinCalificar = conRating('N1', 600, null, null);
     const r = resumenBonos([inversionGrade, sinCalificar]); // gradoInversion = 40%
-    const alertas = alertasBonos(r, 60, MAX_DURACION); // mínimo personal 60% > 40% real
+    const alertas = alertasBonos(r, 60, MAX_DURACION, MAX_LEY_EXTRANJERA); // mínimo personal 60% > 40% real
     expect(alertas.some(a => a.severidad === 'warn' && a.texto.includes('grado de inversión') && a.texto.includes('mínimo personal'))).toBe(true);
     // con un mínimo personal más laxo (30%), la misma cartera no alerta por este motivo
-    expect(alertasBonos(r, 30, MAX_DURACION).some(a => a.texto.includes('mínimo personal'))).toBe(false);
+    expect(alertasBonos(r, 30, MAX_DURACION, MAX_LEY_EXTRANJERA).some(a => a.texto.includes('mínimo personal'))).toBe(false);
   });
 
   it('duración promedio por encima del máximo personal: alerta warn', () => {
     const b = calcularBono({ ...basePos, ticker: 'LARGO', vencimiento: '2040-07-24' }, 1, HOY); // duración larga
     const r = resumenBonos([b]);
     expect(r.duracionPromedio).not.toBeNull();
-    const alertas = alertasBonos(r, MIN_GRADO, 2); // máximo personal 2 años, muy por debajo de la duración real
+    const alertas = alertasBonos(r, MIN_GRADO, 2, MAX_LEY_EXTRANJERA); // máximo personal 2 años, muy por debajo de la duración real
     expect(alertas.some(a => a.severidad === 'warn' && a.texto.includes('Duración promedio') && a.texto.includes('máximo personal'))).toBe(true);
     // con un máximo personal generoso (100 años), la misma cartera no alerta por este motivo
-    expect(alertasBonos(r, MIN_GRADO, 100).some(a => a.texto.includes('máximo personal'))).toBe(false);
+    expect(alertasBonos(r, MIN_GRADO, 100, MAX_LEY_EXTRANJERA).some(a => a.texto.includes('máximo personal'))).toBe(false);
+  });
+
+  it('% ley extranjera por encima del máximo personal: alerta warn', () => {
+    const local = calcularBono({ ...basePos, ticker: 'AL30', ley: 'local' }, 1, HOY);           // capitalUsado 1000
+    const extranjera = calcularBono({ ...basePos, ticker: 'GD30', cantidad: 500, ley: 'extranjera' }, 1, HOY); // capitalUsado 500
+    const r = resumenBonos([local, extranjera]); // 500/1500 ≈ 33% ley extranjera
+    const alertas = alertasBonos(r, MIN_GRADO, MAX_DURACION, 20); // máximo personal 20% < 33% real
+    expect(alertas.some(a => a.severidad === 'warn' && a.texto.includes('ley extranjera') && a.texto.includes('máximo personal'))).toBe(true);
+    // con un máximo personal generoso (60%, el default de la app), la misma cartera no alerta
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, 60).some(a => a.texto.includes('ley extranjera'))).toBe(false);
   });
 
   it('spread negativo (TIR < tasa libre de riesgo): alerta neg', () => {
     const b = conRating('AL30', 500, 'S&P', 'AAA');
     const r = resumenBonos([b], 10); // risk-free 10% (absurdamente alto a propósito, fuerza spread negativo)
-    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION).some(a => a.severidad === 'neg' && a.texto.includes('spread'))).toBe(true);
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA).some(a => a.severidad === 'neg' && a.texto.includes('spread'))).toBe(true);
   });
 
   it('bonos sin datos: alerta warn', () => {
     const incompleto = calcularBono({ ...basePos, ticker: 'XXX', cupon_tasa: null }, 0.6, HOY);
     const r = resumenBonos([incompleto]);
-    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION).some(a => a.texto.includes('sin cupón o vencimiento'))).toBe(true);
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA).some(a => a.texto.includes('sin cupón o vencimiento'))).toBe(true);
   });
 
   it('bono marcado amortizable sin valor residual cargado: alerta warn', () => {
     const sinVR = calcularBono({ ...basePos, ticker: 'XXX', amortizable: true, valor_residual: null }, 0.6, HOY);
     const r = resumenBonos([sinVR]);
-    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION).some(a => a.texto.includes('amortizable') && a.texto.includes('valor residual'))).toBe(true);
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA).some(a => a.texto.includes('amortizable') && a.texto.includes('valor residual'))).toBe(true);
   });
 
   it('bono amortizable CON valor residual cargado: no dispara esa alerta', () => {
     const conVR = calcularBono({ ...basePos, ticker: 'YYY', amortizable: true, valor_residual: 0.7 }, 0.6, HOY);
     const r = resumenBonos([conVR]);
-    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION).some(a => a.texto.includes('valor residual'))).toBe(false);
+    expect(alertasBonos(r, MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA).some(a => a.texto.includes('valor residual'))).toBe(false);
   });
 
   it('cartera vacía: sin alertas, no revienta', () => {
-    expect(alertasBonos(resumenBonos([]), MIN_GRADO, MAX_DURACION)).toHaveLength(0);
+    expect(alertasBonos(resumenBonos([]), MIN_GRADO, MAX_DURACION, MAX_LEY_EXTRANJERA)).toHaveLength(0);
   });
 });
