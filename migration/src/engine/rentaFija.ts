@@ -64,6 +64,11 @@ export const LEY_LABEL: Record<'local' | 'extranjera', string> = {
   extranjera: 'Ley extranjera',
 };
 
+// Compartido por RadarPage (catálogo global) y BonosPage (cartera personal) — ninguna de las 2
+// leyes es "mejor" en sí (a diferencia de un rating), mismo criterio neutral que TIPO_TONE
+// (accent/sol/gray), no pos/warn/neg.
+export const LEY_TONE: Record<'local' | 'extranjera', 'accent' | 'sol'> = { local: 'accent', extranjera: 'sol' };
+
 export interface BonoReferenciaCalc {
   ref: BonoReferencia;
   px: number | null;        // precio por nominal, USD (data912/api.bonos())

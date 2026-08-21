@@ -526,7 +526,7 @@ function BonosResumen({ personalizando }: { personalizando: boolean }) {
   // Sin riskFree: esta tarjeta no muestra spreadPromedio (el único campo que ese parámetro afecta —
   // ver AlertasResumen, que sí lo pasa porque alertasBonos() lo necesita para la alerta de spread
   // negativo). Pasarlo acá sin usarlo agregaría una suscripción a useMacro() sin ningún efecto visible.
-  const { totalMkt, duracionPromedio, tirPromedio, distribucionGrado } = resumenBonos(bonosCalc);
+  const { totalMkt, duracionPromedio, tirPromedio, distribucionGrado, distribucionLey } = resumenBonos(bonosCalc);
   const cumpleObjetivo = duracionPromedio != null && duracionPromedio <= maxDuracionAnios;
   const right = duracionPromedio != null
     ? <Badge tone={cumpleObjetivo ? 'pos' : 'warn'}>{fmtNum(duracionPromedio, 1)}a promedio (máx. {maxDuracionAnios}a)</Badge>
@@ -536,7 +536,7 @@ function BonosResumen({ personalizando }: { personalizando: boolean }) {
     <Card>
       <CardHeader title="Bonos" sub={`${bonos.length} bono${bonos.length > 1 ? 's' : ''} en cartera · precio por nominal (data912)`}
         right={personalizando ? right : <Link to="/bonos" className="inline-flex items-center gap-1.5">{right}</Link>} />
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3">
         <Stat label="Capital" value={fmtUsdCompact(totalMkt)} />
         <Stat label="TIR promedio" value={tirPromedio != null
           ? <span className={tirPromedio >= 0 ? 'text-pos' : 'text-neg'}>{fmtPct(tirPromedio)}</span>
@@ -546,6 +546,8 @@ function BonosResumen({ personalizando }: { personalizando: boolean }) {
           hint="Duración de Macaulay promedio ponderada por capital — sensibilidad de la cartera de bonos a la tasa" />
         <Stat label="Grado inversión" value={fmtPct(distribucionGrado.gradoInversion, 0)}
           hint="% del capital en bonos calificados grado de inversión, dentro de su propia escala — nacional Arg. (FIX SCR/Moody's Local, lo habitual) o global (S&P/Moody's/Fitch), no mezcladas 1 a 1. El resto es especulativo, default, o sin calificar" />
+        <Stat label="Ley local" value={fmtPct(distribucionLey.local, 0)}
+          hint="% del capital en bonos bajo ley Argentina (Bonares y su equivalente en ONs) — cargado a mano por bono, se pre-llena solo desde el catálogo de referencia cuando el ticker matchea. El resto es ley extranjera o sin clasificar." />
       </div>
     </Card>
   );

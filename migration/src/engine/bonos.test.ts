@@ -6,7 +6,7 @@ const basePos: Posicion = {
   id: '1', portfolio_id: 'p', tipo: 'bono', ticker: 'GD30', empresa: null, sector: null, rol: null,
   cantidad: 1000, precio_compra: 0.5, fecha_compra: '2024-01-01', peso_objetivo: null, ratio_cedear: null,
   tir_esperada: null, beta: null, cupon_tasa: 0.08, cupon_frecuencia: 2, cupon_mes: 1, vencimiento: '2031-07-24',
-  calificadora: null, calificacion: null, amortizable: false, valor_residual: null, notas: null, created_at: '2024-01-01',
+  calificadora: null, calificacion: null, ley: null, amortizable: false, valor_residual: null, notas: null, created_at: '2024-01-01',
 };
 const HOY = '2026-07-24';
 
@@ -111,6 +111,25 @@ describe('resumenBonos — agregados', () => {
     expect(r.distribucionGrado.gradoInversion).toBeCloseTo(1000 / 2100, 6);  // b
     expect(r.distribucionGrado.especulativo).toBeCloseTo(600 / 2100, 6);     // a
     expect(r.distribucionGrado.sinCalificar).toBeCloseTo(500 / 2100, 6);     // c
+  });
+
+  it('distribucionLey suma 1 (o 0 si no hay capital) y refleja `ley` de cada posición', () => {
+    const conLey = [
+      calcularBono({ ...basePos, ticker: 'AL30', ley: 'local' }, 0.6, HOY),        // capitalUsado 600
+      calcularBono({ ...basePos, ticker: 'GD30', cantidad: 2000, ley: 'extranjera' }, 0.5, HOY), // capitalUsado 1000
+      calcularBono({ ...basePos, ticker: 'XXX', cantidad: 500, ley: null }, 1.0, HOY),  // capitalUsado 500
+    ];
+    const r = resumenBonos(conLey);
+    const suma = r.distribucionLey.local + r.distribucionLey.extranjera + r.distribucionLey.sinClasificar;
+    expect(suma).toBeCloseTo(1, 6);
+    expect(r.distribucionLey.local).toBeCloseTo(600 / 2100, 6);
+    expect(r.distribucionLey.extranjera).toBeCloseTo(1000 / 2100, 6);
+    expect(r.distribucionLey.sinClasificar).toBeCloseTo(500 / 2100, 6);
+  });
+
+  it('cartera vacía: distribucionLey en 0, no divide por cero', () => {
+    const r = resumenBonos([]);
+    expect(r.distribucionLey).toEqual({ local: 0, extranjera: 0, sinClasificar: 0 });
   });
 
   it('spreadPromedio: null si no se pasa risk-free; calculado si se pasa', () => {

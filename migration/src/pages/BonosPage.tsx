@@ -7,6 +7,7 @@ import { useBonosCalc, useObjetivoDuracion, resumenBonos, alertasBonos, DEFAULT_
 import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { CONCENTRACION_POSICION_ALERTA } from '../engine/bonos';
 import { CALIFICADORAS } from '../engine/rating';
+import { LEY_LABEL, LEY_TONE } from '../engine/rentaFija';
 import { Card, CardHeader, Button, Badge, Stat, Field, Empty, RatingBadge, inputCls, fmtUsdCompact, fmtNum, fmtPct, AlertasBanner } from '../components/ui';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useChartTheme } from '../hooks/usePrefs';
@@ -14,9 +15,10 @@ import type { Posicion, AmortizacionProgramada } from '../types/domain';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const FREC: Record<number, string> = { 1: 'Anual', 2: 'Semestral', 4: 'Trimestral', 12: 'Mensual' };
-// Gris neutro para "sin calificar" en la barra de calidad crediticia — mismo criterio que
-// SIN_ASIGNAR_COLOR en components/ui.tsx (colorDeBroker): no compite con los tonos pos/warn/neg.
-const SIN_CALIFICAR_COLOR = '#8B96A5';
+// Gris neutro para "sin calificar"/"sin clasificar" en las barras de calidad crediticia y ley
+// aplicable — mismo criterio que SIN_ASIGNAR_COLOR en components/ui.tsx (colorDeBroker): no compite
+// con los tonos pos/warn/neg ni con accent/sol (ley).
+const SIN_DATO_COLOR = '#8B96A5';
 
 // Sin cotización de mercado (bc.mkt == null — típico de un bono recién suscripto en licitación
 // primaria, que puede tardar en aparecer en el proveedor de precios): la TIR/duración de esa fila
@@ -52,7 +54,7 @@ export function BonosPage() {
   if (!active) return null;
 
   const resumen = resumenBonos(bonosCalc, riskFree);
-  const { totalCapital, totalMkt, duracionPromedio, tirPromedio, rendCorrientePromedio, spreadPromedio, mayorPosicion, distribucionGrado } = resumen;
+  const { totalCapital, totalMkt, duracionPromedio, tirPromedio, rendCorrientePromedio, spreadPromedio, mayorPosicion, distribucionGrado, distribucionLey } = resumen;
   const alertas = alertasBonos(resumen, minGradoInversionPct, maxDuracionAnios);
   const haySinCotizacion = bonosCalc.some(bc => bc.mkt == null && bc.tir != null);
 
@@ -82,11 +84,12 @@ export function BonosPage() {
         <CardHeader title="Bonos y ONs" sub="Precio por nominal (data912). Editá el cupón (✏️) para que aparezcan en el calendario de Cupones."
           right={<span className="text-xs text-ink-600 tnum">Capital {fmtUsdCompact(totalCapital)} · Mercado {fmtUsdCompact(totalMkt)}</span>} />
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[880px]">
+          <table className="w-full text-sm min-w-[960px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
               <tr>
                 <th className="text-left px-4 py-2">Especie</th>
                 <th className="text-left px-3">Rating</th>
+                <th className="text-left px-3">Ley</th>
                 <th className="text-right px-3">Nominales</th>
                 <th className="text-right px-3">Capital</th>
                 <th className="text-right px-3">Paridad</th>
@@ -118,6 +121,11 @@ export function BonosPage() {
                       {(b.empresa || b.notas) && <span className="block text-[10px] text-ink-600 max-w-[220px] truncate">{b.empresa || b.notas}</span>}
                     </td>
                     <td className="px-3"><RatingBadge calificadora={b.calificadora} calificacion={b.calificacion} grado={bc.grado} escala={bc.escalaGrado} /></td>
+                    <td className="px-3">
+                      {b.ley
+                        ? <Badge tone={LEY_TONE[b.ley]}>{LEY_LABEL[b.ley]}</Badge>
+                        : <span className="text-ink-500 text-xs">—</span>}
+                    </td>
                     <td className="text-right px-3 tnum">{fmtNum(b.cantidad, 0)}</td>
                     <td className="text-right px-3 tnum text-ink-700">{fmtUsdCompact(bc.capital)}</td>
                     <td className="text-right px-3 tnum text-accent">{bc.paridad != null ? fmtPct(bc.paridad / 100, 1) : '—'}</td>
@@ -150,8 +158,8 @@ export function BonosPage() {
                 );
               })}
               {posLoading
-                ? <tr><td colSpan={12}><p className="p-4 text-sm text-ink-600">Cargando…</p></td></tr>
-                : bonos.length === 0 && <tr><td colSpan={12}><Empty icon={Landmark} title="Sin bonos ni ONs">Agregá uno en Posiciones con el tipo "Bono / ON".</Empty></td></tr>}
+                ? <tr><td colSpan={13}><p className="p-4 text-sm text-ink-600">Cargando…</p></td></tr>
+                : bonos.length === 0 && <tr><td colSpan={13}><Empty icon={Landmark} title="Sin bonos ni ONs">Agregá uno en Posiciones con el tipo "Bono / ON".</Empty></td></tr>}
             </tbody>
           </table>
         </div>
@@ -196,13 +204,13 @@ export function BonosPage() {
                   {distribucionGrado.default > 0 &&
                     <div className="bg-neg h-full" style={{ width: `${distribucionGrado.default * 100}%` }} title={`Default: ${fmtPct(distribucionGrado.default, 0)}`} />}
                   {distribucionGrado.sinCalificar > 0 &&
-                    <div className="h-full" style={{ width: `${distribucionGrado.sinCalificar * 100}%`, background: SIN_CALIFICAR_COLOR }} title={`Sin calificar (o calificadora "Otra"/nota no reconocida): ${fmtPct(distribucionGrado.sinCalificar, 0)}`} />}
+                    <div className="h-full" style={{ width: `${distribucionGrado.sinCalificar * 100}%`, background: SIN_DATO_COLOR }} title={`Sin calificar (o calificadora "Otra"/nota no reconocida): ${fmtPct(distribucionGrado.sinCalificar, 0)}`} />}
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] text-ink-600">
                   {distribucionGrado.gradoInversion > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-pos" />Grado de inversión {fmtPct(distribucionGrado.gradoInversion, 0)}</span>}
                   {distribucionGrado.especulativo > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warn" />Especulativo {fmtPct(distribucionGrado.especulativo, 0)}</span>}
                   {distribucionGrado.default > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neg" />Default {fmtPct(distribucionGrado.default, 0)}</span>}
-                  {distribucionGrado.sinCalificar > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: SIN_CALIFICAR_COLOR }} />Sin calificar {fmtPct(distribucionGrado.sinCalificar, 0)}</span>}
+                  {distribucionGrado.sinCalificar > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: SIN_DATO_COLOR }} />Sin calificar {fmtPct(distribucionGrado.sinCalificar, 0)}</span>}
                 </div>
                 <p className="text-[10px] text-ink-500 mt-1.5">
                   Clasificado en escala NACIONAL argentina (FIX SCR/Moody's Local) — la que aplica a la gran mayoría de bonos y ONs locales. No equivale a grado de inversión global (S&amp;P/Moody's/Fitch), que solo aparecería en alguna ON hard-dollar con rating internacional.
@@ -218,6 +226,29 @@ export function BonosPage() {
                   </Field>
                   <p className="text-[11px] text-ink-500">Alerta si el % del capital en grado de inversión cae por debajo de tu mínimo personal.</p>
                 </div>
+              </>
+            ) : <p className="text-[11px] text-ink-500">Sin capital valuado todavía.</p>}
+          </div>
+          <div className="px-4 pb-4">
+            <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold mb-1.5">Ley aplicable</p>
+            {totalMkt > 0 ? (
+              <>
+                <div className="h-3 rounded-full overflow-hidden flex bg-canvas ring-1 ring-inset ring-line">
+                  {distribucionLey.local > 0 &&
+                    <div className="bg-accent h-full" style={{ width: `${distribucionLey.local * 100}%` }} title={`Ley local: ${fmtPct(distribucionLey.local, 0)}`} />}
+                  {distribucionLey.extranjera > 0 &&
+                    <div className="bg-sol h-full" style={{ width: `${distribucionLey.extranjera * 100}%` }} title={`Ley extranjera: ${fmtPct(distribucionLey.extranjera, 0)}`} />}
+                  {distribucionLey.sinClasificar > 0 &&
+                    <div className="h-full" style={{ width: `${distribucionLey.sinClasificar * 100}%`, background: SIN_DATO_COLOR }} title={`Sin clasificar: ${fmtPct(distribucionLey.sinClasificar, 0)}`} />}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] text-ink-600">
+                  {distribucionLey.local > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-accent" />Local {fmtPct(distribucionLey.local, 0)}</span>}
+                  {distribucionLey.extranjera > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sol" />Extranjera {fmtPct(distribucionLey.extranjera, 0)}</span>}
+                  {distribucionLey.sinClasificar > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: SIN_DATO_COLOR }} />Sin clasificar {fmtPct(distribucionLey.sinClasificar, 0)}</span>}
+                </div>
+                <p className="text-[10px] text-ink-500 mt-1.5">
+                  Se pre-llena sola desde el catálogo de referencia si el ticker matchea (Radar); para los que no, editala con el ✏️ de la tabla de arriba.
+                </p>
               </>
             ) : <p className="text-[11px] text-ink-500">Sin capital valuado todavía.</p>}
           </div>
@@ -303,8 +334,9 @@ export function BonosPage() {
 }
 
 // Editar/cargar los datos de un bono existente: cupón (tasa, frecuencia, mes de referencia,
-// vencimiento), calificación crediticia (calificadora + nota) y, si es amortizable, el cronograma
-// de cuotas futuras (alimenta la proyección de Cupones — ver engine/coupons.ts capitalEvents).
+// vencimiento), calificación crediticia (calificadora + nota), ley aplicable y, si es amortizable,
+// el cronograma de cuotas futuras (alimenta la proyección de Cupones — ver engine/coupons.ts
+// capitalEvents).
 function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarCuota }: {
   bono: Posicion; onClose: () => void; onSave: (patch: Partial<Posicion>) => Promise<void>;
   cuotas: AmortizacionProgramada[]; onAgregarCuota: (fecha: string, porcentaje: number) => Promise<void>; onEliminarCuota: (id: string) => Promise<void>;
@@ -316,6 +348,7 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
   const [vto, setVto] = useState(bono.vencimiento ?? '');
   const [calificadora, setCalificadora] = useState(bono.calificadora ?? '');
   const [calificacion, setCalificacion] = useState(bono.calificacion ?? '');
+  const [ley, setLey] = useState<'' | 'local' | 'extranjera'>(bono.ley ?? '');
   const [amortizable, setAmortizable] = useState(bono.amortizable);
   const [valorResidualPct, setValorResidualPct] = useState(bono.valor_residual != null ? String(+(bono.valor_residual * 100).toFixed(2)) : '');
   const [busy, setBusy] = useState(false);
@@ -345,6 +378,7 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
         vencimiento: vto || null,
         calificadora: calificadora || null,
         calificacion: calificacion.trim() || null,
+        ley: ley || null,
         amortizable,
         // Si se vuelve a bullet, no arrastramos un valor residual viejo que ya no aplica.
         valor_residual: valorResidual,
@@ -356,7 +390,7 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-md" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Detalles de ${bono.ticker}`}>
         <Card className="animate-rise">
-          <CardHeader title={`Detalles del bono · ${bono.ticker}`} sub="Cupón para el calendario de Cupones · calificación para el indicador de calidad crediticia."
+          <CardHeader title={`Detalles del bono · ${bono.ticker}`} sub="Cupón para el calendario de Cupones · calificación y ley para los indicadores de calidad crediticia y jurisdicción."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 grid grid-cols-2 gap-3 text-sm">
             <Field label="Tasa cupón (% anual)">
@@ -385,6 +419,13 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
             </Field>
             <Field label="Calificación">
               <input value={calificacion} onChange={e => setCalificacion(e.target.value)} placeholder="ej. BB-, Ba3, AAA(arg)" className={inputCls} />
+            </Field>
+            <Field label="Ley aplicable" hint="Jurisdicción — Bonares/Globales en soberanos, y su equivalente en ONs">
+              <select value={ley} onChange={e => setLey(e.target.value as typeof ley)} className={`${inputCls} appearance-none`}>
+                <option value="">—</option>
+                <option value="local">{LEY_LABEL.local}</option>
+                <option value="extranjera">{LEY_LABEL.extranjera}</option>
+              </select>
             </Field>
             <Field label="Estructura de repago">
               <select value={amortizable ? 'amortizable' : 'bullet'} onChange={e => setAmortizable(e.target.value === 'amortizable')} className={`${inputCls} appearance-none`}>

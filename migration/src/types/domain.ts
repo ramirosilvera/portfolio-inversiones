@@ -45,6 +45,10 @@ export interface Posicion {
   // Calificación crediticia (bonos/ONs) — cargada a mano, ver engine/rating.ts para la clasificación:
   calificadora: string | null;   // 'S&P' | 'Moody's' | 'Fitch' | 'FIX SCR' | 'Moody's Local' | 'Otra'
   calificacion: string | null;   // nota tal cual (ej. 'BB-', 'Ba3', 'AAA(arg)')
+  // Ley aplicable (bonos/ONs) — cargada a mano (se pre-llena sola desde bonos_referencia si el
+  // ticker matchea, ver enrichBono en PosicionesPage.tsx), igual criterio que calificadora/
+  // calificacion: ninguna API gratuita la da.
+  ley: 'local' | 'extranjera' | null;
   // Estructura de repago (bonos/ONs) — cargada a mano, ver engine/coupons.ts:
   amortizable: boolean;           // false = bullet (100% del capital al vencimiento)
   valor_residual: number | null;  // fracción 0..1 del nominal original que queda por cobrar (foto manual, no cronograma); solo aplica si amortizable
@@ -153,6 +157,7 @@ export type MetricKey =
   | 'distribucion_categoria' | 'distribucion_tipo_activo'
   | 'cedears_capital' | 'cedears_mayor_posicion' | 'cedears_por_sector'
   | 'bonos_capital' | 'bonos_tir_promedio' | 'bonos_duracion_promedio' | 'bonos_grado_inversion' | 'bonos_proximo_capital'
+  | 'bonos_distribucion_ley'
   | 'radar_compra_agresiva'
   | 'cobros_total' | 'cobros_disponible'
   | 'macro_semaforos'

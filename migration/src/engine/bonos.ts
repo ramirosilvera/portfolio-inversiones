@@ -79,6 +79,9 @@ export interface ResumenBonos {
   mayorPosicion: { ticker: string; pct: number } | null;
   // Fracciones (0..1) del capital total en bonos por calidad crediticia — suman 1 si totalMkt > 0.
   distribucionGrado: { gradoInversion: number; especulativo: number; default: number; sinCalificar: number };
+  // Fracciones (0..1) del capital total en bonos por ley aplicable — mismo criterio que
+  // distribucionGrado, sobre `pos.ley` (cargado a mano, ver types/domain.ts). Suman 1 si totalMkt > 0.
+  distribucionLey: { local: number; extranjera: number; sinClasificar: number };
   // Bonos con cupón o vencimiento sin cargar (no se les puede estimar TIR ni duración) — distinto
   // de un bono YA VENCIDO (ese sí tiene los datos completos, simplemente no tiene TIR futura).
   bonosSinDatos: number;
@@ -113,6 +116,12 @@ export function resumenBonos(bonosCalc: BonoCalc[], riskFree?: number | null): R
   const capEspeculativo = sumGrado('especulativo');
   const capDefault = sumGrado('default');
   const capSinCalificar = totalMkt - capGradoInversion - capEspeculativo - capDefault;
+
+  const sumLey = (l: 'local' | 'extranjera') => bonosCalc.filter(b => b.pos.ley === l).reduce((s, b) => s + b.capitalUsado, 0);
+  const capLeyLocal = sumLey('local');
+  const capLeyExtranjera = sumLey('extranjera');
+  const capLeySinClasificar = totalMkt - capLeyLocal - capLeyExtranjera;
+
   const bonosSinDatos = bonosCalc.filter(b => !b.cuponOk || !b.pos.vencimiento).length;
   const bonosAmortizablesSinVR = bonosCalc.filter(b => b.pos.amortizable && b.pos.valor_residual == null).length;
 
@@ -122,6 +131,9 @@ export function resumenBonos(bonosCalc: BonoCalc[], riskFree?: number | null): R
     distribucionGrado: totalMkt > 0
       ? { gradoInversion: capGradoInversion / totalMkt, especulativo: capEspeculativo / totalMkt, default: capDefault / totalMkt, sinCalificar: capSinCalificar / totalMkt }
       : { gradoInversion: 0, especulativo: 0, default: 0, sinCalificar: 0 },
+    distribucionLey: totalMkt > 0
+      ? { local: capLeyLocal / totalMkt, extranjera: capLeyExtranjera / totalMkt, sinClasificar: capLeySinClasificar / totalMkt }
+      : { local: 0, extranjera: 0, sinClasificar: 0 },
     bonosSinDatos, bonosAmortizablesSinVR,
   };
 }
