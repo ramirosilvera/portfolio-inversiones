@@ -505,6 +505,11 @@ function RadarFija() {
   // se excluye en vez de asumir que "sí" o "no" entra.
   const [filtroDuracionMin, setFiltroDuracionMin] = useState('');
   const [filtroDuracionMax, setFiltroDuracionMax] = useState('');
+  // TIR en % (no fracción) — mismo criterio de string vacío que filtroDuracionMin/Max. El usuario
+  // tipea "8" (8%), se convierte a fracción (0.08) recién al comparar contra b.tir. Un bono sin TIR
+  // calculable (sin cotización de mercado) se excluye del filtro, no se asume dentro ni fuera.
+  const [filtroTirMin, setFiltroTirMin] = useState('');
+  const [filtroTirMax, setFiltroTirMax] = useState('');
   const [colorPor, setColorPor] = useState<'tipo' | 'calificacion' | 'ley'>('tipo');
   // String (no number) por el mismo motivo que filtroDuracionMin/Max: dejar el campo vacío sin que
   // se interprete como "monto 0". Vacío o inválido cae al default, no bloquea la columna.
@@ -515,6 +520,8 @@ function RadarFija() {
 
   const durMin = filtroDuracionMin ? Number(filtroDuracionMin) : null;
   const durMax = filtroDuracionMax ? Number(filtroDuracionMax) : null;
+  const tirMin = filtroTirMin ? Number(filtroTirMin) / 100 : null;
+  const tirMax = filtroTirMax ? Number(filtroTirMax) / 100 : null;
   const filtrados = useMemo(() => bonosCalc.filter(b => {
     if (filtroTipo !== 'todos' && b.ref.tipo !== filtroTipo) return false;
     if (filtroGrado !== 'todos' && (filtroGrado === 'sin_calificar' ? b.grado != null : b.grado !== filtroGrado)) return false;
@@ -525,10 +532,15 @@ function RadarFija() {
       if (durMin != null && d < durMin) return false;
       if (durMax != null && d > durMax) return false;
     }
+    if (tirMin != null || tirMax != null) {
+      if (b.tir == null || !Number.isFinite(b.tir)) return false;
+      if (tirMin != null && b.tir < tirMin) return false;
+      if (tirMax != null && b.tir > tirMax) return false;
+    }
     const q = busqueda.trim().toUpperCase();
     if (q && !b.ref.ticker.includes(q) && !(b.ref.emisor?.toUpperCase().includes(q)) && !(b.ref.nombre?.toUpperCase().includes(q))) return false;
     return true;
-  }), [bonosCalc, filtroTipo, filtroGrado, filtroLey, durMin, durMax, busqueda]);
+  }), [bonosCalc, filtroTipo, filtroGrado, filtroLey, durMin, durMax, tirMin, tirMax, busqueda]);
 
   const handleSortRF = (key: SortKeyRF) => setSortRF(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR_RF[key] });
   const ordenadosPorColumna = useMemo(() => {
@@ -609,6 +621,15 @@ function RadarFija() {
             <select value={filtroLey} onChange={e => setFiltroLey(e.target.value as FiltroLey)} className={`${inputCls} w-32`}>
               {(Object.keys(FILTRO_LEY_LABEL) as FiltroLey[]).map(l => <option key={l} value={l}>{FILTRO_LEY_LABEL[l]}</option>)}
             </select>
+          </Field>
+          <Field label="TIR (%)">
+            <div className="flex items-center gap-1.5">
+              <input type="number" step="0.5" placeholder="Desde" value={filtroTirMin}
+                onChange={e => setFiltroTirMin(e.target.value)} className={`${inputCls} w-20`} />
+              <span className="text-ink-500 text-xs">–</span>
+              <input type="number" step="0.5" placeholder="Hasta" value={filtroTirMax}
+                onChange={e => setFiltroTirMax(e.target.value)} className={`${inputCls} w-20`} />
+            </div>
           </Field>
           <Field label="Duración (años)">
             <div className="flex items-center gap-1.5">
