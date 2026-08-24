@@ -33,7 +33,7 @@ import { redondearPct, TOLERANCIA_OBJETIVO } from '../engine/rebalance';
 import { resumenPorBroker } from '../engine/brokers';
 import { useRecordSnapshot } from '../hooks/useSnapshots';
 import { useDashboardLayout } from '../hooks/useDashboardLayout';
-import { Card, CardHeader, Stat, Badge, Field, ViewToggle, AlertasBanner, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs, fmtArsCompact, colorDeBroker } from '../components/ui';
+import { Card, CardHeader, Stat, Badge, Field, ViewToggle, AlertasBanner, NumField, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs, fmtArsCompact, colorDeBroker } from '../components/ui';
 import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
@@ -838,19 +838,15 @@ function Distribucion({ alloc, total, isLoading, objetivoFijaPct, toleranciaDist
         )} />
       <div className="px-4 py-3 flex flex-wrap gap-3 items-end text-sm border-b border-line">
         <Field label="Objetivo renta fija (%)">
-          <input type="number" min="0" max="100" step="5" value={objetivoFijaPct}
-            onChange={e => {
-              if (e.target.value === '') { setObjetivoFijaPct(DEFAULT_OBJETIVO_FIJA_PCT); return; }
-              setObjetivoFijaPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
-            }}
+          <NumField min="0" max="100" step="5" value={objetivoFijaPct}
+            onChange={n => setObjetivoFijaPct(Math.min(100, Math.max(0, n)))}
+            onEmptyBlur={() => setObjetivoFijaPct(DEFAULT_OBJETIVO_FIJA_PCT)}
             className={`${inputCls} w-24`} />
         </Field>
         <Field label="Tolerancia (±pp)">
-          <input type="number" min="0" max="50" step="1" value={toleranciaDistribucionPct}
-            onChange={e => {
-              if (e.target.value === '') { setToleranciaDistribucionPct(DEFAULT_TOLERANCIA_DISTRIBUCION_PCT); return; }
-              setToleranciaDistribucionPct(Math.min(50, Math.max(0, Number(e.target.value) || 0)));
-            }}
+          <NumField min="0" max="50" step="1" value={toleranciaDistribucionPct}
+            onChange={n => setToleranciaDistribucionPct(Math.min(50, Math.max(0, n)))}
+            onEmptyBlur={() => setToleranciaDistribucionPct(DEFAULT_TOLERANCIA_DISTRIBUCION_PCT)}
             className={`${inputCls} w-24`} />
         </Field>
         <p className="text-[11px] text-ink-600 ml-auto">Renta fija actual: <span className="tnum font-semibold text-ink-800">{fijaPct != null ? `${fmtNum(fijaPct, 0)}%` : '—'}</span></p>

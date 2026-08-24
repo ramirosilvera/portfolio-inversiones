@@ -11,7 +11,7 @@ import { useCikMap } from '../hooks/useCikMap';
 import { useAporteMutations } from '../hooks/useAportes';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { PortfolioReview } from '../components/PortfolioReview';
-import { Card, CardHeader, Button, Badge, Stat, Field, inputCls, Empty, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Stat, Field, NumField, inputCls, Empty, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs } from '../components/ui';
 import { realizedPnl } from '../engine/pnl';
 import { cantidadPorMonto, aplicarObjetivo, redondearPct, resolverObjetivosSimultaneos, pesoResultanteConjunto, TOLERANCIA_OBJETIVO, type SimTarget } from '../engine/rebalance';
 import { UpdatedAt } from '../components/UpdatedAt';
@@ -404,13 +404,16 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
             </Field>
             {form.tipo === 'cedear' && (
               <Field label="Ratio CEDEAR">
-                <input placeholder="Ratio (auto)" type="number" value={form.ratio_cedear ?? ''} onChange={e => setForm({ ...form, ratio_cedear: Number(e.target.value) || null })} className={inputCls} />
+                <NumField placeholder="Ratio (auto)" value={form.ratio_cedear ?? null}
+                  onChange={n => setForm({ ...form, ratio_cedear: n })}
+                  onEmptyBlur={() => setForm(f => ({ ...f, ratio_cedear: null }))} className={inputCls} />
               </Field>
             )}
             {form.tipo === 'cash' && (
               <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada — cargala a mano, el bróker/banco la cambia sin aviso.">
-                <input placeholder="ej. 4.5" type="number" step="0.1" value={form.tir_esperada != null ? form.tir_esperada * 100 : ''}
-                  onChange={e => setForm({ ...form, tir_esperada: e.target.value ? Number(e.target.value) / 100 : null })} className={inputCls} />
+                <NumField placeholder="ej. 4.5" step="0.1" value={form.tir_esperada != null ? form.tir_esperada * 100 : null}
+                  onChange={n => setForm({ ...form, tir_esperada: n / 100 })}
+                  onEmptyBlur={() => setForm(f => ({ ...f, tir_esperada: null }))} className={inputCls} />
               </Field>
             )}
             <Field label="% objetivo">
@@ -437,8 +440,9 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
                 )}
               </div>
               <Field label="Tasa cupón (% anual)">
-                <input placeholder="Tasa cupón % anual" type="number" step="0.1" value={form.cupon_tasa != null ? form.cupon_tasa * 100 : ''}
-                  onChange={e => setForm({ ...form, cupon_tasa: e.target.value ? Number(e.target.value) / 100 : null })}
+                <NumField placeholder="Tasa cupón % anual" step="0.1" value={form.cupon_tasa != null ? form.cupon_tasa * 100 : null}
+                  onChange={n => setForm({ ...form, cupon_tasa: n / 100 })}
+                  onEmptyBlur={() => setForm(f => ({ ...f, cupon_tasa: null }))}
                   className={inputCls} />
               </Field>
               <Field label="Frecuencia">

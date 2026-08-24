@@ -8,7 +8,7 @@ import { usePosicionBrokers } from '../hooks/usePosicionBrokers';
 import { useChartTheme } from '../hooks/usePrefs';
 import { resumenPorBroker } from '../engine/brokers';
 import { unitValueUSD } from '../lib/valuation';
-import { Card, CardHeader, Button, Badge, inputCls, Empty, fmtUsdCompact, fmtPct, colorDeBroker } from '../components/ui';
+import { Card, CardHeader, Button, Badge, NumField, inputCls, Empty, fmtUsdCompact, fmtPct, colorDeBroker } from '../components/ui';
 import type { Posicion } from '../types/domain';
 
 // Brokers: dónde está físicamente cada posición. "Patrimonio por broker" es información MÍNIMA a
@@ -276,7 +276,9 @@ function AsignacionRow({ pos, asignaciones, brokers, onSave }: {
             {brokers.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
           </select>
           <div className="flex items-center gap-2">
-            <input type="number" value={r.cantidad || ''} onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, cantidad: Number(e.target.value) || 0 } : x))}
+            <NumField value={r.cantidad || null}
+              onChange={n => setRows(rs => rs.map((x, j) => j === i ? { ...x, cantidad: n } : x))}
+              onEmptyBlur={() => setRows(rs => rs.map((x, j) => j === i ? { ...x, cantidad: 0 } : x))}
               className={`${inputCls} w-24 shrink-0`} aria-label={`Cantidad en broker de la fila ${i + 1}`} />
             <button onClick={() => setRows(rs => rs.filter((_, j) => j !== i))} className="text-ink-600 hover:text-neg w-9 h-9 inline-flex items-center justify-center shrink-0" aria-label="Quitar fila">
               <Trash2 className="w-3.5 h-3.5" />

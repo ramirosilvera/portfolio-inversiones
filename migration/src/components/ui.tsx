@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { AlertTriangle } from 'lucide-react';
 import type { Alerta } from '../engine/alertas';
@@ -28,6 +28,50 @@ export function Field({ label, hint, children, className = '' }: { label: string
       {children}
       {hint && <span className="block text-[10px] text-ink-500 mt-1">{hint}</span>}
     </label>
+  );
+}
+
+// Input numérico "seguro" para editar — `value` sigue siendo un number (para que el padre pueda
+// calcular con él normalmente), pero el <input> en sí mantiene su propio string en edición
+// (`draft`), y solo empuja un número al padre cuando lo tipeado parsea a uno finito. Se resincroniza
+// desde `value` solo cuando cambia por una razón EXTERNA (ej. "Restablecer", cambiar de portfolio) —
+// nunca en cada tecla propia.
+//
+// Por qué existe: un <input type="number"> atado directo a un state numérico (value={n},
+// onChange={e => setN(Number(e.target.value))}) sufre un bug clásico — cada tecla coacciona con
+// Number() y re-renderiza con un valor normalizado, lo que le pisa el cursor al usuario y hace
+// carísimo borrar/reemplazar justo el primer carácter (hay que seleccionar todo el campo o borrar
+// de atrás para adelante). Mismo patrón ya probado en ProyeccionesPage.tsx#Num (ahí documentado con
+// el caso concreto: escribir "8." para un decimal se volvía "8" en cada tecla, borrando el punto) —
+// esto lo generaliza para reusarlo en cualquier campo numérico de la app.
+//
+// Vacío mientras se edita: no empuja nada al padre (el valor sigue siendo el último válido) hasta
+// que se tipee un número real de nuevo — mismo criterio que todo otro campo numérico "seguro" ya
+// existente en la app (filtroDuracionMin, montoOperarStr, etc.), no un modo especial de este
+// componente.
+//
+// `value` acepta `null` para campos genuinamente OPCIONALES (ej. ratio_cedear antes de que el
+// usuario lo cargue) — se muestra vacío. `onEmptyBlur` (opcional) es lo único que reacciona a un
+// campo VACÍO — se dispara solo al perder el foco, nunca en cada tecla — para los casos que
+// necesitan garantizar "nunca queda en un estado ambiguo" (ej. un umbral de alerta que vuelve a su
+// default en vez de quedar visualmente vacío con el valor viejo todavía aplicando por detrás; o un
+// campo obligatorio que vuelve a `null` explícito). Sin `onEmptyBlur`, vaciar el campo simplemente
+// no empuja nada — el valor sigue siendo el último válido hasta que se tipee uno nuevo.
+export function NumField({ value, onChange, onEmptyBlur, className, ...rest }: {
+  value: number | null; onChange: (n: number) => void; onEmptyBlur?: () => void; className?: string;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur' | 'type' | 'className'>) {
+  const [draft, setDraft] = useState(value != null ? String(value) : '');
+  useEffect(() => { setDraft(value != null ? String(value) : ''); }, [value]);
+  return (
+    <input type="number" {...rest} value={draft}
+      onBlur={() => { if (draft === '') onEmptyBlur?.(); }}
+      onChange={e => {
+        setDraft(e.target.value);
+        if (e.target.value === '') return;
+        const n = Number(e.target.value);
+        if (Number.isFinite(n)) onChange(n);
+      }}
+      className={className ?? inputCls} />
   );
 }
 

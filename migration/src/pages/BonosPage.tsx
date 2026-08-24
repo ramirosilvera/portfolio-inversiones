@@ -8,7 +8,7 @@ import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { CONCENTRACION_POSICION_ALERTA } from '../engine/bonos';
 import { CALIFICADORAS } from '../engine/rating';
 import { LEY_LABEL, LEY_TONE } from '../engine/rentaFija';
-import { Card, CardHeader, Button, Badge, Stat, Field, Empty, RatingBadge, inputCls, fmtUsdCompact, fmtNum, fmtPct, AlertasBanner } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Stat, Field, Empty, RatingBadge, NumField, inputCls, fmtUsdCompact, fmtNum, fmtPct, AlertasBanner } from '../components/ui';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useChartTheme } from '../hooks/usePrefs';
 import type { Posicion, AmortizacionProgramada } from '../types/domain';
@@ -218,11 +218,9 @@ export function BonosPage() {
                 </p>
                 <div className="flex items-end gap-3 mt-3">
                   <Field label="Grado de inversión mínimo (%)">
-                    <input type="number" min="0" max="100" step="5" value={minGradoInversionPct}
-                      onChange={e => {
-                        if (e.target.value === '') { setMinGradoInversionPct(DEFAULT_MIN_GRADO_INVERSION_PCT); return; }
-                        setMinGradoInversionPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
-                      }}
+                    <NumField min="0" max="100" step="5" value={minGradoInversionPct}
+                      onChange={n => setMinGradoInversionPct(Math.min(100, Math.max(0, n)))}
+                      onEmptyBlur={() => setMinGradoInversionPct(DEFAULT_MIN_GRADO_INVERSION_PCT)}
                       className={`${inputCls} w-24`} />
                   </Field>
                   <p className="text-[11px] text-ink-500">Alerta si el % del capital en grado de inversión cae por debajo de tu mínimo personal.</p>
@@ -252,11 +250,9 @@ export function BonosPage() {
                 </p>
                 <div className="flex items-end gap-3 mt-3">
                   <Field label="Ley extranjera mínima (%)" hint="Ley extranjera es más segura (jurisdicción de cobro fuera de Argentina); ley local suele rendir más — este mínimo es tu piso de cobertura segura para balancear riesgo y rendimiento.">
-                    <input type="number" min="0" max="100" step="5" value={minLeyExtranjeraPct}
-                      onChange={e => {
-                        if (e.target.value === '') { setMinLeyExtranjeraPct(DEFAULT_MIN_LEY_EXTRANJERA_PCT); return; }
-                        setMinLeyExtranjeraPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
-                      }}
+                    <NumField min="0" max="100" step="5" value={minLeyExtranjeraPct}
+                      onChange={n => setMinLeyExtranjeraPct(Math.min(100, Math.max(0, n)))}
+                      onEmptyBlur={() => setMinLeyExtranjeraPct(DEFAULT_MIN_LEY_EXTRANJERA_PCT)}
                       className={`${inputCls} w-24`} />
                   </Field>
                   <p className="text-[11px] text-ink-500">Alerta si el % del capital bajo ley extranjera cae por debajo de tu mínimo personal.</p>
@@ -277,12 +273,9 @@ export function BonosPage() {
               </Badge>} />
           <div className="px-4 py-3 flex flex-wrap gap-3 items-end text-sm border-b border-line">
             <Field label="Duración promedio máxima (años)">
-              <input type="number" min="0.25" step="0.25" value={maxDuracionAnios}
-                onChange={e => {
-                  if (e.target.value === '') { setMaxDuracionAnios(DEFAULT_MAX_DURACION_ANIOS); return; }
-                  const n = Number(e.target.value);
-                  if (Number.isFinite(n)) setMaxDuracionAnios(Math.max(0.25, n));
-                }}
+              <NumField min="0.25" step="0.25" value={maxDuracionAnios}
+                onChange={n => setMaxDuracionAnios(Math.max(0.25, n))}
+                onEmptyBlur={() => setMaxDuracionAnios(DEFAULT_MAX_DURACION_ANIOS)}
                 className={`${inputCls} w-24`} />
             </Field>
             {duracionPromedio != null && (
