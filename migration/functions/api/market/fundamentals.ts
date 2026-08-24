@@ -148,6 +148,20 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
       }, 503);
     }
     if (data.ungradeable.length) {
+      // Un fetch parcial NUNCA pisa una cache ya buena (completa o vieja-pero-completa) — por eso
+      // arriba solo cachea si `!nucleoIncompleto` (mismo criterio que FUNDAMENTALS_STALE_MS: preferimos
+      // un dato viejo bueno a uno nuevo incompleto). Pero si el ticker JAMÁS logró cachearse (caso real:
+      // V, con ocf/epsDiluted/dna/capex/cash vacíos) quedaba reintentando desde cero en cada visita y en
+      // cada corrida del cron, sin acumular nunca nada — ni un `cached:true` rápido, ni un `cacheLast`
+      // al que agarrarse la próxima vez que EDGAR fallara peor (rama de arriba). Guardar lo parcial acá
+      // (con su warning intacto, ninguna cifra inventada) rompe ese loop la primera vez que hay ALGO de
+      // dato real — y si una corrida futura logra traer todo completo, esa sí pisa esto (rama de arriba).
+      if (cacheable) {
+        const existe = await sbSelect<{ ticker: string }>(env, 'fundamentals_cache', `ticker=eq.${encodeURIComponent(ticker)}&select=ticker&limit=1`);
+        if (!existe.length) {
+          await sbUpsert(env, 'fundamentals_cache', [{ ticker, cik, data_json: data, updated_at: new Date().toISOString() }], 'ticker');
+        }
+      }
       return json({ ...data, warning: `datos incompletos vía EDGAR: falta ${data.ungradeable.join(', ')} (posible 20-F/IFRS o rate-limit)` });
     }
     return json(data);
