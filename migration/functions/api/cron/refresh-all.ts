@@ -63,7 +63,12 @@ export const onRequestGet = guard(async ({ request, env }) => {
   // dejaría sin correr la lógica de cobros pendientes más abajo — el TTL de 12h de fundamentals.ts
   // hace que las ya frescas se salteen solas, así que el backfill completo se completa solo en unas
   // pocas corridas (cada 30 min) y de ahí en más mantiene las 84 al día automáticamente.
-  const MAX_FUNDAMENTALS_EXTRA_POR_CORRIDA = 20;
+  // Bajado de 20 a 8: cada fundamentals.ts puede disparar hasta ~35 subrequests al proxy de EDGAR
+  // (ver SUBREQUEST_BUDGET_FETCH_FUNDAMENTALS en _edgar.ts) — un lote grande arriesga generar el
+  // mismo rate-limit (429) que después deja tickers con datos parciales (ungradeable), el problema
+  // que este backfill busca resolver, no empeorar. Con 8 el backfill completo tarda más corridas
+  // (~10, cada 30 min) pero no compite por cupo con la propia causa del problema.
+  const MAX_FUNDAMENTALS_EXTRA_POR_CORRIDA = 8;
   const yaConsultados = new Set(equity);
   const universoRentaVariable = Object.keys(DEFAULT_CIK).filter(t => !yaConsultados.has(t));
   if (universoRentaVariable.length) {
