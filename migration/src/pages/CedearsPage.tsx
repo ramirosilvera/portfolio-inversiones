@@ -5,7 +5,7 @@ import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosicionMutations } from '../hooks/usePosiciones';
 import { useCedearsCalc, resumenCedears, useObjetivoConcentracion, DEFAULT_CONCENTRACION_SECTOR_PCT, DEFAULT_CONCENTRACION_ESTILO_PCT } from '../hooks/useCedears';
 import { ROL_LABEL, ROLES, ROL_COLOR, SIN_CLASIFICAR_COLOR, CONCENTRACION_POSICION_ALERTA, HHI_SECTOR_ALERTA, alertasCedears } from '../engine/cedears';
-import { Card, CardHeader, Button, Badge, Stat, Field, Empty, inputCls, fmtUsdCompact, fmtNum, fmtPct, PIE_COLORS, AlertasBanner } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Stat, Field, Empty, NumField, inputCls, fmtUsdCompact, fmtNum, fmtPct, PIE_COLORS, AlertasBanner } from '../components/ui';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useChartTheme } from '../hooks/usePrefs';
 import type { Posicion, AssetRole } from '../types/domain';
@@ -129,19 +129,15 @@ export function CedearsPage() {
           <CardHeader title="Distribución por sector y estilo" sub="Peso sobre el capital en CEDEARs (valor de mercado, o costo si no hay cotización)." />
           <div className="px-4 py-3 flex flex-wrap gap-3 items-end text-sm border-b border-line">
             <Field label="Concentración sectorial máxima (%)">
-              <input type="number" min="0" max="100" step="5" value={concentracionSectorPct}
-                onChange={e => {
-                  if (e.target.value === '') { setConcentracionSectorPct(DEFAULT_CONCENTRACION_SECTOR_PCT); return; }
-                  setConcentracionSectorPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
-                }}
+              <NumField min="0" max="100" step="5" value={concentracionSectorPct}
+                onChange={n => setConcentracionSectorPct(Math.min(100, Math.max(0, n)))}
+                onEmptyBlur={() => setConcentracionSectorPct(DEFAULT_CONCENTRACION_SECTOR_PCT)}
                 className={`${inputCls} w-24`} />
             </Field>
             <Field label="Concentración por estilo máxima (%)">
-              <input type="number" min="0" max="100" step="5" value={concentracionEstiloPct}
-                onChange={e => {
-                  if (e.target.value === '') { setConcentracionEstiloPct(DEFAULT_CONCENTRACION_ESTILO_PCT); return; }
-                  setConcentracionEstiloPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
-                }}
+              <NumField min="0" max="100" step="5" value={concentracionEstiloPct}
+                onChange={n => setConcentracionEstiloPct(Math.min(100, Math.max(0, n)))}
+                onEmptyBlur={() => setConcentracionEstiloPct(DEFAULT_CONCENTRACION_ESTILO_PCT)}
                 className={`${inputCls} w-24`} />
             </Field>
             <p className="text-[11px] text-ink-600 ml-auto">Umbrales personales — alertan arriba cuando un sector o estilo concentra más de lo que definiste acá.</p>

@@ -14,7 +14,7 @@ import { tendenciaPrecio, contrastarConNegocio, anualizar, sinRecalentamiento } 
 import { useDcfInputs } from '../hooks/useDcfInputs';
 import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA';
 import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, AMPLITUD_LABEL, AMPLITUD_TONE } from '../lib/companyMoat';
-import { Card, CardHeader, Button, Badge, Stat, ViewToggle, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Stat, ViewToggle, NumField, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
 import type { Fundamentals } from '../types/domain';
 
 export function AnalisisPage() {
@@ -582,8 +582,8 @@ function NumIn({ l, v, step, onChange, pct }: { l: string; v: number; step: numb
   return (
     <label className="block">
       <span className="text-[10px] uppercase text-ink-600">{l}{pct ? ' (%)' : ''}</span>
-      <input type="number" step={pct ? step * 100 : step} value={pct ? +(v * 100).toFixed(2) : v}
-        onChange={e => onChange(pct ? Number(e.target.value) / 100 : Number(e.target.value))}
+      <NumField step={pct ? step * 100 : step} value={pct ? +(v * 100).toFixed(2) : v}
+        onChange={n => onChange(pct ? n / 100 : n)}
         className={`${inputCls} mt-1 tnum`} />
     </label>
   );
