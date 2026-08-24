@@ -54,6 +54,27 @@ export const onRequestGet = guard(async ({ request, env }) => {
     if (cik) dyn.push(`/api/market/fundamentals?ticker=${t}&cik=${cik}`);
   }
 
+  // Además de lo tenido en cartera, calentamos de a poco el universo completo de renta variable
+  // hardcodeado del Radar (DEFAULT_CIK, ~84 tickers) — así el usuario ve datos ya cargados la
+  // primera vez que abre un análisis, en vez de depender de haberlo visitado antes (fundamentals_cache
+  // es reactivo por naturaleza: sin esto, una empresa que nadie miró nunca queda sin fila indefinidamente).
+  // Se limita a un lote chico por corrida (no todas las ~84 juntas) para no arrastrar el timeout de
+  // 120s del workflow (ver refresh-market.yml) ni el tiempo de ejecución de la Function, lo que
+  // dejaría sin correr la lógica de cobros pendientes más abajo — el TTL de 12h de fundamentals.ts
+  // hace que las ya frescas se salteen solas, así que el backfill completo se completa solo en unas
+  // pocas corridas (cada 30 min) y de ahí en más mantiene las 84 al día automáticamente.
+  const MAX_FUNDAMENTALS_EXTRA_POR_CORRIDA = 20;
+  const yaConsultados = new Set(equity);
+  const universoRentaVariable = Object.keys(DEFAULT_CIK).filter(t => !yaConsultados.has(t));
+  if (universoRentaVariable.length) {
+    const cache = await sbSelect<{ ticker: string; updated_at: string }>(env, 'fundamentals_cache',
+      `select=ticker,updated_at&ticker=in.(${universoRentaVariable.join(',')})`);
+    const frescoDesde = Date.now() - 12 * 60 * 60 * 1000;
+    const frescos = new Set(cache.filter(c => Date.parse(c.updated_at) > frescoDesde).map(c => c.ticker));
+    const faltantes = universoRentaVariable.filter(t => !frescos.has(t)).slice(0, MAX_FUNDAMENTALS_EXTRA_POR_CORRIDA);
+    for (const t of faltantes) dyn.push(`/api/market/fundamentals?ticker=${t}&cik=${DEFAULT_CIK[t]}`);
+  }
+
   // Secuencial para no reventar los rate limits de EDGAR/Finnhub.
   let ok = 0;
   const paths = [...base, ...dyn];
