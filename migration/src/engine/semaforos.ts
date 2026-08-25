@@ -72,11 +72,18 @@ const SIGNIFICADO: Record<string, { amarillo: string; rojo: string }> = {
   merval_usd:    { amarillo: 'Merval en zona alta en USD', rojo: 'Merval caro en USD: poco margen' },
   adr_ypf:       { amarillo: 'YPF débil', rojo: 'YPF golpeada' },
   dollar_index:  { amarillo: 'dólar global firme', rojo: 'dólar global fuerte: presión sobre emergentes' },
-  sp500:         { amarillo: 'S&P alto', rojo: 'S&P en máximos: poco margen de suba' },
+  sp500:         { amarillo: 'S&P alto', rojo: 'S&P en nivel elevado: poco margen de suba adicional' },
   vix:           { amarillo: 'volatilidad en aumento', rojo: 'volatilidad alta: miedo en el mercado' },
   hy_spread:     { amarillo: 'crédito corporativo exigido', rojo: 'crédito corporativo estresado: aversión al riesgo' },
   dgs3mo:        { amarillo: 'tasa corta expansiva', rojo: 'tasa corta restrictiva: dinero caro' },
-  oro:           { amarillo: 'oro firme', rojo: 'oro en máximos: búsqueda de refugio' },
+  // OJO: "rojo" acá es un umbral de PRECIO ABSOLUTO (ver evalua del semáforo `oro` arriba, línea
+  // ~60), no una comparación contra el máximo histórico real. La distancia real al máximo (que sí
+  // puede estar en negativo aunque el precio absoluto sea alto — caso real: oro cayendo 15% desde
+  // su ATH mientras sigue por encima del umbral) se calcula aparte en `distanciaMaximo`/`drawdowns.ts`
+  // y se muestra en el bloque "Distancia al máximo histórico" (DistanciaMaximo.tsx). Antes este texto
+  // decía "oro en máximos", una afirmación falsa cuando el precio venía retrocediendo — el usuario
+  // veía "en máximos" acá Y "-15% vs máx · oportunidad" en el bloque de arriba, contradictorios.
+  oro:           { amarillo: 'oro firme', rojo: 'oro en nivel elevado: fuerte demanda de refugio' },
   bitcoin:       { amarillo: 'BTC elevado', rojo: 'BTC en zona eufórica' },
 };
 
