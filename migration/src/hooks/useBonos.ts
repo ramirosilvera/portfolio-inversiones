@@ -11,7 +11,13 @@ export { resumenBonos, alertasBonos, type ResumenBonos } from '../engine/bonos';
 // y vive en engine/bonos.ts — acá solo se resuelve el fetch (posiciones + cotizaciones).
 export function useBonosCalc(portfolioId: string | undefined) {
   const { data: posiciones = [], isLoading } = usePosiciones(portfolioId);
-  const bonos = posiciones.filter(p => p.tipo === 'bono');
+  // Solo posiciones ABIERTAS: al vender todo, `posiciones.cantidad` queda en 0 pero la fila no se
+  // borra sola (persiste como historial — igual criterio que PosicionesPage, que la oculta por
+  // default detrás de "mostrar cerradas" y la marca "cerrada"). Sin este filtro, un bono totalmente
+  // vendido (ej. YM41D) seguía apareciendo para siempre en la tabla de Bonos y en el resumen del
+  // Dashboard, con todo en $0 — no es que "no se pueda eliminar": se puede borrar de verdad desde
+  // /posiciones (mostrar cerradas → Borrar), esto solo evita que siga mostrándose acá.
+  const bonos = posiciones.filter(p => p.tipo === 'bono' && (Number(p.cantidad) || 0) > 0);
   const { data: quotes = {} } = useQuotes([], bonos.map(b => b.ticker));
   const hoy = new Date().toISOString().slice(0, 10);
 
