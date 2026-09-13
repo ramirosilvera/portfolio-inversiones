@@ -9,7 +9,10 @@ export { resumenCedears, type ResumenCedears, alertasCedears } from '../engine/c
 // useBonosCalc/useRadarTicker: el fetch vive acá, el cálculo puro vive en engine/cedears.ts.
 export function useCedearsCalc(portfolioId: string | undefined) {
   const { data: posiciones = [], isLoading } = usePosiciones(portfolioId);
-  const cedears = posiciones.filter(p => p.tipo === 'cedear');
+  // Mismo fix que useBonosCalc: al vender todo, la fila queda en cantidad 0 pero no se borra sola —
+  // sin este filtro un CEDEAR totalmente vendido seguía apareciendo para siempre acá y en el resumen
+  // del Dashboard. Se puede borrar de verdad desde /posiciones (mostrar cerradas → Borrar).
+  const cedears = posiciones.filter(p => p.tipo === 'cedear' && (Number(p.cantidad) || 0) > 0);
   const { data: quotes = {} } = useQuotes(cedears.map(c => c.ticker), [], []);
 
   const cedearsCalc: CedearCalc[] = cedears.map(c => calcularCedear(c, quotes[c.ticker] ?? null));
