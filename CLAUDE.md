@@ -25,7 +25,16 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
    (`wrangler pages secret put`). Frontend solo con `VITE_*` públicas (protegidas por RLS).
 3. **Aislamiento entre portfolios** (requisito #1): todo cuelga de `portfolio_id` vía
    `owns_portfolio()`. Verificar con datos de prueba que no se contamina entre portfolios.
-4. **Solo lectura de mercado.** No hay ejecución de órdenes.
+4. **Solo lectura de mercado — dentro de la app.** La app web (Cloudflare Pages) y sus Pages
+   Functions nunca ejecutan órdenes; solo leen precios/fundamentals de mercado. **Excepción
+   intencional y acotada** (vigente desde 2026-09, Plan Maestro Herencia): fuera de la app, en
+   sesiones de Claude Code con el conector MCP de IOL conectado, sí se preparan y ejecutan órdenes
+   de compra reales sobre la cuenta de IOL — siempre con el usuario confirmando cada orden antes de
+   cargarla (nunca 100% desatendido). Esto incluye una Routine semanal (Plan Maestro Herencia,
+   cuotas de CEDEARs) que prepara y valida órdenes con datos reales del día y espera confirmación
+   humana antes de ejecutar cualquier cosa. La regla de "solo lectura" sigue aplicando estrictamente
+   a lo que la APP EN SÍ (el código de este repo desplegado) puede hacer — no cambia el objetivo #4
+   de solo-lectura del producto, es un workflow externo de operación manual/supervisada.
 5. Priorizar corrección de cálculos sobre features vistosos.
 
 ## Archivos clave
