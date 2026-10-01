@@ -4,6 +4,10 @@ import type { Posicion } from '../types/domain';
 // ratio no está cargado o es 0, devolvemos null (mostrar "—" y NO computar en el patrimonio)
 // en vez de valuarlo al precio del subyacente completo — eso sobrevaluaba la posición N×.
 export function unitValueUSD(p: Posicion, live: number | null): number | null {
+  // Efectivo: no cotiza, su "precio" es el que tiene cargado (convención: cantidad = USD, precio 1).
+  // Antes caía en `live == null → null` y Posiciones lo mostraba "sin precio" (Actual/Mercado/peso
+  // en "—") aunque el Dashboard sí lo sumaba a costo — mismo valor en las dos pantallas ahora.
+  if (p.tipo === 'cash') return Number(p.precio_compra) || 0;
   if (live == null) return null;
   if (p.tipo === 'cedear') return p.ratio_cedear && p.ratio_cedear > 0 ? live / p.ratio_cedear : null;
   return live; // etf/bono (precio ya por nominal) / cash

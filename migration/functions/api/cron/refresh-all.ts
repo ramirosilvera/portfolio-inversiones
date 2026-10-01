@@ -37,8 +37,11 @@ export const onRequestGet = guard(async ({ request, env }) => {
   const pos = await sbSelect<PosicionParaCobro>(env, 'posiciones',
     'select=id,portfolio_id,ticker,tipo,cantidad,ratio_cedear,cupon_tasa,cupon_frecuencia,cupon_mes,vencimiento');
   const uniq = (a: string[]) => [...new Set(a.map(s => s.toUpperCase()).filter(Boolean))];
-  const equity = uniq(pos.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker));
-  const ar = uniq(pos.filter(p => p.tipo === 'accion_ar').map(p => p.ticker));
+  // Solo posiciones ABIERTAS: las cerradas (cantidad 0) no necesitan cotización ni fundamentals, y
+  // cada una gastaba subrequests del techo de 50 por invocación de Cloudflare.
+  const abiertas = pos.filter(p => Number(p.cantidad) > 0);
+  const equity = uniq(abiertas.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker));
+  const ar = uniq(abiertas.filter(p => p.tipo === 'accion_ar').map(p => p.ticker));
   // (los bonos se refrescan enteros en /api/market/bonos; el cash no cotiza)
 
   // 3) CIKs conocidos: DEFAULT_CIK + cik_map. Solo pedimos fundamentals de lo que tiene CIK.
@@ -46,12 +49,13 @@ export const onRequestGet = guard(async ({ request, env }) => {
   const cikOf: Record<string, string> = { ...DEFAULT_CIK };
   for (const r of mapRows) if (r.ticker && r.cik) cikOf[r.ticker.toUpperCase()] = r.cik;
 
-  const dyn: string[] = [];
-  if (equity.length) dyn.push(`/api/market/quotes?tickers=${equity.join(',')}`);
-  if (ar.length) dyn.push(`/api/market/acciones-ar?tickers=${ar.join(',')}`);
+  const precios: string[] = [];
+  if (equity.length) precios.push(`/api/market/quotes?tickers=${equity.join(',')}`);
+  if (ar.length) precios.push(`/api/market/acciones-ar?tickers=${ar.join(',')}`);
+  const fund: string[] = [];
   for (const t of equity) {
     const cik = cikOf[t];
-    if (cik) dyn.push(`/api/market/fundamentals?ticker=${t}&cik=${cik}`);
+    if (cik) fund.push(`/api/market/fundamentals?ticker=${t}&cik=${cik}`);
   }
 
   // Además de lo tenido en cartera, calentamos de a poco el universo completo de renta variable
@@ -59,8 +63,8 @@ export const onRequestGet = guard(async ({ request, env }) => {
   // primera vez que abre un análisis, en vez de depender de haberlo visitado antes (fundamentals_cache
   // es reactivo por naturaleza: sin esto, una empresa que nadie miró nunca queda sin fila indefinidamente).
   // Se limita a un lote chico por corrida (no todas las ~84 juntas) para no arrastrar el timeout de
-  // 120s del workflow (ver refresh-market.yml) ni el tiempo de ejecución de la Function, lo que
-  // dejaría sin correr la lógica de cobros pendientes más abajo — el TTL de 12h de fundamentals.ts
+  // 120s del workflow (ver refresh-market.yml) ni el techo de subrequests de la Function (los cobros
+  // pendientes ya corren ANTES que los fundamentals, ver el orden más abajo) — el TTL de 12h de fundamentals.ts
   // hace que las ya frescas se salteen solas, así que el backfill completo se completa solo en unas
   // pocas corridas (cada 30 min) y de ahí en más mantiene las 84 al día automáticamente.
   // Bajado de 20 a 8: cada fundamentals.ts puede disparar hasta ~35 subrequests al proxy de EDGAR
@@ -77,13 +81,16 @@ export const onRequestGet = guard(async ({ request, env }) => {
     const frescoDesde = Date.now() - 12 * 60 * 60 * 1000;
     const frescos = new Set(cache.filter(c => Date.parse(c.updated_at) > frescoDesde).map(c => c.ticker));
     const faltantes = universoRentaVariable.filter(t => !frescos.has(t)).slice(0, MAX_FUNDAMENTALS_EXTRA_POR_CORRIDA);
-    for (const t of faltantes) dyn.push(`/api/market/fundamentals?ticker=${t}&cik=${DEFAULT_CIK[t]}`);
+    for (const t of faltantes) fund.push(`/api/market/fundamentals?ticker=${t}&cik=${DEFAULT_CIK[t]}`);
   }
 
-  // Secuencial para no reventar los rate limits de EDGAR/Finnhub.
+  // Secuencial para no reventar los rate limits de EDGAR/Finnhub. ORDEN: precios → cobros pendientes →
+  // fundamentals. Cloudflare corta la invocación en ~50 subrequests: antes los fundamentals (lo más
+  // numeroso y lo menos urgente — tienen TTL de 12h) iban primero, y al crecer la cartera podían agotar
+  // el cupo antes de llegar a los cobros pendientes, que dejaban de generarse sin ningún aviso.
   let ok = 0;
-  const paths = [...base, ...dyn];
-  for (const p of paths) if (await hit(p)) ok++;
+  const prioritarios = [...base, ...precios];
+  for (const p of prioritarios) if (await hit(p)) ok++;
 
   // 4) Cobros pendientes: dividendos reales (equities, vía FMP/Finnhub) + cupones sintéticos
   // (bonos, desde los 4 campos manuales) que ya llegaron a su fecha proyectada. SIEMPRE quedan en
@@ -133,6 +140,9 @@ export const onRequestGet = guard(async ({ request, env }) => {
     } catch { /* una sugerencia fallida no frena las demás */ }
   }
 
+  // 5) Fundamentals al final (ver orden arriba).
+  for (const p of fund) if (await hit(p)) ok++;
+
   // Solo conteos agregados — sin tickers ni montos (no filtrar composición del portfolio).
-  return json({ ok, total: paths.length, pendientes });
+  return json({ ok, total: prioritarios.length + fund.length, pendientes });
 });

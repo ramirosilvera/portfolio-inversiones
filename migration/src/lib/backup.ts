@@ -37,16 +37,20 @@ import { descargarTexto } from './download';
 // incluida, cubierta sola por select('*')/upsert genérico. bonos_referencia.ley (0042) ni entra en
 // esta discusión: esa tabla es el catálogo global, nunca se exporta (mismo motivo que
 // cedear_ratios/fundamentals_cache).
+// v10: agrega ordenes_ejecutadas (registro de órdenes reales cargadas/rechazadas vía el conector de
+// IOL, Plan Maestro Herencia — ver 0047_ordenes_ejecutadas.sql). Tabla nueva, por portfolio: sin
+// esto, un restore perdía todo ese registro sin aviso (hallazgo de la auditoría QA 2026-10-01).
 // Al sumar una tabla nueva acá (bump de versión): agregar también el aviso correspondiente en
 // parseBackup() (restore.ts) para backups <= la versión anterior — si no, un backup viejo restaura
 // esa tabla vacía EN SILENCIO, sin que el usuario sepa que ese pedazo no volvió (bug real
 // encontrado en revisión de Consejo: a v7→v9 les faltaban esos 2 avisos).
-export const BACKUP_VERSION = 9;
+export const BACKUP_VERSION = 10;
 
 const TABLAS = [
   'portfolios', 'brokers', 'posiciones', 'posicion_brokers', 'movimientos', 'aportes', 'portfolio_snapshots',
   'flujo_items', 'dcf_inputs', 'proyeccion_inputs', 'cobros', 'cobros_inversiones', 'transferencias',
   'amortizaciones_programadas', 'dashboard_layout', 'cik_map', 'watchlist', 'bonos_destacados', 'analisis_ia', 'profiles',
+  'ordenes_ejecutadas',
 ] as const;
 
 export interface BackupResult {

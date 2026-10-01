@@ -46,6 +46,8 @@ export const RESTORE_ORDER: { table: string; onConflict: string; userScoped: boo
   { table: 'dcf_inputs',  onConflict: 'user_id,ticker', userScoped: true },
   { table: 'watchlist',   onConflict: 'user_id,ticker', userScoped: true }, // tiene unique(user_id,ticker)
   { table: 'bonos_destacados', onConflict: 'user_id,ticker', userScoped: true }, // PK (user_id, ticker)
+  // Registro de órdenes ejecutadas (IOL) — solo depende de portfolios (FK portfolio_id).
+  { table: 'ordenes_ejecutadas', onConflict: 'id', userScoped: false },
 ];
 
 export interface Preview {
@@ -70,7 +72,7 @@ export function parseBackup(text: string): Preview {
   // v1/v2/v3 igual se pueden restaurar (solo les faltan tablas que no existían todavía, o traen
   // posiciones.broker_id que ya no se usa) — el aviso es solo para versiones FUTURAS que este
   // código todavía no sepa interpretar.
-  if (data.backup_version && data.backup_version > 9) avisos.push(`El backup es de una versión más nueva (v${data.backup_version}) que la soportada (v9).`);
+  if (data.backup_version && data.backup_version > 10) avisos.push(`El backup es de una versión más nueva (v${data.backup_version}) que la soportada (v10).`);
   if (data.backup_version === 1) avisos.push('Backup v1 (anterior a Cobros y Proyección): no va a traer el historial de dividendos/intereses/amortizaciones ni los supuestos de Proyección guardados, porque todavía no existían.');
   if (data.backup_version === 1 || data.backup_version === 2) avisos.push('Backup anterior a Brokers: las posiciones van a quedar "Sin asignar" (no había ningún broker cargado todavía).');
   if (data.backup_version != null && data.backup_version <= 3) avisos.push('Backup anterior al reparto por broker (posicion_brokers): la asignación de brokers no se va a poder restaurar (la versión vieja guardaba un solo broker por posición, en un campo que ya no existe) — reasignalos desde la sección Brokers después de restaurar.');
@@ -82,6 +84,7 @@ export function parseBackup(text: string): Preview {
   if (data.backup_version != null && data.backup_version <= 6) avisos.push('Backup anterior al cronograma de amortización manual (amortizaciones_programadas): no va a traer las cuotas futuras que hayas cargado a mano para bonos amortizables — cargalas de nuevo si las necesitás para la proyección de Cupones.');
   if (data.backup_version != null && data.backup_version <= 7) avisos.push('Backup anterior al Dashboard personalizable (dashboard_layout): no va a traer tu layout de tarjetas guardado — la página va a mostrar el layout predeterminado hasta que lo vuelvas a personalizar.');
   if (data.backup_version != null && data.backup_version <= 8) avisos.push('Backup anterior a Destacados de renta fija (bonos_destacados): no va a traer los tickers que hayas marcado como destacados en el Radar — volvé a marcarlos si querés.');
+  if (data.backup_version != null && data.backup_version <= 9) avisos.push('Backup anterior al registro de órdenes ejecutadas (ordenes_ejecutadas): no va a traer el detalle de órdenes cargadas en IOL — las posiciones y movimientos sí vuelven.');
   // El propio backup avisa si se generó incompleto (ver backup.ts): lo mostramos antes de restaurar.
   if (data.partial) avisos.push(`El backup se generó INCOMPLETO${data.errores?.length ? ` (falló: ${data.errores.join('; ')})` : ''}: puede faltar información.`);
   // transferencias es de solo lectura para el cliente (ver 0024_transferencias.sql) — se exporta

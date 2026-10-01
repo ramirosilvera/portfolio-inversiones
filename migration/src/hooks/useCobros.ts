@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type { Cobro, CobroTipo } from '../types/domain';
+import { asegurarHistorial } from './usePosiciones';
 
 export function useCobros(portfolioId: string | null | undefined) {
   const qc = useQueryClient();
@@ -8,6 +9,7 @@ export function useCobros(portfolioId: string | null | undefined) {
     qc.invalidateQueries({ queryKey: ['cobros', portfolioId] });
     qc.invalidateQueries({ queryKey: ['posiciones'] });
     qc.invalidateQueries({ queryKey: ['movimientos'] });
+    qc.invalidateQueries({ queryKey: ['posicion_brokers'] });
   };
 
   const q = useQuery({
@@ -48,6 +50,9 @@ export function useCobros(portfolioId: string | null | undefined) {
       if (!portfolioId) return;
       if (!(input.monto > 0)) throw new Error('El monto debe ser mayor a 0.');
       if (!(input.nominales > 0)) throw new Error('Los nominales amortizados deben ser mayores a 0.');
+      // Historial cuadrado antes del ajuste: si el bono no tenía movimientos (cargado antes de que
+      // existieran), el 'ajuste' quedaba solo y borrarlo reconstruía el nominal en 0.
+      await asegurarHistorial(input.posicionId);
       const { data: pos, error: posErr } = await supabase.from('posiciones').select('cantidad').eq('id', input.posicionId).single();
       if (posErr) throw posErr;
       const cantidadActual = Number(pos.cantidad) || 0;
@@ -58,8 +63,20 @@ export function useCobros(portfolioId: string | null | undefined) {
         tipo: 'ajuste', cantidad: -nominales, precio: 0, fecha: input.fecha, nota: 'amortización de capital',
       }).select('id').single();
       if (movErr) throw movErr;
-      const { error: updErr } = await supabase.from('posiciones').update({ cantidad: Math.max(0, cantidadActual - nominales) }).eq('id', input.posicionId);
+      const nuevaCantidad = Math.max(0, cantidadActual - nominales);
+      const { error: updErr } = await supabase.from('posiciones').update({ cantidad: nuevaCantidad }).eq('id', input.posicionId);
       if (updErr) throw new Error(`Se registró el movimiento pero no se pudo actualizar el nominal: ${updErr.message}`);
+      // La asignación por broker baja en la misma proporción (mismo criterio que vender/transferir);
+      // si no, la suma por broker quedaba por encima del nominal real.
+      const { data: pbs } = await supabase.from('posicion_brokers').select('id, cantidad').eq('posicion_id', input.posicionId);
+      const ratio = cantidadActual > 0 ? nuevaCantidad / cantidadActual : 0;
+      for (const pb of pbs ?? []) {
+        const restante = Number(pb.cantidad) * ratio;
+        const { error: e } = restante > 1e-9
+          ? await supabase.from('posicion_brokers').update({ cantidad: restante }).eq('id', pb.id)
+          : await supabase.from('posicion_brokers').delete().eq('id', pb.id);
+        if (e) throw new Error(`El nominal se ajustó pero no se pudo actualizar la asignación por broker: ${e.message}`);
+      }
       const { error: cobroErr } = await supabase.from('cobros').insert({
         portfolio_id: portfolioId, posicion_id: input.posicionId, ticker,
         tipo: 'amortizacion', fecha: input.fecha, monto: input.monto, movimiento_id: mov.id, nota: input.nota || null, origen: 'manual',

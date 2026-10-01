@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { useAuth } from './useAuth';
-import { consolidarCompra, reconstruirTenencia } from '../engine/tenencia';
+import { consolidarCompra, reconstruirTenencia, movimientoConciliacion } from '../engine/tenencia';
 import type { DividendoInfo } from '../engine/dividendProjection';
 import type { Posicion, Movimiento } from '../types/domain';
 
@@ -52,11 +52,44 @@ export function useAllPosiciones(enabled: boolean) {
   });
 }
 
+// Deja el historial de movimientos de una posición CUADRADO con su estado actual (cantidad + costo),
+// agregando el movimiento de conciliación que calcule engine/tenencia#movimientoConciliacion. Se
+// llama ANTES de cualquier escritura que dependa del historial (comprar más, vender, borrar un
+// movimiento, amortizar) y DESPUÉS de una edición manual de cantidad: sin esto, una posición cargada
+// antes de que existieran los movimientos (o editada a mano, o transferida) tenía un historial
+// incompleto, y el siguiente borrado de un movimiento la reconstruía con unidades de menos — y el
+// P&L realizado se calculaba contra una base de costo equivocada. Exportada: useCobros (amortización)
+// también la necesita. Lanza si no puede verificar el historial (mejor abortar que escribir a ciegas).
+export async function asegurarHistorial(posicionId: string): Promise<void> {
+  const { data: pos, error: posErr } = await supabase.from('posiciones')
+    .select('id, portfolio_id, ticker, cantidad, precio_compra, fecha_compra').eq('id', posicionId).single();
+  if (posErr) throw new Error(`No se pudo leer la posición: ${posErr.message}`);
+  const { data: movs, error: movErr } = await supabase.from('movimientos')
+    .select('tipo, cantidad, precio, fecha').eq('posicion_id', posicionId)
+    .order('fecha', { ascending: true }).order('created_at', { ascending: true });
+  if (movErr) throw new Error(`No se pudo verificar el historial de ${pos.ticker}: ${movErr.message}`);
+  const hoy = new Date().toISOString().slice(0, 10);
+  const conc = movimientoConciliacion(
+    { cantidad: Number(pos.cantidad) || 0, costoPromedio: Number(pos.precio_compra) || 0 },
+    (movs ?? []).map(m => ({ tipo: m.tipo, cantidad: Number(m.cantidad), precio: Number(m.precio), fecha: m.fecha })),
+    pos.fecha_compra, hoy);
+  if (!conc) return;
+  const { error: insErr } = await supabase.from('movimientos').insert({
+    portfolio_id: pos.portfolio_id, posicion_id: pos.id, ticker: pos.ticker,
+    tipo: conc.tipo, cantidad: conc.cantidad, precio: conc.precio, fecha: conc.fecha,
+    nota: conc.tipo === 'compra'
+      ? 'saldo previo sin historial (conciliación automática)'
+      : 'ajuste de conciliación: la posición tenía menos que su historial (conciliación automática)',
+  });
+  if (insErr) throw new Error(`No se pudo conciliar el historial de ${pos.ticker}: ${insErr.message}`);
+}
+
 export function usePosicionMutations(portfolioId: string | null | undefined) {
   const qc = useQueryClient();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['posiciones'] });
     qc.invalidateQueries({ queryKey: ['movimientos'] });
+    qc.invalidateQueries({ queryKey: ['posicion_brokers'] });
   };
   return {
     // Alta con CONSOLIDACIÓN: si el activo ya existe en el portfolio, suma la cantidad y
@@ -79,6 +112,10 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
 
       let posId: string;
       if (existing) {
+        // Antes de sumar: si la posición tenía historial incompleto (cargada antes de que existieran
+        // los movimientos), registrar su saldo previo — si no, la compra nueva quedaba como el único
+        // movimiento y un borrado posterior reconstruía la posición con solo esas unidades.
+        await asegurarHistorial(existing.id);
         // Motor puro y testeado (engine/tenencia): costo promedio ponderado.
         const t = consolidarCompra(
           { cantidad: Number(existing.cantidad) || 0, costoPromedio: Number(existing.precio_compra) || 0 },
@@ -104,6 +141,22 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
           .select('id').single();
         if (insErr) throw insErr;
         posId = created.id;
+        // Bono amortizable NUEVO: precargar sus cuotas futuras desde el catálogo (bonos_referencia,
+        // mismo cronograma que ya usa el Radar). Sin esto, la proyección de Cupones (engine/coupons.ts,
+        // que solo mira amortizaciones_programadas) calculaba el cupón sobre el 100% del nominal hasta el
+        // vencimiento y devolvía todo el capital al final — caso real: DNC7D/RC1CD/YM34D de Herencia.
+        // Best-effort: si falla, la posición igual quedó bien guardada (las cuotas se cargan a mano).
+        if (p.tipo === 'bono' && p.amortizable) {
+          const { data: ref } = await supabase.from('bonos_referencia').select('cronograma').eq('ticker', ticker).maybeSingle();
+          const hoy = new Date().toISOString().slice(0, 10);
+          const cuotas = ((ref?.cronograma ?? []) as { fecha: string; amortizacion: number }[])
+            .filter(c => c.amortizacion > 0 && c.amortizacion <= 1 && c.fecha.slice(0, 10) > hoy)
+            .map(c => ({ posicion_id: posId, fecha: c.fecha.slice(0, 10), porcentaje: c.amortizacion }));
+          if (cuotas.length) {
+            await supabase.from('amortizaciones_programadas').upsert(cuotas, { onConflict: 'posicion_id,fecha', ignoreDuplicates: true });
+            qc.invalidateQueries({ queryKey: ['amortizaciones_programadas'] });
+          }
+        }
       }
 
       if (addQty > 0) {
@@ -125,22 +178,11 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
     sell: async (pos: Posicion, sellQty: number, sellPrice: number, fecha?: string) => {
       const qty = Math.min(Number(sellQty) || 0, Number(pos.cantidad) || 0);
       if (qty <= 0) throw new Error('Cantidad de venta inválida');
-      // Si la posición no tiene historial (fue cargada antes de que existieran los movimientos),
-      // registramos su compra base con la cantidad y costo actuales, para que el P&L realizado
-      // se calcule sobre una base de costo correcta.
-      // Chequear el error: si esta query falla (red), `count` queda undefined y se insertaría una
-      // "compra base" duplicada que infla el costo y rompe el P&L realizado. Mejor abortar.
-      const { count, error: cntErr } = await supabase.from('movimientos')
-        .select('id', { count: 'exact', head: true }).eq('posicion_id', pos.id);
-      if (cntErr) throw new Error(`No se pudo verificar el historial de ${pos.ticker}: ${cntErr.message}`);
-      if (!count) {
-        const { error: baseErr } = await supabase.from('movimientos').insert({
-          portfolio_id: portfolioId, posicion_id: pos.id, ticker: pos.ticker,
-          tipo: 'compra', cantidad: pos.cantidad, precio: pos.precio_compra,
-          fecha: pos.fecha_compra ?? new Date().toISOString().slice(0, 10), nota: 'carga inicial',
-        });
-        if (baseErr) throw new Error(`No se pudo registrar la compra base: ${baseErr.message}`);
-      }
+      // Historial cuadrado antes de vender (antes solo se cubría el caso "sin ningún movimiento";
+      // una posición con historial PARCIAL — saldo viejo + una compra nueva registrada — calculaba el
+      // P&L realizado contra el costo de esa sola compra). Lanza si no puede verificar: mejor abortar
+      // que registrar una base duplicada.
+      await asegurarHistorial(pos.id);
       // Registrar la venta ANTES de descontar: si falla, abortamos y la cantidad no cambia
       // (nunca puede quedar una cantidad descontada sin su movimiento en el historial).
       const { error: ventaErr } = await supabase.from('movimientos').insert({
@@ -149,9 +191,27 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
         fecha: fecha ?? new Date().toISOString().slice(0, 10), nota: null,
       });
       if (ventaErr) throw new Error(`No se pudo registrar la venta: ${ventaErr.message}`);
-      const newQty = (Number(pos.cantidad) || 0) - qty;
+      const prevQty = Number(pos.cantidad) || 0;
+      const newQty = prevQty - qty;
       const { error } = await supabase.from('posiciones').update({ cantidad: newQty }).eq('id', pos.id);
-      if (error) throw error; invalidate();
+      if (error) throw error;
+      // La asignación por broker también baja: antes quedaba con la cantidad PREVIA a la venta (la
+      // suma por broker superaba la posición, y al reabrirla con una compra nueva reaparecía el broker
+      // viejo con la cantidad vieja). El formulario de venta no pregunta de qué broker salió, así que
+      // se reparte proporcional a cada asignación (misma regla que transferir_posicion); venta total →
+      // se borran (posicion_brokers.cantidad tiene CHECK > 0). Para corregir el reparto, Brokers.
+      const { data: pbs, error: pbErr } = await supabase.from('posicion_brokers')
+        .select('id, cantidad').eq('posicion_id', pos.id);
+      if (pbErr) { invalidate(); throw new Error(`Venta registrada, pero no se pudo actualizar la asignación por broker: ${pbErr.message}`); }
+      const ratio = prevQty > 0 ? newQty / prevQty : 0;
+      for (const pb of pbs ?? []) {
+        const restante = Number(pb.cantidad) * ratio;
+        const { error: e } = restante > 1e-9
+          ? await supabase.from('posicion_brokers').update({ cantidad: restante }).eq('id', pb.id)
+          : await supabase.from('posicion_brokers').delete().eq('id', pb.id);
+        if (e) { invalidate(); throw new Error(`Venta registrada, pero no se pudo actualizar la asignación por broker: ${e.message}`); }
+      }
+      invalidate();
     },
     update: async (id: string, patch: Partial<Posicion>) => {
       // Solo el ticker puede colisionar con otra fila (cantidad/precio/etc. no tienen ese riesgo).
@@ -170,7 +230,25 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
         if (dup) throw new Error(`Ya existe una posición de ${ticker} en este portfolio — no se puede renombrar (crearía un duplicado).`);
       }
       const { error } = await supabase.from('posiciones').update(patch).eq('id', id);
-      if (error) throw error; invalidate();
+      if (error) { invalidate(); throw error; }
+      // Renombrar el ticker: el historial y los cobros se agrupan/filtran por ticker (MovimientosModal,
+      // realizedPnl), así que quedaban huérfanos con el nombre viejo (caso real: BCO4D → COC4D).
+      if (patch.ticker) {
+        const ticker = patch.ticker.toUpperCase().trim();
+        const [r1, r2] = await Promise.all([
+          supabase.from('movimientos').update({ ticker }).eq('posicion_id', id),
+          supabase.from('cobros').update({ ticker }).eq('posicion_id', id),
+        ]);
+        const e = r1.error ?? r2.error;
+        if (e) { invalidate(); throw new Error(`Posición renombrada, pero no se pudo actualizar su historial: ${e.message}`); }
+      }
+      // Edición manual de cantidad/costo: sin movimiento, el próximo borrado de un movimiento la
+      // pisaba reconstruyendo desde el historial viejo. Se concilia después de guardar.
+      if (patch.cantidad != null || patch.precio_compra != null) {
+        try { await asegurarHistorial(id); }
+        catch (e) { invalidate(); throw new Error(`Posición guardada, pero no se pudo conciliar el historial: ${e instanceof Error ? e.message : e}`); }
+      }
+      invalidate();
     },
     // Escribe varios objetivos de una (para sincronizar el plan a 100%) e invalida una sola vez.
     setObjetivos: async (list: { id: string; peso_objetivo: number | null }[]) => {
@@ -185,6 +263,9 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
     // `movimientos` era la única tabla append-only: una venta con precio 0 (o un dedo gordo)
     // envenenaba el P&L realizado para siempre, y la única salida era borrar toda la posición.
     removeMovimiento: async (mov: Movimiento) => {
+      // Conciliar ANTES de borrar: si el historial no cuadraba con la posición (saldo previo sin
+      // movimiento, transferencia, edición manual), reconstruir desde "lo que queda" perdía unidades.
+      if (mov.posicion_id) await asegurarHistorial(mov.posicion_id);
       const { error } = await supabase.from('movimientos').delete().eq('id', mov.id);
       if (error) throw error;
       if (mov.posicion_id) {
