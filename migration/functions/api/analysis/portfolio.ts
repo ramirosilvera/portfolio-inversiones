@@ -1,4 +1,4 @@
-import { type Env, json, preflight, safe, usuarioAutenticado, usuarioAprobado, sbSelect, sbUpsert, escapeParaPrompt, callGemini } from '../_shared';
+import { type Env, json, preflight, safe, usuarioAutenticado, usuarioAprobado, escapeParaPrompt, callGemini } from '../_shared';
 
 // v4: antes le pedía al modelo caracterizar "concentración" y "diversificación sectorial" en
 // abstracto — para eso hace falta SUMAR pesos por sector o comparar el top-N contra el resto,
@@ -22,13 +22,6 @@ Formato OBLIGATORIO — bullets cortos, para decidir rápido:
 Cada bullet: 1 frase, máximo ~25 palabras, español rioplatense, sin sub-viñetas ni títulos extra. No
 des recomendación de compra/venta puntual; señalá riesgos de construcción de cartera.`;
 
-function hash(s: string): string {
-  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
-  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  return (h1 >>> 0).toString(16);
-}
-
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
 export const onRequestPost = safe(async ({ request, env }) => {
@@ -40,17 +33,15 @@ export const onRequestPost = safe(async ({ request, env }) => {
   const body = await request.json().catch(() => ({})) as { posiciones?: unknown };
   if (!body.posiciones) return json({ error: 'posiciones requeridas' }, 400);
 
-  // v4 (ver comentario en SYSTEM) — el bump cambia el hash → invalida las respuestas cacheadas con
-  // el prompt viejo, que sí le pedía calcular agregados al modelo.
   const input = JSON.stringify({ v: 4, posiciones: body.posiciones });
   if (input.length > 12_000) return json({ error: 'cartera demasiado grande para analizar' }, 413);
-  const inputHash = hash(input);
 
-  // Cache: misma cartera (mismos pesos) → misma respuesta. Igual patrón que empresa.ts.
-  const cached = await sbSelect<{ respuesta: string }>(env, 'analisis_ia',
-    `ticker=eq.PORTFOLIO&tipo=eq.portfolio&input_hash=eq.${inputHash}&order=created_at.desc&limit=1`);
-  if (cached[0]) return json({ analisis: cached[0].respuesta, cached: true });
-
+  // SIN cache en analisis_ia, a propósito: esta respuesta describe la composición de la cartera
+  // (tickers y pesos) y se guardaba con portfolio_id null — la policy ia_select deja leer las filas
+  // con portfolio_id null a CUALQUIER usuario autenticado (están para el análisis macro, que sí es
+  // compartido), así que exponía la cartera de un usuario a todos los demás. Como este análisis puede
+  // abarcar varios portfolios a la vez (vista consolidada), no hay un portfolio_id único con el que
+  // guardarlo bajo RLS; se paga la llamada a Gemini cada vez, que es mucho menos grave que la fuga.
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   // Datos delimitados como NO-instrucciones (mitiga inyección vía notas/sectores de texto libre) —
   // escapeParaPrompt() evita que un campo con "</datos>" literal cierre el fence antes de tiempo.
@@ -58,11 +49,6 @@ export const onRequestPost = safe(async ({ request, env }) => {
 
   const gemini = await callGemini(env, prompt);
   if ('error' in gemini) return json({ error: gemini.error }, gemini.status);
-
-  await sbUpsert(env, 'analisis_ia', [{
-    portfolio_id: null, ticker: 'PORTFOLIO', tipo: 'portfolio', input_hash: inputHash,
-    respuesta: gemini.text, modelo: model, created_at: new Date().toISOString(),
-  }], 'id');
 
   return json({ analisis: gemini.text, modelo: model });
 });

@@ -118,8 +118,8 @@ export function dividendCalendar(
   return buckets;
 }
 
-// Dividendo anual ESTIMADO (suma de 12 meses de calendario) — mismo criterio que cuponAnualTotal,
-// para el Stat "Dividendos anual (estimado)".
+// Dividendo anual ESTIMADO (suma de 12 meses de calendario) — mismo criterio que el "Cupón anual"
+// de CuponesPage (suma del couponCalendar), para el Stat "Dividendos anual (estimado)".
 export function dividendoAnualEstimado(
   posiciones: DividendPosicion[], infoPorTicker: Record<string, DividendoInfo | null | undefined>,
   fromYear: number, fromMonth: number,

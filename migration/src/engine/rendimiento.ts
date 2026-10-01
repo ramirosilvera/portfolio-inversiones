@@ -71,11 +71,17 @@ export function rendimientoPorAnio(puntos: Punto[], inceptionYear: number, hoy: 
 
     if (vIni == null || aIni == null || !fin) { out.push({ anio: y, rendimiento: null, aportadoNeto: null, pnl: null }); continue; }
 
-    // Con flujos fechados dentro del año usamos Modified Dietz (ponderado por tiempo).
-    const delAnio = flujos.filter(f => f.fecha >= yStart && f.fecha <= fin.fecha && !Number.isNaN(Date.parse(f.fecha)));
+    // Con flujos fechados dentro del período usamos Modified Dietz (ponderado por tiempo). El período
+    // arranca donde arranca vIni: el snapshot de apertura (`prior`, que puede ser de octubre si no se
+    // abrió la app a fin de año), no el 1-ene — antes se filtraba desde el 1-ene, y un aporte entre
+    // ese snapshot y el 31-dic no entraba en NINGÚN año (el año previo corta en `prior.fecha`), así
+    // que el valor que aportó se contaba como ganancia del año siguiente. Exclusivo de `prior.fecha`:
+    // un flujo de ese mismo día ya quedó del lado del año previo (su `fin` lo incluye, `<= fin.fecha`).
+    const enPeriodo = (f: Flujo) => y === inceptionYear ? f.fecha >= yStart : f.fecha > prior!.fecha;
+    const delAnio = flujos.filter(f => enPeriodo(f) && f.fecha <= fin.fecha && !Number.isNaN(Date.parse(f.fecha)));
     if (delAnio.length) {
-      // El período arranca en el 1-ene, salvo el año de creación (ahí, en el primer flujo real).
-      const desde = y === inceptionYear ? delAnio.map(f => f.fecha).sort()[0] : yStart;
+      // Año de creación: desde el primer flujo real. Si no, desde el snapshot de apertura.
+      const desde = y === inceptionYear ? delAnio.map(f => f.fecha).sort()[0] : prior!.fecha;
       const { rendimiento: r, sumF } = dietz(vIni, fin.valor, delAnio.filter(f => f.fecha >= desde), desde, fin.fecha);
       // aportadoNeto/pnl acá SALEN DE `sumF` (los flujos fechados que ya usó Dietz para el %), NO del
       // delta `fin.aportado - aIni` entre snapshots. Son dos fuentes de datos distintas: los flujos

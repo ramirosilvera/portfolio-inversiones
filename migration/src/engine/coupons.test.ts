@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
+import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
 import { xirr } from './irr';
 
 const semestral: CouponBond = { ticker: 'GD46', faceValue: 1000, tasaAnual: 0.08, frecuencia: 2, mesRef: 1 };
@@ -162,12 +162,6 @@ describe('couponCalendar', () => {
     expect(cal[0].total).toBe(40);              // enero
     expect(cal[6].total).toBe(40);              // julio
     expect(cal[1].total).toBe(0);               // febrero sin pago
-  });
-});
-
-describe('cuponAnualTotal', () => {
-  it('suma el cupón anual de todos los bonos', () => {
-    expect(cuponAnualTotal([semestral])).toBe(80); // 1000 × 0.08
   });
 });
 

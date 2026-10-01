@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { esHardDollar, mergeFallback } from './bonos';
+import { esHardDollar, mergeFallback, precioUsdPlausible } from './bonos';
 
 describe('esHardDollar', () => {
   it('sufijo D o C → hard dollar (MEP/CCL)', () => {
@@ -45,5 +45,24 @@ describe('mergeFallback', () => {
   it('sin cacheados: devuelve el mapa vivo tal cual', () => {
     const map = { AL30D: 0.65 };
     expect(mergeFallback(map, [])).toEqual(map);
+  });
+});
+
+describe('precioUsdPlausible — tope de cordura para especies en USD', () => {
+  it('rango normal de un bono/ON (default a sobre la par) pasa', () => {
+    expect(precioUsdPlausible(0.646)).toBe(true);
+    expect(precioUsdPlausible(1.085)).toBe(true);
+    expect(precioUsdPlausible(0.05)).toBe(true);
+  });
+  it('casos reales mal clasificados por el sufijo D: se descartan', () => {
+    expect(precioUsdPlausible(1038.3)).toBe(false);   // BA37D (especie en pesos)
+    expect(precioUsdPlausible(0.00062)).toBe(false);  // TXS8D (BONTE CER en pesos)
+    expect(precioUsdPlausible(NaN)).toBe(false);
+  });
+  it('mergeFallback no reintroduce desde la cache un precio USD absurdo (pero sí los de especies en pesos)', () => {
+    const out = mergeFallback({}, [
+      { ticker: 'BA37D', precio: 1038.3 }, { ticker: 'YM43D', precio: 1.0045 }, { ticker: 'TX26', precio: 0.0009 },
+    ]);
+    expect(out).toEqual({ YM43D: 1.0045, TX26: 0.0009 });
   });
 });

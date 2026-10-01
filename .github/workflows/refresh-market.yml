@@ -27,7 +27,16 @@ jobs:
           echo "Respuesta: $RESP" | head -c 500
           case "$RESP" in
             '{'*'"ok"'*)
-              echo ""; echo "✓ refresh-all OK" ;;
+              # El endpoint devuelve {ok, total, pendientes}: antes cualquier JSON con "ok" daba verde,
+              # aunque fallaran fetches (ej. ok:21,total:22) — quedaba invisible qué se dejó de refrescar.
+              OK=$(echo "$RESP" | sed -n 's/.*"ok":\([0-9]*\).*/\1/p')
+              TOTAL=$(echo "$RESP" | sed -n 's/.*"total":\([0-9]*\).*/\1/p')
+              echo ""
+              if [ -n "$OK" ] && [ -n "$TOTAL" ] && [ "$OK" -lt "$TOTAL" ]; then
+                echo "::warning::refresh-all parcial: $OK de $TOTAL fetches OK — alguna fuente falló (se reintenta en el próximo tick)"
+              else
+                echo "✓ refresh-all OK ($OK/$TOTAL)"
+              fi ;;
             *'<!DOCTYPE'* | *'<html'*)
               echo "::error::APP_URL apunta a un deploy sin la Function (devolvió el HTML de la app). Usá el alias de producción https://portfolio-inversiones.pages.dev (sin hash) y verificá que el último deploy esté en producción."; exit 1 ;;
             *)

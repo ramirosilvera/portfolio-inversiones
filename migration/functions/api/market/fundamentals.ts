@@ -26,13 +26,18 @@ const CIK_CACHE_TTL = 90 * 24 * 60 * 60 * 1000; // 90 días
 // Si resuelve por 1 o 3, lo persiste en edgar_ticker_cik para que el próximo ticker (de cualquier
 // corrida futura) no vuelva a pagar el costo. Devuelve null si ninguna fuente lo tiene — ahí sí cae
 // al flujo manual de siempre (Configuración).
-async function resolverCikAutomatico(env: Env, ticker: string, uid: string | null): Promise<string | null> {
+// `verificado`: si el CIK salió de una fuente que el SERVIDOR puede confiar (cache global ya
+// resuelta, o FMP) — solo esos habilitan escribir en fundamentals_cache, que es COMPARTIDA entre
+// usuarios. El de cik_map lo tipeó un usuario: sirve para mostrarle SUS datos, pero si se cacheaba,
+// un CIK mal cargado (error de tipeo, o a propósito) envenenaba el DCF de ese ticker para todos,
+// 12h como fresco y hasta 120 días como fallback.
+async function resolverCikAutomatico(env: Env, ticker: string, uid: string | null): Promise<{ cik: string; verificado: boolean } | null> {
   const cacheado = await cacheFresh<{ cik: string }>(env, 'edgar_ticker_cik', 'ticker', ticker, CIK_CACHE_TTL);
-  if (cacheado?.cik) return cacheado.cik;
+  if (cacheado?.cik) return { cik: cacheado.cik, verificado: true };
 
   if (uid) {
     const propio = await sbSelect<{ cik: string }>(env, 'cik_map', `user_id=eq.${uid}&ticker=eq.${encodeURIComponent(ticker)}&select=cik&limit=1`);
-    if (propio[0]?.cik && CIK_RE.test(propio[0].cik)) return propio[0].cik;
+    if (propio[0]?.cik && CIK_RE.test(propio[0].cik)) return { cik: propio[0].cik, verificado: false };
   }
 
   if (env.FMP_API_KEY) {
@@ -41,7 +46,7 @@ async function resolverCikAutomatico(env: Env, ticker: string, uid: string | nul
       const cik = extraerCikDeFmpProfile(profile);
       if (cik) {
         await sbUpsert(env, 'edgar_ticker_cik', [{ ticker, cik, fuente: 'fmp', updated_at: new Date().toISOString() }], 'ticker');
-        return cik;
+        return { cik, verificado: true };
       }
     } catch { /* FMP caído o sin cobertura de este ticker — cae al flujo manual */ }
   }
@@ -99,12 +104,12 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   // query para esto) para que nadie pueda envenenar fundamentals_cache[ticker] con el CIK de otra
   // empresa — ver resolverCikAutomatico arriba para las 3 fuentes que prueba antes de rendirse.
   const uid = await usuarioId(env, request);
-  const cikOficial = DEFAULT_CIK[ticker] || (await resolverCikAutomatico(env, ticker, uid)) || '';
-  const cik = cikOficial || url.searchParams.get('cik') || '';
-  // Solo se persiste en el cache COMPARTIDO si el CIK es el oficial (verificado server-side): con un
-  // ?cik= arbitrario sin verificar, cualquiera podía envenenar fundamentals_cache[ticker] con los
-  // datos de otra empresa.
-  const cacheable = !!cikOficial;
+  const resuelto = DEFAULT_CIK[ticker] ? { cik: DEFAULT_CIK[ticker], verificado: true } : await resolverCikAutomatico(env, ticker, uid);
+  const cik = resuelto?.cik || url.searchParams.get('cik') || '';
+  // Solo se persiste en el cache COMPARTIDO si el CIK lo verificó el SERVIDOR (DEFAULT_CIK,
+  // edgar_ticker_cik o FMP): con un ?cik= arbitrario, o con el cik_map de un usuario, cualquiera
+  // podía envenenar fundamentals_cache[ticker] con los datos de otra empresa.
+  const cacheable = !!resuelto?.verificado;
 
   if (!cik) return json({ error: `No pudimos identificar el CIK de ${ticker} automáticamente — cargalo a mano en Configuración.` }, 400);
   if (!CIK_RE.test(cik)) return json({ error: 'cik-invalido', detail: 'El CIK debe ser 10 dígitos.' }, 400);

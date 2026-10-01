@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { consolidarCompra, reconstruirTenencia, type MovimientoLike } from './tenencia';
+import { consolidarCompra, reconstruirTenencia, movimientoConciliacion, type MovimientoLike } from './tenencia';
 
 const compra = (cantidad: number, precio: number): MovimientoLike => ({ tipo: 'compra', cantidad, precio });
 const venta = (cantidad: number, precio: number): MovimientoLike => ({ tipo: 'venta', cantidad, precio });
@@ -76,5 +76,40 @@ describe('reconstruirTenencia — desde el historial', () => {
 
   it('un ajuste no deja cantidad negativa', () => {
     expect(reconstruirTenencia([compra(5, 100), ajuste(-50)]).cantidad).toBe(0);
+  });
+});
+
+describe('movimientoConciliacion — historial que no cuadra con la posición', () => {
+  const m = (tipo: MovimientoLike['tipo'], cantidad: number, precio: number, fecha: string): MovimientoLike => ({ tipo, cantidad, precio, fecha });
+
+  it('si ya cuadra, no agrega nada', () => {
+    expect(movimientoConciliacion({ cantidad: 10, costoPromedio: 5 }, [m('compra', 10, 5, '2026-01-01')], '2026-01-01', '2026-10-01')).toBeNull();
+  });
+
+  it('posición sin historial: compra base con la cantidad y el costo actuales', () => {
+    const base = movimientoConciliacion({ cantidad: 100, costoPromedio: 10 }, [], '2025-05-01', '2026-10-01')!;
+    expect(base).toMatchObject({ tipo: 'compra', cantidad: 100, fecha: '2025-05-01' });
+    expect(base.precio).toBeCloseTo(10, 9);
+  });
+
+  it('historial corto (100 viejas + compra registrada de 10): la base reconstruye cantidad Y costo actuales', () => {
+    // 100 a 10 + 10 a 20 → posición 110 a ~10,909; el historial solo tiene la compra de 10.
+    const movs = [m('compra', 10, 20, '2026-08-14')];
+    const actual = { cantidad: 110, costoPromedio: (100 * 10 + 10 * 20) / 110 };
+    const base = movimientoConciliacion(actual, movs, '2026-08-14', '2026-10-01')!;
+    expect(base.tipo).toBe('compra');
+    expect(base.cantidad).toBeCloseTo(100, 9);
+    expect(base.fecha! < '2026-08-14').toBe(true);   // estrictamente antes del primer movimiento
+    const t = reconstruirTenencia([base, ...movs]);
+    expect(t.cantidad).toBeCloseTo(110, 9);
+    expect(t.costoPromedio).toBeCloseTo(actual.costoPromedio, 9);
+    expect(base.precio).toBeCloseTo(10, 9);
+  });
+
+  it('historial largo (transferencia sin movimiento en el origen): ajuste negativo hoy, sin tocar el costo', () => {
+    const movs = [m('compra', 2000, 1, '2026-08-10')];
+    const aj = movimientoConciliacion({ cantidad: 0, costoPromedio: 1 }, movs, '2026-08-10', '2026-10-01')!;
+    expect(aj).toMatchObject({ tipo: 'ajuste', cantidad: -2000, fecha: '2026-10-01' });
+    expect(reconstruirTenencia([...movs, aj]).cantidad).toBe(0);
   });
 });

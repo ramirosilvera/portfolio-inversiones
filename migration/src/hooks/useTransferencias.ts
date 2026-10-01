@@ -31,18 +31,25 @@ export function useTransferencias() {
 }
 
 // Todo el movimiento (restar en origen + crear en destino + loguear) pasa por una única función
-// atómica en la base — ver 0024_transferencias.sql. No es una venta (no toca movimientos/pnl) ni
-// capital externo (no toca aportes/TIR): es una reclasificación contable entre portfolios propios.
+// atómica en la base — ver 0024/0048/0049. No es una venta: no realiza P&L (en el origen queda un
+// movimiento 'ajuste', en el destino una 'compra' al costo original), pero SÍ registra un flujo en
+// aportes (retiro/inicial) para que el rendimiento por año no la cuente como ganancia/pérdida de
+// mercado. `valorMercado` (cantidad × cotización de hoy) hace que ese flujo sea a mercado; sin
+// cotización, la función cae al costo.
 export function useTransferirPosicion() {
   const qc = useQueryClient();
-  return async (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string): Promise<void> => {
+  return async (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string, valorMercado?: number | null): Promise<void> => {
     const { error } = await supabase.rpc('transferir_posicion', {
       p_posicion_id: posicionId, p_portfolio_destino: portfolioDestino, p_cantidad: cantidad, p_nota: nota || null,
+      p_valor_mercado: valorMercado != null && valorMercado > 0 ? valorMercado : null,
     });
     if (error) throw error;
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['posiciones'] }),
       qc.invalidateQueries({ queryKey: ['transferencias'] }),
+      qc.invalidateQueries({ queryKey: ['movimientos'] }),
+      qc.invalidateQueries({ queryKey: ['aportes'] }),
+      qc.invalidateQueries({ queryKey: ['posicion_brokers'] }),
     ]);
   };
 }

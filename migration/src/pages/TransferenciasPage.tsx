@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { ArrowRightLeft } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones } from '../hooks/usePosiciones';
+import { usePosiciones, useQuotes } from '../hooks/usePosiciones';
+import { unitValueUSD } from '../lib/valuation';
 import { useTransferencias, useTransferirPosicion } from '../hooks/useTransferencias';
 import { Card, CardHeader, Button, Field, inputCls, Empty, fmtNum } from '../components/ui';
 import type { Posicion } from '../types/domain';
@@ -18,7 +19,19 @@ export function TransferenciasPage() {
   const abiertas = useMemo(() => posiciones.filter(p => p.cantidad > 0), [posiciones]);
   const destinos = useMemo(() => portfolios.filter(p => p.id !== active?.id), [portfolios, active]);
   const { data: transferencias = [], isLoading: histLoading } = useTransferencias();
-  const transferir = useTransferirPosicion();
+  const transferirRpc = useTransferirPosicion();
+  // Cotización de hoy de lo que se puede transferir: el flujo en aportes que registra la transferencia
+  // tiene que ser a VALOR DE MERCADO (es lo que se mueve el patrimonio de cada portfolio), no a costo —
+  // ver 0049. Sin cotización (ej. un bono sin precio), la función cae al costo.
+  const { data: quotes = {} } = useQuotes(
+    abiertas.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker),
+    abiertas.filter(p => p.tipo === 'bono').map(p => p.ticker),
+    abiertas.filter(p => p.tipo === 'accion_ar').map(p => p.ticker));
+  const transferir = (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string) => {
+    const pos = abiertas.find(p => p.id === posicionId);
+    const unit = pos ? unitValueUSD(pos, quotes[pos.ticker] ?? null) : null;
+    return transferirRpc(posicionId, portfolioDestino, cantidad, nota, unit != null ? unit * cantidad : null);
+  };
   const pfName = useMemo(() => new Map(portfolios.map(p => [p.id, p.nombre])), [portfolios]);
 
   if (!active) return null;

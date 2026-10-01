@@ -29,13 +29,24 @@ export function esHardDollar(ticker: string): boolean {
   return ticker.length >= 3 && (ticker.endsWith('D') || ticker.endsWith('C'));
 }
 
+// Rango plausible de precio por nominal (fracción) para una especie en USD: ver el loop del handler.
+export function precioUsdPlausible(p: number): boolean {
+  return Number.isFinite(p) && p >= 0.02 && p <= 3;
+}
+
 // Completa el mapa de precios VIVOS con el último precio cacheado para los tickers que data912 no
 // devolvió en este request (proveedor caído, o simplemente no lista esa especie puntual) — nunca pisa
 // un precio que sí vino vivo. Extraída como función pura (separada del handler HTTP) para poder
 // testearla sin mockear fetch/Supabase, mismo criterio que parseTwelveData/parseEodhd en _dividendos.ts.
 export function mergeFallback(map: Record<string, number>, cacheados: { ticker: string; precio: number }[]): Record<string, number> {
   const out = { ...map };
-  for (const c of cacheados) if (!(c.ticker in out)) out[c.ticker] = c.precio;
+  for (const c of cacheados) {
+    if (c.ticker in out) continue;
+    // Mismo tope de cordura que el precio vivo: la cache puede tener valores absurdos grabados antes
+    // de que existiera el filtro (solo especies en USD; las en pesos convertidas dan valores chicos legítimos).
+    if (esHardDollar(c.ticker) && !precioUsdPlausible(Number(c.precio))) continue;
+    out[c.ticker] = c.precio;
+  }
   return out;
 }
 
@@ -49,7 +60,7 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
 
   if (one) {
     const cached = await cacheFresh<{ precio: number }>(env, 'precios_cache', 'ticker', one, TTL);
-    if (cached) return json({ ticker: one, precio: cached.precio });
+    if (cached && (!esHardDollar(one) || precioUsdPlausible(Number(cached.precio)))) return json({ ticker: one, precio: cached.precio });
   }
 
   // MEP para pasar a USD las especies en pesos (mismo criterio que acciones-ar.ts).
@@ -67,7 +78,15 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
       for (const it of arr ?? []) {
         const s = symbolOf(it), p = rawPrice(it);
         if (!s || p == null) continue;
-        if (esHardDollar(s)) { map[s] = p; continue; }      // ya está en USD
+        if (esHardDollar(s)) {                              // ya está en USD
+          // Tope de cordura: un bono/ON en USD cotiza (por nominal) entre centavos de default y poco más
+          // del 100% — casos reales fuera de rango por el sufijo D: especies en PESOS cuyo nombre
+          // termina en D (PBA BA37D/BB37D/BC37D ≈ 1000+ "USD" por nominal, 1000× de más) y un BONTE CER
+          // (TXS8D 0,00062, 1000× de menos). Mejor sin precio ("—") que un valor que multiplica o
+          // divide por mil la posición/TIR/paridad y contamina la cache compartida.
+          if (precioUsdPlausible(p)) map[s] = p;
+          continue;
+        }
         if (mep && mep > 0) map[s] = +(p / mep).toFixed(6);  // especie en pesos → USD
         // sin MEP: no publicamos la especie en pesos (mejor "—" que un valor 1000× inflado)
       }
@@ -79,7 +98,9 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
 
   // Fuente caída: último precio conocido por ticker (evita que el front valúe a costo en silencio).
   if (one) {
-    const px = map[one] ?? (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', one))?.precio ?? null;
+    const ultimo = (await cacheLast<{ precio: number }>(env, 'precios_cache', 'ticker', one))?.precio ?? null;
+    const ultimoOk = ultimo != null && (!esHardDollar(one) || precioUsdPlausible(Number(ultimo))) ? ultimo : null;
+    const px = map[one] ?? ultimoOk;
     return json({ ticker: one, precio: px });
   }
 
@@ -88,8 +109,15 @@ export const onRequestGet = guardAuth(async ({ request, env }) => {
   // request puntual — sin esto, esos tickers quedaban directamente ausentes del mapa (Radar/BonosPage
   // los mostraba con Precio/Paridad/TIR/Duración en "—" aunque hubiera un precio de ayer perfectamente
   // usable). Un solo SELECT para todo el cache (no uno por ticker).
-  const cacheados = await sbSelect<{ ticker: string; precio: number }>(
-    env, 'precios_cache', `updated_at=gte.${encodeURIComponent(new Date(Date.now() - MAX_STALE_MS).toISOString())}&select=ticker,precio`,
-  );
+  // Paginado: PostgREST corta en 1000 filas por request (sin orden estable) y la tabla ya pasa ese
+  // número — sin paginar, el fallback perdía bonos al azar en silencio.
+  const desde = encodeURIComponent(new Date(Date.now() - MAX_STALE_MS).toISOString());
+  const cacheados: { ticker: string; precio: number }[] = [];
+  for (let offset = 0; offset < 20_000; offset += 1000) {
+    const page = await sbSelect<{ ticker: string; precio: number }>(
+      env, 'precios_cache', `updated_at=gte.${desde}&select=ticker,precio&order=ticker.asc&limit=1000&offset=${offset}`);
+    cacheados.push(...page);
+    if (page.length < 1000) break;
+  }
   return json(mergeFallback(map, cacheados));
 });

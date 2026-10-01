@@ -119,6 +119,18 @@ describe('rendimientoPorAnio — Modified Dietz (flujos ponderados por tiempo)',
     expect(conF).toBeCloseTo(0.10, 6);   // el flujo es de otro año → no afecta 2026
   });
 
+  it('aporte entre el último snapshot del año previo y el 31-dic NO se cuenta como ganancia del año siguiente', () => {
+    // Snapshot de apertura 15-oct (no se abrió la app a fin de año), aporte de 500 en noviembre, aporte
+    // de 100 en febrero, hoy vale 1700 → ganancia real 100 sobre ~1600 trabajando (~6%), no 600.
+    const pts = [p('2025-01-10', 1000, 1000), p('2025-10-15', 1000, 1000), p('2026-10-01', 1700, 1600)];
+    const flujos = [{ fecha: '2025-01-10', monto: 1000 }, { fecha: '2025-11-01', monto: 500 }, { fecha: '2026-02-01', monto: 100 }];
+    const r2026 = rendimientoPorAnio(pts, 2025, '2026-10-01', flujos)[1];
+    expect(r2026.pnl).toBeCloseTo(100, 6);
+    expect(r2026.aportadoNeto).toBeCloseTo(600, 6);
+    expect(r2026.rendimiento!).toBeGreaterThan(0.05);
+    expect(r2026.rendimiento!).toBeLessThan(0.08);
+  });
+
   it('retiro ponderado: rendimiento positivo y razonable', () => {
     const pts = [p('2025-12-31', 1000, 1000), p('2026-12-31', 560, 500)];
     const r = rendimientoPorAnio(pts, 2025, '2026-12-31', [{ fecha: '2026-06-30', monto: -500 }])[1].rendimiento!;

@@ -31,15 +31,22 @@ describe('parseBackup — avisos por versión (cada tabla nueva debe avisar en l
     expect(r.avisos.some(a => a.includes('Destacados de renta fija'))).toBe(true);
   });
 
-  it('backup v9 (versión actual): sin avisos de tablas faltantes', () => {
+  it('backup v9: avisa que falta ordenes_ejecutadas (v10)', () => {
     const r = parseBackup(backup(9));
-    expect(r.avisos.some(a => a.includes('amortización manual'))).toBe(false);
-    expect(r.avisos.some(a => a.includes('Dashboard personalizable'))).toBe(false);
-    expect(r.avisos.some(a => a.includes('Destacados de renta fija'))).toBe(false);
+    expect(r.avisos.some(a => a.includes('ordenes_ejecutadas'))).toBe(true);
+    expect(r.avisos.some(a => a.includes('bonos_destacados'))).toBe(false);
+  });
+
+  it('backup v10 (versión actual): sin avisos de tablas faltantes', () => {
+    const r = parseBackup(backup(10));
+    expect(r.avisos.some(a => a.includes('ordenes_ejecutadas'))).toBe(false);
+    expect(r.avisos.some(a => a.includes('bonos_destacados'))).toBe(false);
+    expect(r.avisos.some(a => a.includes('dashboard_layout'))).toBe(false);
+    expect(r.avisos.some(a => a.includes('más nueva'))).toBe(false);
   });
 
   it('backup de una versión futura no soportada: avisa en vez de fallar en silencio', () => {
-    const r = parseBackup(backup(10));
+    const r = parseBackup(backup(11));
     expect(r.avisos.some(a => a.includes('más nueva'))).toBe(true);
   });
 

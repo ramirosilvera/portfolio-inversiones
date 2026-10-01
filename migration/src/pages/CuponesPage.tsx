@@ -8,7 +8,7 @@ import { useCobros, COBRO_TIPO_LABEL } from '../hooks/useCobros';
 import { useCobrosInversiones } from '../hooks/useCobrosInversiones';
 import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { useChartTheme } from '../hooks/usePrefs';
-import { couponCalendar, capitalCalendar, agruparCuotasPorPosicion, cuponAnualTotal, type CouponBond, type CapitalBond } from '../engine/coupons';
+import { couponCalendar, capitalCalendar, agruparCuotasPorPosicion, type CouponBond, type CapitalBond } from '../engine/coupons';
 import { dividendCalendar, dividendoAnualEstimado, type DividendPosicion } from '../engine/dividendProjection';
 import { resumenCobros, saldoInvertible } from '../engine/cobros';
 import { Card, CardHeader, Button, Badge, Field, Stat, Empty, ViewToggle, inputCls, fmtUsd, fmtPct } from '../components/ui';
@@ -488,7 +488,10 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
   const capCal = useMemo(() => capitalCalendar(capitalBonds, now.getFullYear(), now.getMonth() + 1, 12),
     [capitalBonds, now.getFullYear(), now.getMonth()]);
 
-  const anual = cuponAnualTotal(bonds);
+  // Cupón de los próximos 12 meses = lo que efectivamente proyecta el calendario (respeta vencimiento,
+  // valor residual y cuotas cargadas). Antes era faceValue × tasa "año completo": inflaba el cupón
+  // de un bono amortizado (lo calculaba sobre el 100%) y seguía sumando bonos ya vencidos.
+  const anual = useMemo(() => +cal.reduce((s, m) => s + m.total, 0).toFixed(2), [cal]);
   const divAnual = useMemo(() => dividendoAnualEstimado(divPosiciones, divInfo, now.getFullYear(), now.getMonth() + 1),
     [divPosiciones, divInfo, now.getFullYear(), now.getMonth()]);
   const capitalBonos = useMemo(() =>
@@ -502,10 +505,7 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
   // Mismo eje de meses para las 3 series (los 3 calendarios arrancan en el mismo fromYear/fromMonth
   // con 12 meses) — se combinan índice a índice para el chart apilado y la tabla de detalle.
   const chartData = cal.map((m, i) => ({ mes: MESES[m.month - 1], Cupones: m.total, Dividendos: divCal[i]?.total ?? 0, Capital: capCal[i]?.total ?? 0 }));
-  // Ojo: NO usar `anual + divAnual > 0` acá — cuponAnualTotal() es una aproximación "año completo"
-  // que ignora vencimiento/mesRef, así que puede dar >0 aunque la ventana real de 12 meses (chartData,
-  // construida con couponCalendar) esté vacía (ej. bono vence antes de su próximo mesRef). Se chequea
-  // directo sobre lo que el chart de Renta va a graficar.
+  // Se chequea directo sobre lo que el chart de Renta va a graficar.
   const hayRenta = chartData.some(d => d.Cupones + d.Dividendos > 0);
 
   const totalBonos = posiciones.filter(p => p.tipo === 'bono').length;

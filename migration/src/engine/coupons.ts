@@ -202,11 +202,6 @@ export function capitalCalendar(
   return buckets;
 }
 
-// Cupón anual total (suma de todos los pagos de un año completo) — para el yield del flujo.
-export function cuponAnualTotal(bonds: CouponBond[]): number {
-  return +bonds.reduce((s, b) => s + (b.tasaAnual > 0 && b.faceValue > 0 ? b.faceValue * b.tasaAnual : 0), 0).toFixed(2);
-}
-
 // Rendimiento corriente (current yield) = cupón anual / precio hoy. A diferencia de la YTM, ignora
 // la ganancia/pérdida de capital hasta el rescate (pull-to-par) — mide solo el ingreso por cupón
 // sobre lo que cuesta HOY. Complementa la YTM: un bono puede tener alto rendimiento corriente y baja
