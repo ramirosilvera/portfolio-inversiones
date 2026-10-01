@@ -21,7 +21,11 @@ export async function restoreBackup(backup: BackupFile, userId: string): Promise
     const rows = Array.isArray(backup.tables?.[table]) ? backup.tables![table] : [];
     if (!rows.length) { restaurados[table] = 0; continue; }
     // user_id → usuario actual (RLS lo exige y hace que un backup de otra cuenta entre en la tuya).
-    const prepared = userScoped ? rows.map(r => ({ ...r, user_id: userId })) : rows;
+    let prepared: Record<string, unknown>[] = userScoped ? rows.map(r => ({ ...r, user_id: userId })) : rows;
+    // movimientos.liquidez_mov_id apunta a OTRO movimiento (el de LIQUIDEZ, que nunca tiene link
+    // propio — migración 0050): subir primero los que no tienen link, para que la FK no falle cuando
+    // el referenciado cae en un chunk posterior.
+    if (table === 'movimientos') prepared = [...prepared].sort((a, b) => Number(!!a.liquidez_mov_id) - Number(!!b.liquidez_mov_id));
     let done = 0; let tableErr: string | null = null;
     for (let i = 0; i < prepared.length; i += 400) {
       const chunk = prepared.slice(i, i + 400);
