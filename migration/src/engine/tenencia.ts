@@ -6,7 +6,7 @@
 // =============================================================================
 
 export interface MovimientoLike {
-  tipo: 'compra' | 'venta' | 'ajuste';
+  tipo: 'compra' | 'venta' | 'ajuste' | 'amortizacion_vr';
   cantidad: number;
   precio: number;
   fecha?: string;
@@ -25,6 +25,9 @@ export function consolidarCompra(actual: Tenencia, addQty: number, addPrice: num
 
 // Reconstruye cantidad y costo promedio desde CERO recorriendo los movimientos en orden. Se usa al
 // borrar un movimiento mal cargado: la posición se recalcula desde lo que queda.
+// Factor de una 'amortizacion_vr': (0,1]. Cualquier otro valor (dato corrupto) no toca el costo.
+export const factorValido = (f: number): number => (f > 0 && f <= 1 ? f : 1);
+
 export function reconstruirTenencia(movs: MovimientoLike[]): Tenencia {
   let t: Tenencia = { cantidad: 0, costoPromedio: 0 };
   for (const m of movs) {
@@ -36,6 +39,10 @@ export function reconstruirTenencia(movs: MovimientoLike[]): Tenencia {
     // por ejemplo en una amortización): un movimiento borrado y reconstruido daba OTRO costo base
     // que el que tenía antes de borrarlo.
     if (m.tipo === 'ajuste') { t = { cantidad: Math.max(0, t.cantidad + q), costoPromedio: t.costoPromedio }; continue; }
+    // 'amortizacion_vr' (bono que amortiza bajando el valor residual, no el nominal): devolvió una
+    // fracción del capital → el costo base baja en esa proporción. `precio` = factor nuevoVR/viejoVR,
+    // `cantidad` = 0 (los nominales no cambian). Ver migración 0050.
+    if (m.tipo === 'amortizacion_vr') { t = { cantidad: t.cantidad, costoPromedio: t.costoPromedio * factorValido(px) }; continue; }
     t = consolidarCompra(t, q, px);
   }
   return t;

@@ -79,7 +79,11 @@ export const api = {
   historico: (ticker: string) =>
     get<{ ticker: string; puntos: PuntoPrecio[]; parcial?: boolean; cached?: boolean; stale?: boolean }>(
       `/api/market/historico?ticker=${encodeURIComponent(ticker)}`),
-  status: () => get<{ precios: string | null; macro: string | null; fundamentals: string | null; last: string | null }>('/api/market/status'),
+  // `tickers` (opcional): los tenidos — devuelve además la frescura de ESOS precios (`cartera`).
+  status: (tickers: string[] = []) => get<{
+    precios: string | null; macro: string | null; fundamentals: string | null; last: string | null;
+    cartera: { masViejo: string | null; viejos: string[] } | null;
+  }>(`/api/market/status${tickers.length ? `?tickers=${tickers.map(encodeURIComponent).join(',')}` : ''}`),
   bonos: () => get<Record<string, number>>('/api/market/bonos'),
   dividendos: (tickers: string[]) =>
     get<Record<string, DividendoInfo | null>>(`/api/market/dividendos?tickers=${tickers.map(encodeURIComponent).join(',')}`),

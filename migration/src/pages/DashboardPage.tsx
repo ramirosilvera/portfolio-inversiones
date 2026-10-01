@@ -54,6 +54,8 @@ export function DashboardPage() {
     patrimonio, costo, pnl, alloc,
     hoy, anioActual, aportadoNeto, porAnio, hayDatos,
   } = useRendimientoAnual(active?.id);
+  // Tickers tenidos (sin efectivo) — para el aviso de precios viejos de <UpdatedAt>.
+  const tickersTenidos = useMemo(() => posiciones.filter(p => p.cantidad > 0 && p.tipo !== 'cash').map(p => p.ticker), [posiciones]);
   const { data: macro = {} } = useMacro();
   const { data: flujo = [] } = useFlujo();
   const { data: cobros = [] } = useCobros(active?.id);
@@ -169,7 +171,7 @@ export function DashboardPage() {
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-bold text-ink-900 font-display">Dashboard · {active.nombre}</h1>
-        <UpdatedAt icon />
+        <UpdatedAt icon tickers={tickersTenidos} />
       </div>
 
       {sinPrecio.length > 0 && (

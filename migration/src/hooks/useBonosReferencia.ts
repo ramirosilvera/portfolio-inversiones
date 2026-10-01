@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import type { BonoReferencia } from '../engine/rentaFija';
+import { pagaEnPesos, type BonoReferencia } from '../engine/rentaFija';
 
 // Catálogo global de renta fija (bonos_referencia, ver migración 0034) — lectura directa a
 // Supabase, mismo criterio que useCedearRatios: es una base compartida, no aislada por portfolio.
@@ -21,7 +21,8 @@ export function useBonosReferencia() {
     queryFn: async (): Promise<BonoReferencia[]> => {
       const { data, error } = await supabase.from('bonos_referencia').select('*').order('ticker');
       if (error) throw error;
-      return (data ?? []) as BonoReferencia[];
+      // Defensa en profundidad: el catálogo es solo hard-dollar (ver BonoReferencia.moneda).
+      return ((data ?? []) as BonoReferencia[]).filter(b => !pagaEnPesos(b.nombre));
     },
   });
   return {

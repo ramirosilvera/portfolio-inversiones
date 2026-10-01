@@ -112,4 +112,24 @@ describe('movimientoConciliacion — historial que no cuadra con la posición', 
     expect(aj).toMatchObject({ tipo: 'ajuste', cantidad: -2000, fecha: '2026-10-01' });
     expect(reconstruirTenencia([...movs, aj]).cantidad).toBe(0);
   });
+
+  it("amortizacion_vr: baja el costo base en la proporción del capital devuelto, sin tocar nominales", () => {
+    // 1000 VN a 0,90; amortiza 25% (VR 1 → 0,75): costo base 0,90 × 0,75 = 0,675 por nominal original.
+    const t = reconstruirTenencia([m('compra', 1000, 0.9, '2026-01-01'), m('amortizacion_vr', 0, 0.75, '2026-06-01')]);
+    expect(t.cantidad).toBe(1000);
+    expect(t.costoPromedio).toBeCloseTo(0.675, 12);
+    // Factor corrupto (0, >1): no toca el costo.
+    expect(reconstruirTenencia([m('compra', 10, 1, '2026-01-01'), m('amortizacion_vr', 0, 0, '2026-02-01')]).costoPromedio).toBe(1);
+    expect(reconstruirTenencia([m('compra', 10, 1, '2026-01-01'), m('amortizacion_vr', 0, 1.5, '2026-02-01')]).costoPromedio).toBe(1);
+  });
+
+  it('amortizacion_vr: la conciliación despeja la base con el factor aplicado', () => {
+    const movs = [m('amortizacion_vr', 0, 0.5, '2026-03-01'), m('compra', 100, 0.4, '2026-04-01')];
+    const actual = { cantidad: 200, costoPromedio: 0.45 };
+    const base = movimientoConciliacion(actual, movs, '2026-01-10', '2026-10-01')!;
+    const t = reconstruirTenencia([base, ...movs]);
+    expect(t.cantidad).toBeCloseTo(200, 9);
+    expect(t.costoPromedio).toBeCloseTo(0.45, 9);
+    expect(base.precio).toBeCloseTo(1, 9);   // (0,45·200 − 40)/100 = 0,5 tras el factor → 1 antes
+  });
 });

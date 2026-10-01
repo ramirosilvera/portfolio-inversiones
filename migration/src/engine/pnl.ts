@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { Movimiento } from '../types/domain';
+import { factorValido } from './tenencia';
 
 export interface RealizedResult {
   porTicker: Record<string, number>;
@@ -33,6 +34,11 @@ export function realizedPnl(movs: Movimiento[]): RealizedResult {
         // Ajuste de cantidad (split, corrección): cambia la cantidad SIN tocar el costo promedio.
         // Si entrara al promedio con precio 0 diluiría el costo real e inflaría el realizado.
         qty = Math.max(0, qty + m.cantidad);
+      } else if (m.tipo === 'amortizacion_vr') {
+        // Amortización por valor residual: devolvió capital → el costo base baja en esa proporción
+        // (mismo criterio que reconstruirTenencia). Sin esto, vender después de amortizar realizaba
+        // como pérdida el capital que ya se había cobrado.
+        avg *= factorValido(Number(m.precio));
       } else {                                     // compra → entra al promedio ponderado
         const nueva = qty + m.cantidad;
         avg = nueva > 0 ? (qty * avg + m.cantidad * m.precio) / nueva : avg;

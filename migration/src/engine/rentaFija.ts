@@ -10,6 +10,16 @@ import { ytmFromCronograma, bondDurationFromCronograma, rendimientoCorrienteFrom
 import { clasificarRating, type GradoCredito, type EscalaRating } from './rating';
 import { volumenStatsFromRef, type VolumenStats } from './volumenRentaFija';
 
+// Especies que en los hechos pagan en PESOS (CER, dólar linked, TAMAR/BADLAR, LECAP/BONCAP, duales)
+// aunque su ticker "D" cotice en dólares: el filtro de moneda del proceso de carga (IOL `currency`)
+// las deja pasar, porque mira la moneda de LIQUIDACIÓN de la especie D, no la de pago del bono.
+// Caso real: TXS8D (BONTE cero cupón ajustado por CER) entró al catálogo con un cronograma ajustado
+// por CER y data912 lo cotizaba a 0,00062. Se reconocen por el nombre que publica IOL.
+const NOMBRE_PESOS_RE = /\b(cer|aj\.?|ajust\w*|dollar ?linked|d[oó]lar ?linked|tamar|badlar|lecap|boncap|dual(es)?|capitalizable)\b/i;
+export function pagaEnPesos(nombre: string | null | undefined): boolean {
+  return !!nombre && NOMBRE_PESOS_RE.test(nombre);
+}
+
 // Mismo criterio que Posicion en types/domain.ts: los campos mirror 1:1 las columnas de
 // bonos_referencia (snake_case) — sin capa de mapeo entre la fila de Supabase y el tipo de TS.
 export interface BonoReferencia {
