@@ -9,7 +9,9 @@ import type { Posicion } from '../types/domain';
 // Reasignación interna de activos entre portfolios propios (fines contables) — preserva el costo y
 // la fecha de compra exactos, no es una venta/recompra. Todo el movimiento pasa por una función de
 // base de datos atómica (transferir_posicion, ver 0024_transferencias.sql): no toca movimientos/
-// pnl.ts (no es una venta) ni aportes/TIR (no es capital externo).
+// pnl.ts (no es una venta). SÍ registra un flujo en `aportes` (retiro en el origen, inicial en el
+// destino, a costo — ver 0048_transferir_posicion_registra_aportes.sql): sin eso, el rendimiento por
+// año (Modified Dietz) confundía el valor transferido con una ganancia/pérdida de mercado real.
 export function TransferenciasPage() {
   const { active, portfolios } = usePortfolios();
   const { data: posiciones = [] } = usePosiciones(active?.id);
