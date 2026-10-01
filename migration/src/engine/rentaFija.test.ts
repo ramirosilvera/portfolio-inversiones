@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularBonoReferencia, comparables, tirPromedioComparables, type BonoReferencia, type BonoReferenciaCalc } from './rentaFija';
+import { calcularBonoReferencia, pagaEnPesos, comparables, tirPromedioComparables, type BonoReferencia, type BonoReferenciaCalc } from './rentaFija';
 import type { CronogramaItem } from './coupons';
 import type { GradoCredito } from './rating';
 
@@ -159,5 +159,19 @@ describe('tirPromedioComparables', () => {
   it('sin comparables del mismo grado: null', () => {
     const comps = comparables(mockCalc('T', 0.08, 5, 'especulativo'), [mockCalc('C', 0.50, 5, 'default')]);
     expect(tirPromedioComparables(comps)).toBeNull();
+  });
+});
+
+describe('pagaEnPesos', () => {
+  it('detecta especies en pesos por el nombre de IOL (caso real TXS8D) sin falsos positivos del catálogo', () => {
+    expect(pagaEnPesos('B. Tes. Nac. Cero Cupon Aj. CER 29/09/28')).toBe(true);
+    expect(pagaEnPesos('Boncap T15E7')).toBe(true);
+    expect(pagaEnPesos('Bono Dual TAMAR/Fija 2026')).toBe(true);
+    for (const n of ['Bono soberano Argentina 2030 USD (Ley Arg.)', 'BOPREAL Serie 1A 2027 USD (BCRA)',
+      'On Telecom Argentina S 8,5 % Vto. 20/01/36', 'TITULO DE DEUDA DE GOV. PROV SANTA FE 8.1% 11/12/34 USD MEP',
+      'Obligación negociable USD (CIC7D)', 'On Arcor Cl.5 21/05/29 Usd', 'Msu Energy S.A. Regs 9.75% Vto. 05/12/30']) {
+      expect(pagaEnPesos(n)).toBe(false);
+    }
+    expect(pagaEnPesos(null)).toBe(false);
   });
 });

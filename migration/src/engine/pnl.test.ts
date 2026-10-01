@@ -47,4 +47,14 @@ describe('realizedPnl', () => {
     // El promedio sigue en 100 (no se diluyó con precio 0): (120-100)*5 = 100
     expect(r.porTicker.B).toBe(100);
   });
+
+  it('amortizacion_vr: vender después de amortizar no realiza como pérdida el capital ya cobrado', () => {
+    // 1000 VN a 1,00; amortiza 50% (factor 0,5) → costo 0,50; vende todo a 0,52 (precio por VN original).
+    const r = realizedPnl([
+      mv({ ticker: 'B', tipo: 'compra', cantidad: 1000, precio: 1, fecha: '2026-01-01' }),
+      mv({ ticker: 'B', tipo: 'amortizacion_vr', cantidad: 0, precio: 0.5, fecha: '2026-06-01' }),
+      mv({ ticker: 'B', tipo: 'venta', cantidad: 1000, precio: 0.52, fecha: '2026-07-01' }),
+    ]);
+    expect(r.porTicker.B).toBe(20);   // sin el factor daría −480
+  });
 });

@@ -84,6 +84,45 @@ export async function asegurarHistorial(posicionId: string): Promise<void> {
   if (insErr) throw new Error(`No se pudo conciliar el historial de ${pos.ticker}: ${insErr.message}`);
 }
 
+// Borra un movimiento y reconstruye su posición desde el historial restante (motor puro, ver
+// engine/tenencia). Si el movimiento había generado un movimiento de LIQUIDEZ (venta/amortización
+// acreditada, compra pagada con liquidez — columna liquidez_mov_id, migración 0050), lo borra también:
+// si no, deshacer una venta acreditada dejaba la posición restaurada Y el efectivo (capital doble).
+// Exportada para que borrar un cobro (useCobros.remove) revierta su crédito por el mismo camino.
+export async function borrarMovimiento(movId: string): Promise<void> {
+  const { data: mov, error: selMovErr } = await supabase.from('movimientos').select('*').eq('id', movId).maybeSingle();
+  if (selMovErr) throw selMovErr;
+  if (!mov) return;   // ya no existe (p.ej. se borró antes por otro camino)
+  // Conciliar ANTES de borrar: si el historial no cuadraba con la posición (saldo previo sin
+  // movimiento, transferencia, edición manual), reconstruir desde "lo que queda" perdía unidades.
+  if (mov.posicion_id) await asegurarHistorial(mov.posicion_id);
+  const { error } = await supabase.from('movimientos').delete().eq('id', mov.id);
+  if (error) throw error;
+  // Deshacer una amortización por valor residual: el VR vuelve al previo (VR / factor). El costo
+  // base vuelve solo, por la reconstrucción de abajo.
+  if (mov.posicion_id && mov.tipo === 'amortizacion_vr' && Number(mov.precio) > 0 && Number(mov.precio) <= 1) {
+    const { data: p } = await supabase.from('posiciones').select('valor_residual').eq('id', mov.posicion_id).single();
+    const previo = Math.min(1, (Number(p?.valor_residual) || 1) / Number(mov.precio));
+    const { error: vrErr } = await supabase.from('posiciones').update({ valor_residual: previo }).eq('id', mov.posicion_id);
+    if (vrErr) throw new Error(`Movimiento borrado, pero no se pudo restaurar el valor residual: ${vrErr.message}`);
+  }
+  if (mov.posicion_id) {
+    const { data: resto, error: selErr } = await supabase.from('movimientos')
+      .select('*').eq('posicion_id', mov.posicion_id)
+      .order('fecha', { ascending: true }).order('created_at', { ascending: true });
+    if (selErr) throw selErr;
+    const t = reconstruirTenencia((resto ?? []) as Movimiento[]);
+    // Brokers: si la cantidad baja, el trigger posiciones_ajusta_brokers los escala (0050).
+    const { error: updErr } = await supabase.from('posiciones')
+      .update({ cantidad: t.cantidad, precio_compra: t.costoPromedio }).eq('id', mov.posicion_id);
+    if (updErr) throw updErr;
+  }
+  if (mov.liquidez_mov_id) {
+    try { await borrarMovimiento(mov.liquidez_mov_id); }
+    catch (e) { throw new Error(`Movimiento borrado, pero no se pudo revertir su liquidez: ${e instanceof Error ? e.message : e}`); }
+  }
+}
+
 export function usePosicionMutations(portfolioId: string | null | undefined) {
   const qc = useQueryClient();
   const invalidate = () => {
@@ -95,7 +134,9 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
     // Alta con CONSOLIDACIÓN: si el activo ya existe en el portfolio, suma la cantidad y
     // recalcula el precio con costo promedio ponderado; si no, crea la posición. Siempre
     // registra el movimiento (compra) para dejar el historial completo.
-    add: async (p: Partial<Posicion>) => {
+    // `pagarConLiquidez`: el costo de la compra sale de la LIQUIDEZ del portfolio (si no, comprar con
+    // plata que ya estaba en la cuenta duplicaba ese valor en el patrimonio sin ningún aporte nuevo).
+    add: async (p: Partial<Posicion>, pagarConLiquidez = false) => {
       const ticker = (p.ticker ?? '').toUpperCase().trim();
       const addQty = Number(p.cantidad) || 0;
       const addPrice = Number(p.precio_compra) || 0;
@@ -104,6 +145,15 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
       // del movimiento está bajo `addQty > 0`), dejando cantidad y costo promedio inconsistentes.
       if (!(addQty > 0)) throw new Error('La cantidad debe ser mayor a 0.');
       if (addPrice < 0) throw new Error('El precio no puede ser negativo.');
+      if (pagarConLiquidez && p.tipo === 'cash') throw new Error('La liquidez no se paga con liquidez.');
+      if (pagarConLiquidez) {
+        // Chequeo previo (el débito real valida de nuevo, atómico): no dejar la compra registrada y
+        // recién después descubrir que no alcanzaba.
+        const { data: liq } = await supabase.from('posiciones').select('cantidad')
+          .eq('portfolio_id', portfolioId).eq('tipo', 'cash').eq('ticker', 'LIQUIDEZ').limit(1).maybeSingle();
+        const saldo = Number(liq?.cantidad) || 0;
+        if (saldo + 0.005 < addQty * addPrice) throw new Error(`Liquidez insuficiente: hay USD ${saldo.toFixed(2)} y la compra cuesta USD ${(addQty * addPrice).toFixed(2)}.`);
+      }
 
       const { data: existing, error: selErr } = await supabase.from('posiciones')
         .select('*').eq('portfolio_id', portfolioId).eq('ticker', ticker).eq('tipo', p.tipo)
@@ -159,59 +209,50 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
         }
       }
 
+      let compraMovId: string | null = null;
       if (addQty > 0) {
         // Chequear el error: si el movimiento no se registra, el P&L realizado quedaría mal y
         // el usuario no se enteraría. La posición ya se actualizó, así que lo hacemos visible.
-        const { error: movErr } = await supabase.from('movimientos').insert({
+        const { data: movIns, error: movErr } = await supabase.from('movimientos').insert({
           portfolio_id: portfolioId, posicion_id: posId, ticker,
           tipo: 'compra', cantidad: addQty, precio: addPrice,
           fecha: p.fecha_compra ?? new Date().toISOString().slice(0, 10),
           nota: p.notas ?? null,
-        });
+        }).select('id').single();
+        compraMovId = movIns?.id ?? null;
         if (movErr) { invalidate(); throw new Error(`Posición guardada, pero no se pudo registrar el movimiento: ${movErr.message}`); }
+      }
+      if (pagarConLiquidez && addQty * addPrice > 0) {
+        const { data: liqMovId, error: liqErr } = await supabase.rpc('mover_liquidez', {
+          p_portfolio: portfolioId, p_monto: -(addQty * addPrice),
+          p_fecha: p.fecha_compra ?? new Date().toISOString().slice(0, 10), p_nota: `compra de ${addQty} ${ticker}`,
+        });
+        if (liqErr) { invalidate(); throw new Error(`Compra registrada, pero no se pudo debitar la liquidez: ${liqErr.message}`); }
+        // Vínculo: borrar esta compra del historial devuelve la plata a la liquidez.
+        if (compraMovId && liqMovId) await supabase.from('movimientos').update({ liquidez_mov_id: liqMovId }).eq('id', compraMovId);
       }
       invalidate();
     },
     // Venta: descuenta cantidad y registra el movimiento. El costo promedio (precio_compra) NO
     // cambia al vender. Si la cantidad llega a 0, la posición queda "cerrada" (cantidad 0) pero
     // no se borra, para conservar el historial y poder reabrirla con una compra futura.
-    sell: async (pos: Posicion, sellQty: number, sellPrice: number, fecha?: string) => {
+    // `acreditar`: el producto (cantidad × precio) entra a la LIQUIDEZ del portfolio — sin eso, la
+    // venta sacaba valor del patrimonio sin que entrara la plata y el rendimiento lo leía como pérdida.
+    sell: async (pos: Posicion, sellQty: number, sellPrice: number, fecha?: string, acreditar = false) => {
       const qty = Math.min(Number(sellQty) || 0, Number(pos.cantidad) || 0);
       if (qty <= 0) throw new Error('Cantidad de venta inválida');
-      // Historial cuadrado antes de vender (antes solo se cubría el caso "sin ningún movimiento";
-      // una posición con historial PARCIAL — saldo viejo + una compra nueva registrada — calculaba el
-      // P&L realizado contra el costo de esa sola compra). Lanza si no puede verificar: mejor abortar
-      // que registrar una base duplicada.
+      // Historial cuadrado antes de vender: una posición con historial PARCIAL (saldo viejo + una
+      // compra nueva registrada) calculaba el P&L realizado contra el costo de esa sola compra. Lanza
+      // si no puede verificar: mejor abortar que registrar una base duplicada.
       await asegurarHistorial(pos.id);
-      // Registrar la venta ANTES de descontar: si falla, abortamos y la cantidad no cambia
-      // (nunca puede quedar una cantidad descontada sin su movimiento en el historial).
-      const { error: ventaErr } = await supabase.from('movimientos').insert({
-        portfolio_id: portfolioId, posicion_id: pos.id, ticker: pos.ticker,
-        tipo: 'venta', cantidad: qty, precio: Number(sellPrice) || 0,
-        fecha: fecha ?? new Date().toISOString().slice(0, 10), nota: null,
+      // Una sola transacción (migración 0050): movimiento + cantidad + liquidez. La asignación por
+      // broker baja sola, proporcional (trigger posiciones_ajusta_brokers).
+      const { error } = await supabase.rpc('vender_posicion', {
+        p_posicion_id: pos.id, p_cantidad: qty, p_precio: Number(sellPrice) || 0,
+        p_fecha: fecha ?? new Date().toISOString().slice(0, 10), p_acreditar: acreditar,
       });
-      if (ventaErr) throw new Error(`No se pudo registrar la venta: ${ventaErr.message}`);
-      const prevQty = Number(pos.cantidad) || 0;
-      const newQty = prevQty - qty;
-      const { error } = await supabase.from('posiciones').update({ cantidad: newQty }).eq('id', pos.id);
-      if (error) throw error;
-      // La asignación por broker también baja: antes quedaba con la cantidad PREVIA a la venta (la
-      // suma por broker superaba la posición, y al reabrirla con una compra nueva reaparecía el broker
-      // viejo con la cantidad vieja). El formulario de venta no pregunta de qué broker salió, así que
-      // se reparte proporcional a cada asignación (misma regla que transferir_posicion); venta total →
-      // se borran (posicion_brokers.cantidad tiene CHECK > 0). Para corregir el reparto, Brokers.
-      const { data: pbs, error: pbErr } = await supabase.from('posicion_brokers')
-        .select('id, cantidad').eq('posicion_id', pos.id);
-      if (pbErr) { invalidate(); throw new Error(`Venta registrada, pero no se pudo actualizar la asignación por broker: ${pbErr.message}`); }
-      const ratio = prevQty > 0 ? newQty / prevQty : 0;
-      for (const pb of pbs ?? []) {
-        const restante = Number(pb.cantidad) * ratio;
-        const { error: e } = restante > 1e-9
-          ? await supabase.from('posicion_brokers').update({ cantidad: restante }).eq('id', pb.id)
-          : await supabase.from('posicion_brokers').delete().eq('id', pb.id);
-        if (e) { invalidate(); throw new Error(`Venta registrada, pero no se pudo actualizar la asignación por broker: ${e.message}`); }
-      }
       invalidate();
+      if (error) throw new Error(`No se pudo registrar la venta: ${error.message}`);
     },
     update: async (id: string, patch: Partial<Posicion>) => {
       // Solo el ticker puede colisionar con otra fila (cantidad/precio/etc. no tienen ese riesgo).
@@ -263,23 +304,8 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
     // `movimientos` era la única tabla append-only: una venta con precio 0 (o un dedo gordo)
     // envenenaba el P&L realizado para siempre, y la única salida era borrar toda la posición.
     removeMovimiento: async (mov: Movimiento) => {
-      // Conciliar ANTES de borrar: si el historial no cuadraba con la posición (saldo previo sin
-      // movimiento, transferencia, edición manual), reconstruir desde "lo que queda" perdía unidades.
-      if (mov.posicion_id) await asegurarHistorial(mov.posicion_id);
-      const { error } = await supabase.from('movimientos').delete().eq('id', mov.id);
-      if (error) throw error;
-      if (mov.posicion_id) {
-        const { data: resto, error: selErr } = await supabase.from('movimientos')
-          .select('*').eq('posicion_id', mov.posicion_id)
-          .order('fecha', { ascending: true }).order('created_at', { ascending: true });
-        if (selErr) throw selErr;
-        // Motor puro y testeado (engine/tenencia): reconstruye desde el historial restante.
-        const t = reconstruirTenencia((resto ?? []) as Movimiento[]);
-        const { error: updErr } = await supabase.from('posiciones')
-          .update({ cantidad: t.cantidad, precio_compra: t.costoPromedio }).eq('id', mov.posicion_id);
-        if (updErr) throw updErr;
-      }
-      invalidate();
+      try { await borrarMovimiento(mov.id); }
+      finally { invalidate(); qc.invalidateQueries({ queryKey: ['cobros'] }); }
     },
     remove: async (id: string) => {
       const { error } = await supabase.from('posiciones').delete().eq('id', id);
@@ -330,11 +356,12 @@ export function useDividendosProyectados(tickers: string[]) {
 }
 
 // Última actualización de los caches de mercado (para mostrarle al usuario).
-export function useDataStatus() {
+export function useDataStatus(tickers: string[] = []) {
+  const ts = [...new Set(tickers)].sort();
   return useQuery({
-    queryKey: ['data-status'],
+    queryKey: ['data-status', ts.join(',')],
     staleTime: 5 * 60_000,
-    queryFn: () => api.status(),
+    queryFn: () => api.status(ts),
   });
 }
 

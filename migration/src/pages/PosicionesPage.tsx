@@ -52,6 +52,15 @@ export function PosicionesPage() {
   const pnlNoReal = rows.reduce((s, r) => s + (r.pnl ?? 0), 0);
   const costoTotal = rows.reduce((s, r) => s + r.cost, 0);
 
+  // Saldo de la posición LIQUIDEZ (efectivo del portfolio) — null si el portfolio no tiene. Comprar
+  // con esa plata la debita y vender sin retirar la acredita (migración 0050).
+  const liquidez = useMemo(() => {
+    const l = posiciones.find(p => p.tipo === 'cash' && p.ticker === 'LIQUIDEZ');
+    return l ? Number(l.cantidad) || 0 : null;
+  }, [posiciones]);
+
+  // Tickers tenidos (sin efectivo) — para el aviso de precios viejos de <UpdatedAt>.
+  const tickersTenidos = useMemo(() => posiciones.filter(p => p.cantidad > 0 && p.tipo !== 'cash').map(p => p.ticker), [posiciones]);
   const { data: allMovs = [] } = useMovimientos(active?.id);
   const realized = useMemo(() => realizedPnl(allMovs), [allMovs]);
 
@@ -106,7 +115,7 @@ export function PosicionesPage() {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-ink-900 font-display">Posiciones · {active.nombre}</h1>
-          <UpdatedAt icon />
+          <UpdatedAt icon tickers={tickersTenidos} />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="ghost" onClick={() => setSimular({})}><ShoppingCart className="w-4 h-4" /> Simular compra</Button>
@@ -217,7 +226,9 @@ export function PosicionesPage() {
       {sellData && <SellModal pos={sellData.pos} sugerido={sellData.sugerido} mep={mep}
         onClose={() => setSellData(null)}
         onSell={async (qty, precio, fecha, retiro) => {
-          await sell(sellData.pos, qty, precio, fecha);
+          // Sin retiro, el efectivo se queda en el portfolio → se acredita en LIQUIDEZ (antes la venta
+          // sacaba el valor del patrimonio sin que entrara la plata: el rendimiento lo leía como pérdida).
+          await sell(sellData.pos, qty, precio, fecha, !retiro);
           // Retiro SOLO si el usuario tildó "sacás esta plata del portfolio" — vender y dejar el
           // efectivo adentro para la próxima compra no es un movimiento externo, no toca aportes
           // (mismo criterio que el toggle de "capital nuevo" al comprar, ver más arriba).
@@ -234,9 +245,9 @@ export function PosicionesPage() {
         onSave={async (patch) => { await update(editPos.id, patch); setEditPos(null); }} />}
       {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep}
         initial={simular.pos} initialTicker={simular.ticker} onClose={() => setSimular(null)}
-        onEjecutar={async (payload) => { await add(payload); }} onAporte={addAporte} />}
+        liquidez={liquidez} onEjecutar={async (payload, pagar) => { await add(payload, pagar); }} onAporte={addAporte} />}
       {showForm && <AgregarModal cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep} onClose={() => setShowForm(false)}
-        onAdd={add} onSaveRatio={saveRatio} onAporte={addAporte} />}
+        liquidez={liquidez} onAdd={add} onSaveRatio={saveRatio} onAporte={addAporte} />}
     </div>
   );
 }
@@ -267,9 +278,9 @@ function enrichBono(ticker: string, catalogoBonos: BonoReferencia[]): Partial<Po
 // Mismo formulario de alta que antes vivía inline en PosicionesPage, ahora en modal — mismo estilo
 // visual que "Simular compra" (ver auditoría de UX: una abría tarjeta en la página, la otra popup,
 // para la misma acción de fondo).
-function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSaveRatio, onAporte }: {
-  cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; mep: number | null; onClose: () => void;
-  onAdd: (p: Partial<Posicion>) => Promise<void>;
+function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onAdd, onSaveRatio, onAporte }: {
+  cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; mep: number | null; liquidez: number | null; onClose: () => void;
+  onAdd: (p: Partial<Posicion>, pagarConLiquidez?: boolean) => Promise<void>;
   onSaveRatio: (ticker: string, ratio: number) => void;
   onAporte: (a: { monto: number; fecha: string; tipo: 'recurrente'; descripcion: string }) => Promise<void>;
 }) {
@@ -308,6 +319,9 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
   // ya estaba en el portfolio duplicaría capital en la TIR (ver portfolioTir en engine/irr.ts) —
   // más vale que el usuario lo tilde a propósito que asumirlo mal.
   const [capitalNuevo, setCapitalNuevo] = useState(false);
+  // Pagar con la LIQUIDEZ del portfolio: por default sí si tiene saldo (la compra sale de esa plata).
+  // Excluyente con "capital nuevo": o la plata entró recién (aporte) o ya estaba (liquidez).
+  const [pagarLiq, setPagarLiq] = useState((liquidez ?? 0) > 0);
 
   // Pre-llena el ratio de un CEDEAR desde la base (si existe y el usuario no lo tipeó), o el cupón/
   // vencimiento/calificación de un bono (ver enrichBono). Nunca pisa un campo que el usuario ya
@@ -346,7 +360,7 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
     }
     setSaving(true); setFormErr(null);
     try {
-      await onAdd(form);
+      await onAdd(form, pagarLiq && liquidez != null && form.tipo !== 'cash');
       // Si es CEDEAR y no estaba en la base, la enriquecemos con este ratio.
       if (form.tipo === 'cedear' && form.ticker && form.ratio_cedear && !cedearRatios[form.ticker]) {
         onSaveRatio(form.ticker, form.ratio_cedear);
@@ -470,15 +484,24 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, onClose, onAdd, onSave
               </Field>
             </div>
           )}
-          <div className="px-4 pb-3">
+          <div className="px-4 pb-3 space-y-2">
             <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
-              <input type="checkbox" checked={capitalNuevo} onChange={e => setCapitalNuevo(e.target.checked)} className="mt-0.5" />
+              <input type="checkbox" checked={capitalNuevo} onChange={e => { setCapitalNuevo(e.target.checked); if (e.target.checked) setPagarLiq(false); }} className="mt-0.5" />
               <span>
                 ¿Es capital nuevo (recién ingresado, no plata que ya estaba en el portfolio)? Si tildás esto se registra
                 un aporte de {fmtUsd((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), 0)} automáticamente,
                 para no tener que cargarlo dos veces en Aportes.
               </span>
             </label>
+            {liquidez != null && form.tipo !== 'cash' && (
+              <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
+                <input type="checkbox" checked={pagarLiq} onChange={e => { setPagarLiq(e.target.checked); if (e.target.checked) setCapitalNuevo(false); }} className="mt-0.5" />
+                <span>
+                  Pagar con la Liquidez del portfolio (hay {fmtUsd(liquidez, 2)}): se debita {fmtUsd((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), 2)}.
+                  Si no, el valor de la compra aparece en el patrimonio sin que salga plata de ningún lado.
+                </span>
+              </label>
+            )}
           </div>
           {formErr && <p className="px-4 pb-2 text-xs text-warn">{formErr}</p>}
           <div className="px-4 pb-4 flex justify-end gap-2">
@@ -738,7 +761,7 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
               <input type="checkbox" checked={retiro} onChange={e => setRetiro(e.target.checked)} className="mt-0.5" />
               <span>
                 ¿Sacás esta plata del portfolio? Si tildás esto se registra un retiro de {fmtUsd(n * p, 0)} en Aportes
-                automáticamente. Dejalo destildado si el efectivo se queda adentro para la próxima compra.
+                automáticamente. Dejalo destildado si el efectivo se queda adentro para la próxima compra: se acredita en la Liquidez del portfolio.
               </span>
             </label>
           </div>
@@ -804,15 +827,17 @@ function nuevaSim(usadas: Set<string>, comprables: Row[], mep: number | null): S
   };
 }
 
-function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, mep, initial, initialTicker, onClose, onEjecutar, onAporte }: {
+function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, mep, liquidez, initial, initialTicker, onClose, onEjecutar, onAporte }: {
   openRows: Row[]; totalMkt: number; cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; mep: number | null;
-  initial?: Posicion; initialTicker?: string; onClose: () => void; onEjecutar: (payload: Partial<Posicion>) => Promise<void>;
+  liquidez: number | null;
+  initial?: Posicion; initialTicker?: string; onClose: () => void; onEjecutar: (payload: Partial<Posicion>, pagarConLiquidez: boolean) => Promise<void>;
   onAporte: (a: { monto: number; fecha: string; tipo: 'recurrente'; descripcion: string }) => Promise<void>;
 }) {
   useEscapeClose(onClose);
   // Mismo criterio que AgregarModal: sin tildar por default, para no duplicar capital en la TIR
   // cuando en realidad se compró con plata que ya estaba en el portfolio.
   const [capitalNuevo, setCapitalNuevo] = useState(false);
+  const [pagarLiq, setPagarLiq] = useState((liquidez ?? 0) > 0);  // ver AgregarModal
   const comprables = openRows.filter(r => r.p.tipo !== 'cash');
   const [sims, setSims] = useState<SimDraft[]>(() => {
     // Deep-link con ticker (sin posición existente elegida): arranca en modo "nuevo" con ese
@@ -979,7 +1004,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
           const auto = enrichBono(d.ticker, catalogoBonos);
           if (auto) Object.assign(payload, auto);
         }
-        await onEjecutar(payload);
+        await onEjecutar(payload, pagarLiq && liquidez != null);
         // Aporte automático SOLO si el usuario tildó "es capital nuevo" — mismo criterio que
         // AgregarModal (antes esta ejecución nunca lo registraba, sin importar el checkbox porque
         // ni siquiera existía: la TIR quedaba subestimando el capital puesto).
@@ -1124,14 +1149,22 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
               </p>
             </div>
           )}
-          <div className="px-4 pb-3">
+          <div className="px-4 pb-3 space-y-2">
             <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
-              <input type="checkbox" checked={capitalNuevo} onChange={e => setCapitalNuevo(e.target.checked)} className="mt-0.5" />
+              <input type="checkbox" checked={capitalNuevo} onChange={e => { setCapitalNuevo(e.target.checked); if (e.target.checked) setPagarLiq(false); }} className="mt-0.5" />
               <span>
                 ¿Es capital nuevo (recién ingresado, no plata que ya estaba en el portfolio)? Si tildás esto se registra
                 un aporte por cada compra que ejecutes ({fmtUsd(totalInvertido, 0)} en total), para no tener que cargarlo dos veces en Aportes.
               </span>
             </label>
+            {liquidez != null && (
+              <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
+                <input type="checkbox" checked={pagarLiq} onChange={e => { setPagarLiq(e.target.checked); if (e.target.checked) setCapitalNuevo(false); }} className="mt-0.5" />
+                <span>
+                  Pagar con la Liquidez del portfolio (hay {fmtUsd(liquidez, 2)}): se debita cada compra que ejecutes ({fmtUsd(totalInvertido, 2)} en total).
+                </span>
+              </label>
+            )}
           </div>
           {objetivosInalcanzables && <p className="px-4 pb-2 text-xs text-warn">Los objetivos combinados suman demasiado del total resultante — no son alcanzables comprando. Bajá alguno.</p>}
           {tickerDuplicado && <p className="px-4 pb-2 text-xs text-warn">Hay un ticker repetido entre las simulaciones activas.</p>}
@@ -1171,9 +1204,14 @@ function MovimientosModal({ portfolioId, ticker, onClose }: { portfolioId: strin
                 : movs.map(m => (
                   <div key={m.id} className="px-4 py-2.5 flex items-center gap-3 text-sm flex-wrap">
                     <span className="text-ink-600 tnum w-24 shrink-0">{m.fecha}</span>
-                    <Badge tone={m.tipo === 'compra' ? 'pos' : m.tipo === 'venta' ? 'neg' : 'gray'}>{m.tipo}</Badge>
-                    <span className="flex-1 text-right text-ink-700 tnum">{fmtNum(m.cantidad, 0)} × {fmtUsd(m.precio)}</span>
-                    <span className="font-semibold tnum text-ink-900 w-24 text-right">{fmtUsd(m.cantidad * m.precio, 0)}</span>
+                    <Badge tone={m.tipo === 'compra' ? 'pos' : m.tipo === 'venta' ? 'neg' : 'gray'}>{m.tipo === 'amortizacion_vr' ? 'amortización VR' : m.tipo}</Badge>
+                    {m.tipo === 'amortizacion_vr' ? (
+                      // cantidad 0, precio = factor: el costo base se multiplicó por ese factor (ver engine/tenencia).
+                      <span className="flex-1 text-right text-ink-700 tnum" title={m.nota ?? undefined}>costo base × {fmtNum(m.precio, 4)}</span>
+                    ) : <>
+                      <span className="flex-1 text-right text-ink-700 tnum">{fmtNum(m.cantidad, 0)} × {fmtUsd(m.precio)}</span>
+                      <span className="font-semibold tnum text-ink-900 w-24 text-right">{fmtUsd(m.cantidad * m.precio, 0)}</span>
+                    </>}
                     <button
                       onClick={() => { setErrMov(null); if (window.confirm(`¿Borrar este movimiento (${m.tipo} ${fmtNum(m.cantidad, 0)} × ${fmtUsd(m.precio)})? Se recalculan la cantidad y el costo promedio.`)) removeMovimiento(m).catch(e => setErrMov(e instanceof Error ? e.message : 'No se pudo borrar')); }}
                       title="Borrar movimiento" aria-label="Borrar movimiento"

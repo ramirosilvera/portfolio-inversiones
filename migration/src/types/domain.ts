@@ -93,10 +93,11 @@ export interface Movimiento {
   portfolio_id: string;
   posicion_id: string | null;
   ticker: string;
-  tipo: 'compra' | 'venta' | 'ajuste';
+  tipo: 'compra' | 'venta' | 'ajuste' | 'amortizacion_vr';  // amortizacion_vr: cantidad 0, precio = factor de costo (ver 0050)
   cantidad: number;
   precio: number;                // precio por unidad (USD)
   fecha: string;
+  liquidez_mov_id?: string | null;  // movimiento de LIQUIDEZ que generó esta operación (0050)
   nota: string | null;
   created_at: string;
 }
@@ -126,6 +127,7 @@ export interface Cobro {
   estado: CobroEstado;
   origen: CobroOrigen;
   movimiento_id: string | null;
+  liquidez_mov_id?: string | null;   // crédito en LIQUIDEZ que generó este cobro (0050)
   nota: string | null;
   created_at: string;
 }

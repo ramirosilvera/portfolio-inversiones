@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type { Cobro, CobroTipo } from '../types/domain';
-import { asegurarHistorial } from './usePosiciones';
+import { asegurarHistorial, borrarMovimiento } from './usePosiciones';
 
 export function useCobros(portfolioId: string | null | undefined) {
   const qc = useQueryClient();
@@ -27,13 +27,17 @@ export function useCobros(portfolioId: string | null | undefined) {
     data: q.data ?? [],
     isLoading: q.isLoading,
 
+    // `acreditar` (en las 3 altas de abajo): el monto entra a la LIQUIDEZ del portfolio, en la misma
+    // transacción (migración 0050). Sin eso la plata cobrada no estaba en el patrimonio y el
+    // rendimiento por año la perdía (y una amortización se veía como pérdida de capital).
+
     // Dividendo o interés: solo plata, no toca la posición (a diferencia de la amortización).
-    registrar: async (input: { posicionId: string | null; ticker: string; tipo: 'dividendo' | 'interes'; fecha: string; monto: number; nota?: string | null }) => {
+    registrar: async (input: { posicionId: string | null; ticker: string; tipo: 'dividendo' | 'interes'; fecha: string; monto: number; nota?: string | null; acreditar?: boolean }) => {
       if (!portfolioId) return;
       if (!(input.monto > 0)) throw new Error('El monto debe ser mayor a 0.');
-      const { error } = await supabase.from('cobros').insert({
-        portfolio_id: portfolioId, posicion_id: input.posicionId, ticker: input.ticker.toUpperCase().trim(),
-        tipo: input.tipo, fecha: input.fecha, monto: input.monto, nota: input.nota || null, origen: 'manual',
+      const { error } = await supabase.rpc('registrar_cobro', {
+        p_portfolio: portfolioId, p_posicion_id: input.posicionId, p_ticker: input.ticker, p_tipo: input.tipo,
+        p_fecha: input.fecha, p_monto: input.monto, p_nota: input.nota || null, p_acreditar: !!input.acreditar,
       });
       if (error) throw error; invalidate();
     },
@@ -44,67 +48,40 @@ export function useCobros(portfolioId: string | null | undefined) {
     // lo que baja es el valor residual (registrarAmortizacionVR, más abajo) — nunca las dos para el
     // mismo pago, o se cuenta la baja de capital dos veces. Esta reduce el nominal tenido vía un
     // movimiento 'ajuste' (mismo camino que un split/corrección: no toca el costo promedio, ver
-    // engine/tenencia.ts). Si el usuario quiere deshacerlo, lo hace borrando ese movimiento desde el
-    // historial de Posiciones (ya reconstruye la tenencia correctamente).
-    registrarAmortizacion: async (input: { posicionId: string; ticker: string; fecha: string; monto: number; nominales: number; nota?: string | null }) => {
+    // engine/tenencia.ts). Para deshacerlo, se borra ese movimiento desde el historial de Posiciones.
+    registrarAmortizacion: async (input: { posicionId: string; ticker: string; fecha: string; monto: number; nominales: number; nota?: string | null; acreditar?: boolean }) => {
       if (!portfolioId) return;
       if (!(input.monto > 0)) throw new Error('El monto debe ser mayor a 0.');
       if (!(input.nominales > 0)) throw new Error('Los nominales amortizados deben ser mayores a 0.');
       // Historial cuadrado antes del ajuste: si el bono no tenía movimientos (cargado antes de que
       // existieran), el 'ajuste' quedaba solo y borrarlo reconstruía el nominal en 0.
       await asegurarHistorial(input.posicionId);
-      const { data: pos, error: posErr } = await supabase.from('posiciones').select('cantidad').eq('id', input.posicionId).single();
-      if (posErr) throw posErr;
-      const cantidadActual = Number(pos.cantidad) || 0;
-      const nominales = Math.min(input.nominales, cantidadActual);
-      const ticker = input.ticker.toUpperCase().trim();
-      const { data: mov, error: movErr } = await supabase.from('movimientos').insert({
-        portfolio_id: portfolioId, posicion_id: input.posicionId, ticker,
-        tipo: 'ajuste', cantidad: -nominales, precio: 0, fecha: input.fecha, nota: 'amortización de capital',
-      }).select('id').single();
-      if (movErr) throw movErr;
-      const nuevaCantidad = Math.max(0, cantidadActual - nominales);
-      const { error: updErr } = await supabase.from('posiciones').update({ cantidad: nuevaCantidad }).eq('id', input.posicionId);
-      if (updErr) throw new Error(`Se registró el movimiento pero no se pudo actualizar el nominal: ${updErr.message}`);
-      // La asignación por broker baja en la misma proporción (mismo criterio que vender/transferir);
-      // si no, la suma por broker quedaba por encima del nominal real.
-      const { data: pbs } = await supabase.from('posicion_brokers').select('id, cantidad').eq('posicion_id', input.posicionId);
-      const ratio = cantidadActual > 0 ? nuevaCantidad / cantidadActual : 0;
-      for (const pb of pbs ?? []) {
-        const restante = Number(pb.cantidad) * ratio;
-        const { error: e } = restante > 1e-9
-          ? await supabase.from('posicion_brokers').update({ cantidad: restante }).eq('id', pb.id)
-          : await supabase.from('posicion_brokers').delete().eq('id', pb.id);
-        if (e) throw new Error(`El nominal se ajustó pero no se pudo actualizar la asignación por broker: ${e.message}`);
-      }
-      const { error: cobroErr } = await supabase.from('cobros').insert({
-        portfolio_id: portfolioId, posicion_id: input.posicionId, ticker,
-        tipo: 'amortizacion', fecha: input.fecha, monto: input.monto, movimiento_id: mov.id, nota: input.nota || null, origen: 'manual',
+      // Movimiento + nominal + cobro + liquidez en una transacción; brokers por trigger.
+      const { error } = await supabase.rpc('registrar_amortizacion', {
+        p_posicion_id: input.posicionId, p_fecha: input.fecha, p_monto: input.monto,
+        p_nominales: input.nominales, p_nota: input.nota || null, p_acreditar: !!input.acreditar,
       });
-      if (cobroErr) throw new Error(`El nominal se ajustó pero no se pudo registrar el cobro: ${cobroErr.message}`);
       invalidate();
+      if (error) throw error;
     },
 
     // Amortización, convención "nominal constante": el bróker NO reduce tus nominales, lo que baja
-    // es el valor residual (% del nominal original que queda por cobrar) — se guarda directo en
-    // posiciones.valor_residual (marca amortizable=true de paso) y NO se toca cantidad ni se crea
-    // un movimiento 'ajuste'. `valorResidualPct` es el valor NUEVO y ABSOLUTO (ej. "quedó en 75%"),
-    // no un incremento — así coincide con lo que suele mostrar la ficha técnica del bono o el
-    // extracto del bróker, sin que el usuario tenga que hacer la resta a mano.
-    registrarAmortizacionVR: async (input: { posicionId: string; ticker: string; fecha: string; monto: number; valorResidualPct: number; nota?: string | null }) => {
+    // es el valor residual (% del nominal original que queda por cobrar). `valorResidualPct` es el
+    // valor NUEVO y ABSOLUTO (ej. "quedó en 75%"), no un incremento — así coincide con lo que suele
+    // mostrar la ficha técnica del bono o el extracto del bróker. El costo base baja en la misma
+    // proporción (movimiento 'amortizacion_vr'): antes quedaba igual y el capital ya cobrado se veía
+    // como pérdida. Para deshacerlo, se borra ese movimiento (restaura costo y valor residual).
+    registrarAmortizacionVR: async (input: { posicionId: string; ticker: string; fecha: string; monto: number; valorResidualPct: number; nota?: string | null; acreditar?: boolean }) => {
       if (!portfolioId) return;
       if (!(input.monto > 0)) throw new Error('El monto debe ser mayor a 0.');
       if (!(input.valorResidualPct > 0 && input.valorResidualPct <= 100)) throw new Error('El valor residual debe ser mayor a 0% y hasta 100%.');
-      const { error: updErr } = await supabase.from('posiciones')
-        .update({ amortizable: true, valor_residual: input.valorResidualPct / 100 }).eq('id', input.posicionId);
-      if (updErr) throw updErr;
-      const ticker = input.ticker.toUpperCase().trim();
-      const { error: cobroErr } = await supabase.from('cobros').insert({
-        portfolio_id: portfolioId, posicion_id: input.posicionId, ticker,
-        tipo: 'amortizacion', fecha: input.fecha, monto: input.monto, nota: input.nota || null, origen: 'manual',
+      await asegurarHistorial(input.posicionId);
+      const { error } = await supabase.rpc('registrar_amortizacion_vr', {
+        p_posicion_id: input.posicionId, p_fecha: input.fecha, p_monto: input.monto,
+        p_valor_residual: input.valorResidualPct / 100, p_nota: input.nota || null, p_acreditar: !!input.acreditar,
       });
-      if (cobroErr) throw new Error(`Se actualizó el valor residual pero no se pudo registrar el cobro: ${cobroErr.message}`);
       invalidate();
+      if (error) throw error;
     },
 
     marcarEstado: async (id: string, estado: 'disponible' | 'reinvertido') => {
@@ -115,10 +92,19 @@ export function useCobros(portfolioId: string | null | undefined) {
     // Confirmar un PENDIENTE (generado por el cron): pasa a 'disponible' y el usuario puede haber
     // corregido el monto antes de confirmar (dividendo real ≠ estimado por retención/redondeo/
     // dividendo especial). Nunca en lote — uno a la vez, a propósito, para que se revise cada uno.
-    confirmarPendiente: async (id: string, montoFinal: number) => {
+    confirmarPendiente: async (id: string, montoFinal: number, acreditar = false) => {
       if (!(montoFinal > 0)) throw new Error('El monto debe ser mayor a 0.');
-      const { error } = await supabase.from('cobros').update({ estado: 'disponible', monto: montoFinal }).eq('id', id);
-      if (error) throw error; invalidate();
+      const { data: c, error } = await supabase.from('cobros').update({ estado: 'disponible', monto: montoFinal })
+        .eq('id', id).select('portfolio_id, ticker, tipo, fecha').single();
+      if (error) throw error;
+      if (acreditar) {
+        const { data: liqMovId, error: liqErr } = await supabase.rpc('mover_liquidez', {
+          p_portfolio: c.portfolio_id, p_monto: montoFinal, p_fecha: c.fecha, p_nota: `${c.tipo} ${c.ticker}`,
+        });
+        if (liqErr) { invalidate(); throw new Error(`Cobro confirmado, pero no se pudo acreditar en liquidez: ${liqErr.message}`); }
+        await supabase.from('cobros').update({ liquidez_mov_id: liqMovId }).eq('id', id);
+      }
+      invalidate();
     },
 
     // Descartar un PENDIENTE (sugerido por el cron): NO se borra la fila, se marca 'descartado' —
@@ -135,9 +121,15 @@ export function useCobros(portfolioId: string | null | undefined) {
     // deshacer el efecto en la posición hay que borrar el movimiento 'ajuste' desde su historial
     // en Posiciones (el link movimiento_id de este cobro queda en null solo, por la FK).
     // Para un PENDIENTE usar descartarPendiente, no esto (ver comentario arriba).
+    // Si el cobro se había acreditado en LIQUIDEZ (liquidez_mov_id), ese crédito se revierte: la
+    // plata "cobrada" deja de existir, no puede quedar en el efectivo del portfolio.
     remove: async (id: string) => {
+      const { data: c, error: selErr } = await supabase.from('cobros').select('liquidez_mov_id').eq('id', id).maybeSingle();
+      if (selErr) throw selErr;
       const { error } = await supabase.from('cobros').delete().eq('id', id);
-      if (error) throw error; invalidate();
+      if (error) throw error;
+      try { if (c?.liquidez_mov_id) await borrarMovimiento(c.liquidez_mov_id); }
+      finally { invalidate(); }
     },
   };
 }

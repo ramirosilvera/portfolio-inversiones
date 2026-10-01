@@ -62,6 +62,11 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
   const [modoAmort, setModoAmort] = useState<'nominales' | 'valorResidual'>('nominales');
   const [valorResidualPct, setValorResidualPct] = useState('');
   const [nota, setNota] = useState('');
+  // Acreditar el cobro en la LIQUIDEZ del portfolio: por default sí si el portfolio ya la tiene
+  // (null = "seguir el default", que depende de posiciones, que carga async).
+  const tieneLiquidez = posiciones.some(p => p.tipo === 'cash' && p.ticker === 'LIQUIDEZ');
+  const [acreditarSel, setAcreditar] = useState<boolean | null>(null);
+  const acreditar = acreditarSel ?? tieneLiquidez;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -94,14 +99,14 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
         if (modoAmort === 'nominales') {
           const nom = Number(nominales) || 0;
           if (!(nom > 0)) { setErr('Ingresá los nominales amortizados.'); setBusy(false); return; }
-          await registrarAmortizacion({ posicionId: pos.id, ticker, fecha, monto: m, nominales: nom, nota: nota || null });
+          await registrarAmortizacion({ posicionId: pos.id, ticker, fecha, monto: m, nominales: nom, nota: nota || null, acreditar });
         } else {
           const vr = Number(valorResidualPct) || 0;
           if (!(vr > 0 && vr <= 100)) { setErr('Ingresá el nuevo valor residual (mayor a 0% y hasta 100%).'); setBusy(false); return; }
-          await registrarAmortizacionVR({ posicionId: pos.id, ticker, fecha, monto: m, valorResidualPct: vr, nota: nota || null });
+          await registrarAmortizacionVR({ posicionId: pos.id, ticker, fecha, monto: m, valorResidualPct: vr, nota: nota || null, acreditar });
         }
       } else {
-        await registrar({ posicionId: pos?.id ?? null, ticker, tipo, fecha, monto: m, nota: nota || null });
+        await registrar({ posicionId: pos?.id ?? null, ticker, tipo, fecha, monto: m, nota: nota || null, acreditar });
       }
       setMonto(''); setNominales(''); setValorResidualPct(''); setNota('');
     } catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo registrar'); }
@@ -126,7 +131,7 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
       </div>
 
       {pendientes.length > 0 && (
-        <PendientesCard pendientes={pendientes} onConfirmar={confirmarPendiente} onDescartar={descartarPendiente} />
+        <PendientesCard pendientes={pendientes} acreditarDefault={tieneLiquidez} onConfirmar={confirmarPendiente} onDescartar={descartarPendiente} />
       )}
 
       <SaldoInvertibleCard saldo={saldo} inversiones={inversiones} onMarcar={marcarInversion} onBorrar={removeInversion} />
@@ -198,6 +203,13 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
           <Field label="Nota (opcional)" className="col-span-2 sm:col-span-2">
             <input value={nota} onChange={e => setNota(e.target.value)} className={inputCls} placeholder="opcional" />
           </Field>
+          <label className="col-span-2 sm:col-span-4 flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
+            <input type="checkbox" checked={acreditar} onChange={e => setAcreditar(e.target.checked)} className="mt-0.5" />
+            <span>
+              Acreditar en la Liquidez del portfolio{tieneLiquidez ? '' : ' (se crea)'}. Si la plata quedó en la cuenta del bróker, tildalo: si no, el
+              cobro no está en el patrimonio y el rendimiento por año no lo cuenta{tipo === 'amortizacion' ? ' (el capital devuelto se vería como pérdida)' : ''}.
+            </span>
+          </label>
         </div>
         {err && <p className="px-4 pb-2 text-xs text-warn">{err}</p>}
         <div className="px-4 pb-4 flex justify-end">
@@ -260,24 +272,28 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
 // dato es bruto y puede diferir del real por retención, dividendo especial, etc.) y confirma UNO
 // POR UNO. A propósito no hay "confirmar todos": eso es exactamente lo que se quiere evitar —
 // que se acepten en lote sin mirar.
-function PendientesCard({ pendientes, onConfirmar, onDescartar }: {
-  pendientes: Cobro[]; onConfirmar: (id: string, monto: number) => Promise<void>; onDescartar: (id: string) => Promise<void>;
+function PendientesCard({ pendientes, acreditarDefault, onConfirmar, onDescartar }: {
+  pendientes: Cobro[]; acreditarDefault: boolean;
+  onConfirmar: (id: string, monto: number, acreditar: boolean) => Promise<void>; onDescartar: (id: string) => Promise<void>;
 }) {
   return (
     <Card className="ring-1 ring-inset ring-warn/30">
       <CardHeader title="Por confirmar" sub="Sugeridos automáticamente — revisá el monto (es bruto, sin retención) y confirmá uno por uno."
         right={<Badge tone="warn">{pendientes.length}</Badge>} />
       <div className="divide-y divide-line">
-        {pendientes.map(p => <PendienteRow key={p.id} p={p} onConfirmar={onConfirmar} onDescartar={onDescartar} />)}
+        {pendientes.map(p => <PendienteRow key={p.id} p={p} acreditarDefault={acreditarDefault} onConfirmar={onConfirmar} onDescartar={onDescartar} />)}
       </div>
     </Card>
   );
 }
 
-function PendienteRow({ p, onConfirmar, onDescartar }: {
-  p: Cobro; onConfirmar: (id: string, monto: number) => Promise<void>; onDescartar: (id: string) => Promise<void>;
+function PendienteRow({ p, acreditarDefault, onConfirmar, onDescartar }: {
+  p: Cobro; acreditarDefault: boolean;
+  onConfirmar: (id: string, monto: number, acreditar: boolean) => Promise<void>; onDescartar: (id: string) => Promise<void>;
 }) {
   const [monto, setMonto] = useState(String(p.monto));
+  const [acreditarSel, setAcreditar] = useState<boolean | null>(null);  // null = seguir el default (posiciones carga async)
+  const acreditar = acreditarSel ?? acreditarDefault;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -287,7 +303,7 @@ function PendienteRow({ p, onConfirmar, onDescartar }: {
     const m = Number(monto) || 0;
     if (!(m > 0)) { setErr('Monto inválido.'); return; }
     setBusy(true); setErr(null);
-    try { await onConfirmar(p.id, m); }
+    try { await onConfirmar(p.id, m, acreditar); }
     catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo confirmar'); }
     finally { setBusy(false); }
   };
@@ -312,6 +328,10 @@ function PendienteRow({ p, onConfirmar, onDescartar }: {
       <div className="flex-1 min-w-[220px]">
         {p.nota && <p className="text-[11px] text-ink-500 leading-relaxed">{p.nota}</p>}
         {err && <p className="text-[11px] text-warn mt-1">{err}</p>}
+        <label className="flex items-center gap-1.5 text-[11px] text-ink-600 mt-1 cursor-pointer">
+          <input type="checkbox" checked={acreditar} onChange={e => setAcreditar(e.target.checked)} disabled={busy} />
+          Acreditar en Liquidez al confirmar
+        </label>
       </div>
       <div className="flex items-center gap-2 w-full sm:w-auto">
         <div className="relative flex-1 sm:flex-none min-w-0">
