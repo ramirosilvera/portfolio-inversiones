@@ -117,7 +117,7 @@ export function Wordmark({ size = 32, hideTextOnMobile = false }: { size?: numbe
 
 // ── Superficies ───────────────────────────────────────────────────────────────
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-2xl border border-line bg-surface shadow-card ${className}`}>{children}</div>;
+  return <div className={`rounded-2xl border border-line bg-surface shadow-card min-w-0 max-w-full ${className}`}>{children}</div>;
 }
 
 export function CardHeader({ title, sub, right }: { title: string; sub?: string; right?: ReactNode }) {
