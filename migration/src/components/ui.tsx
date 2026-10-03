@@ -18,12 +18,12 @@ export const colorDeBroker = (i: number, brokerId: string | null): string =>
 
 // Clase base para inputs/selects/textarea — usala para que todos los controles se vean igual.
 export const inputCls =
-  'w-full bg-surface border border-line rounded-xl px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:outline-none focus:ring-2 focus:ring-celeste-300 focus:border-celeste-300';
+  'w-full min-w-0 bg-surface border border-line rounded-xl px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 focus:outline-none focus:ring-2 focus:ring-celeste-300 focus:border-celeste-300';
 
 // Campo de formulario con micro-label arriba (mejor que placeholder solo).
 export function Field({ label, hint, children, className = '' }: { label: string; hint?: string; children: ReactNode; className?: string }) {
   return (
-    <label className={`block ${className}`}>
+    <label className={`block ${className.includes('min-w-') ? '' : 'min-w-0'} ${className}`}>
       <span className="block text-[11px] font-semibold text-ink-600 mb-1">{label}</span>
       {children}
       {hint && <span className="block text-[10px] text-ink-500 mt-1">{hint}</span>}

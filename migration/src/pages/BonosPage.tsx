@@ -425,21 +425,21 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
             <Field label="Calificación">
               <input value={calificacion} onChange={e => setCalificacion(e.target.value)} placeholder="ej. BB-, Ba3, AAA(arg)" className={inputCls} />
             </Field>
-            <Field label="Ley aplicable" hint="Jurisdicción — Bonares/Globales en soberanos, y su equivalente en ONs">
+            <Field label="Ley aplicable" hint="Jurisdicción: Bonares/Globales en soberanos, su equivalente en ONs">
               <select value={ley} onChange={e => setLey(e.target.value as typeof ley)} className={`${inputCls} appearance-none`}>
                 <option value="">—</option>
                 <option value="local">{LEY_LABEL.local}</option>
                 <option value="extranjera">{LEY_LABEL.extranjera}</option>
               </select>
             </Field>
-            <Field label="Estructura de repago">
-              <select value={amortizable ? 'amortizable' : 'bullet'} onChange={e => setAmortizable(e.target.value === 'amortizable')} className={`${inputCls} appearance-none`}>
-                <option value="bullet">Bullet (100% al vencimiento)</option>
-                <option value="amortizable">Amortizable (paga capital en cuotas)</option>
+            <Field label="Estructura de repago" hint="Bullet: 100% al vencimiento · Amortizable: capital en cuotas">
+              <select value={amortizable ? 'amortizable' : 'bullet'} onChange={e => setAmortizable(e.target.value === 'amortizable')} className={`${inputCls} appearance-none truncate`}>
+                <option value="bullet">Bullet</option>
+                <option value="amortizable">Amortizable</option>
               </select>
             </Field>
             {amortizable && (
-              <Field label="Valor residual actual (%)" hint="% del nominal original que todavía queda por cobrar. No hay ninguna fuente que lo publique automático (ni data912) — cargalo cuando lo confirmes en la ficha técnica del bono o el extracto de tu bróker.">
+              <Field label="Valor residual actual (%)" className="col-span-2" hint="% del nominal original que todavía queda por cobrar. No hay ninguna fuente que lo publique automático (ni data912) — cargalo cuando lo confirmes en la ficha técnica del bono o el extracto de tu bróker.">
                 <input type="number" min="1" max="100" step="1" value={valorResidualPct}
                   onChange={e => setValorResidualPct(e.target.value)} placeholder="ej. 75" className={inputCls} />
               </Field>
@@ -525,14 +525,16 @@ function CronogramaCuotas({ cuotas, onAgregar, onEliminar, valorResidualActual }
         </div>
       )}
       {borrarErr && <p className="text-[11px] text-warn mb-1.5">{borrarErr}</p>}
-      <div className="flex items-end gap-2">
-        <Field label="Fecha" className="flex-1">
+      {/* Grilla (no flex-1): fecha y % comparten el ancho a partes iguales y el botón queda a la
+          derecha sin que el <input type="date"> nativo empuje/pise al vecino (min-w-0 en los hijos). */}
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
+        <Field label="Fecha">
           <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputCls} />
         </Field>
-        <Field label="% del nominal original" className="flex-1">
+        <Field label="% nominal original">
           <input type="number" min="1" max="100" step="1" value={pct} onChange={e => setPct(e.target.value)} placeholder="ej. 25" className={inputCls} />
         </Field>
-        <Button variant="ghost" onClick={agregar} disabled={busy} className="shrink-0"><Plus className="w-4 h-4" /></Button>
+        <Button variant="ghost" onClick={agregar} disabled={busy} className="shrink-0" aria-label="Agregar cuota"><Plus className="w-4 h-4" /></Button>
       </div>
       {err && <p className="text-[11px] text-warn mt-1">{err}</p>}
     </div>
