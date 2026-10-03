@@ -16,8 +16,8 @@ const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { s
 const OPERABLE_DOT: Record<OperabilidadNivel, string> = { verde: 'bg-pos', amarillo: 'bg-warn', rojo: 'bg-neg' };
 const OPERABLE_TEXTO: Record<OperabilidadNivel, string> = {
   verde: 'entra holgado incluso en el peor día reciente de la ventana',
-  amarillo: 'supera el peor día reciente, pero sigue por debajo de un día típico — riesgo de spread ancho si cae un día flojo',
-  rojo: 'supera incluso un día típico (mediana) — alto riesgo de mal precio de entrada/salida',
+  amarillo: 'supera el peor día reciente pero no un día típico — riesgo de spread ancho',
+  rojo: 'supera incluso un día típico (mediana) — alto riesgo de mal precio',
 };
 const MONTO_OPERAR_DEFAULT = 1000;
 
@@ -73,7 +73,7 @@ export function AnalisisBonoPage() {
 
       {!isLoading && !isError && !ref && (
         <Card><Empty icon={LineChart} title="No está en el catálogo de referencia">
-          Todavía no cargamos el cronograma de {T}. El catálogo se actualiza periódicamente — si es un bono/ON líquido, puede sumarse en la próxima actualización.
+          Todavía no tenemos el cronograma de {T}; puede sumarse en la próxima actualización.
         </Empty></Card>
       )}
 
@@ -86,19 +86,19 @@ export function AnalisisBonoPage() {
               <Stat label="Precio" value={fmtUsd(calc.px)} />
               <Stat label="Paridad" value={calc.paridad != null ? `${fmtNum(calc.paridad, 1)}%` : '—'} />
               <Stat label="TIR" value={calc.tir != null ? fmtPct(calc.tir) : '—'}
-                hint="Tasa efectiva anual (compone los pagos según su frecuencia) — no es directamente comparable contra el cupón nominal simple. Un bono que paga más de una vez al año puede tener TIR por encima del cupón incluso arriba de la par." />
+                hint="Tasa efectiva anual (compone los pagos) — no es comparable con el cupón nominal simple." />
               <Stat label="Rendimiento corriente" value={calc.rendCorriente != null ? fmtPct(calc.rendCorriente) : '—'}
-                hint="Cupón anualizado / precio — a diferencia de la TIR, ignora la ganancia/pérdida de capital hasta el vencimiento" />
+                hint="Cupón anualizado / precio — ignora la ganancia o pérdida de capital" />
               <Stat label="Duración (Macaulay)" value={calc.duracion ? `${fmtNum(calc.duracion.macaulay, 1)} años` : '—'} />
               <Stat label="Duración modificada" value={calc.duracion ? fmtNum(calc.duracion.modified, 2) : '—'}
-                hint="Aproxima el % de variación del precio ante una suba/baja de 1 punto de tasa" />
+                hint="Aprox. % de variación del precio por 1 punto de tasa" />
               <Stat label="Valor residual" value={`${fmtNum(ref.valor_residual * 100, 1)}%`}
-                hint="Fracción del nominal original que todavía queda por cobrar" />
+                hint="% del nominal original que queda por cobrar" />
               <Stat label="Spread vs. UST 10Y" value={spreadRiskFree != null ? fmtPct(spreadRiskFree) : '—'}
-                hint="TIR de este bono menos la tasa libre de riesgo (bono del Tesoro de EE.UU. a 10 años)" />
+                hint="TIR menos la tasa del Tesoro de EE.UU. a 10 años" />
             </div>
             {calc.px == null && (
-              <p className="px-4 pb-2 text-[11px] text-warn">Sin cotización disponible ahora mismo — TIR, duración y rendimiento corriente no se pueden calcular sin precio de mercado.</p>
+              <p className="px-4 pb-2 text-[11px] text-warn">Sin cotización: no se pueden calcular TIR, duración ni rendimiento corriente.</p>
             )}
             {proximoCupon && (
               <p className="px-4 pb-4 text-[11px] text-ink-600">
@@ -112,7 +112,7 @@ export function AnalisisBonoPage() {
 
           <Card>
             <CardHeader title="Volumen operado"
-              sub="Media/mediana/mínimo de los últimos días con dato (USD) — fuente: IOL. No es %ADV institucional: compara tu monto contra el PEOR día reciente, la señal relevante para un ticket minorista, no contra un promedio pensado para no mover vos el mercado con órdenes grandes."
+              sub="Media, mediana y mínimo de los últimos días con dato (USD, fuente: IOL). Tu monto se compara contra el PEOR día reciente."
               right={<Field label="Monto a operar (USD)" className="mb-0">
                 <input type="number" min="0" step="100" value={montoOperarStr}
                   onChange={e => setMontoOperarStr(e.target.value)} className={`${inputCls} w-28`} />
@@ -133,12 +133,12 @@ export function AnalisisBonoPage() {
                 )}
               </>
             ) : (
-              <p className="p-4 text-sm text-ink-600">Catálogo todavía sin volumen refrescado para {ref.ticker}.</p>
+              <p className="p-4 text-sm text-ink-600">Sin volumen refrescado para {ref.ticker}.</p>
             )}
           </Card>
 
           <Card>
-            <CardHeader title="Cronograma de flujos" sub="Fracción del nominal ORIGINAL por período (interés + amortización) — fuente: IOL." />
+            <CardHeader title="Cronograma de flujos" sub="% del nominal ORIGINAL por período (interés + amortización), fuente: IOL." />
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[480px]">
                 <thead className="text-[11px] text-ink-600 border-b border-line">
@@ -168,10 +168,10 @@ export function AnalisisBonoPage() {
 
           {comps.length > 0 && (
             <Card>
-              <CardHeader title="Comparativa" sub="Bonos de calificación y duración parecidas — no la mejor TIR del catálogo, sino los de riesgo más similar a este."
+              <CardHeader title="Comparativa" sub="Bonos de calificación y duración parecidas (riesgo similar, no la mejor TIR)."
                 right={spreadComparables != null && (
                   <span className={`text-xs tnum ${spreadComparables >= 0 ? 'text-pos' : 'text-neg'}`}
-                    title="TIR de este bono menos el promedio de TIR de los comparables del mismo grado">
+                    title="TIR menos el promedio de comparables del mismo grado">
                     {spreadComparables >= 0 ? '+' : ''}{fmtPct(spreadComparables)} vs. promedio comparable
                   </span>
                 )} />
@@ -193,7 +193,7 @@ export function AnalisisBonoPage() {
                         <td className="px-4 py-2 font-semibold text-ink-900">{c.ref.ticker}</td>
                         <td className="px-3 text-ink-700 truncate max-w-[140px]" title={c.ref.emisor ?? undefined}>{c.ref.emisor ?? <span className="text-ink-500">—</span>}</td>
                         <td className="px-3">
-                          <span title={!c.mismoGrado ? `Distinto grado de riesgo que ${T} — completa la lista porque no había suficientes comparables exactos` : undefined}>
+                          <span title={!c.mismoGrado ? `Distinto grado de riesgo que ${T} — completa la lista` : undefined}>
                             <RatingBadge calificadora={c.ref.calificadora} calificacion={c.ref.calificacion} grado={c.grado} escala={c.escalaGrado} />
                           </span>
                         </td>
@@ -206,7 +206,7 @@ export function AnalisisBonoPage() {
                 </table>
               </div>
               {comps.some(c => !c.mismoGrado) && (
-                <p className="px-4 py-2 text-[11px] text-ink-500">No había suficientes bonos calificados igual que {T} en el catálogo — se completó con los de grado más cercano (sin fondo resaltado en Calificación).</p>
+                <p className="px-4 py-2 text-[11px] text-ink-500">Pocos bonos con el mismo grado que {T} — se completó con los de grado más cercano.</p>
               )}
             </Card>
           )}
@@ -266,9 +266,9 @@ function AnalisisIA({ ticker, portfolioId, bono, calc, tirComparables, spreadCom
 
   return (
     <Card>
-      <CardHeader title="Análisis cualitativo (IA)" sub="Gemini interpreta los números calculados por el código (TIR, duración, calificación, comparativa). No es recomendación de inversión."
+      <CardHeader title="Análisis cualitativo (IA)" sub="Gemini interpreta los números calculados por el código. No es recomendación de inversión."
         right={<Button variant="ghost" onClick={run} disabled={busy || calc.tir == null}><Sparkles className="w-4 h-4" /> {busy ? 'Analizando…' : mostrado ? 'Regenerar' : 'Analizar'}</Button>} />
-      {calc.tir == null && !mostrado && <p className="px-4 pb-3 text-xs text-ink-500">Necesita TIR calculada (precio de mercado disponible) para poder analizarlo.</p>}
+      {calc.tir == null && !mostrado && <p className="px-4 pb-3 text-xs text-ink-500">Necesita TIR calculada (precio de mercado) para analizarlo.</p>}
       {err && <p className="px-4 pt-1 text-xs text-neg">No se pudo generar: {err}</p>}
       {mostrado && (
         <div className="px-4 py-3">

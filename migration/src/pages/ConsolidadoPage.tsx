@@ -54,7 +54,7 @@ export function ConsolidadoPage() {
 
       <div className="flex items-start gap-2 rounded-xl bg-surface border border-line px-3 py-2 text-[11px] text-ink-600">
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
-        <p>Vista agregada de todos los portfolios. La <b className="text-ink-800">gestión se hace por portfolio</b> (elegilo en el header); acá solo ves el total y la exposición combinada.</p>
+        <p>Total de todos los portfolios. La <b className="text-ink-800">gestión se hace por portfolio</b> (elegilo en el header).</p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -111,7 +111,7 @@ export function ConsolidadoPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Exposición consolidada por activo" sub="Cuánto pesa cada activo sumando todos los portfolios." />
+        <CardHeader title="Exposición consolidada por activo" sub="Peso de cada activo sumando todos los portfolios." />
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
@@ -130,7 +130,7 @@ export function ConsolidadoPage() {
               ))}
               {isLoading
                 ? <tr><td colSpan={4}><p className="p-4 text-sm text-ink-600">Cargando…</p></td></tr>
-                : tickersOrdenados.length === 0 && <tr><td colSpan={4}><Empty icon={Layers} title="Nada para consolidar">Cargá posiciones en algún portfolio para ver la exposición combinada.</Empty></td></tr>}
+                : tickersOrdenados.length === 0 && <tr><td colSpan={4}><Empty icon={Layers} title="Nada para consolidar">Cargá posiciones en algún portfolio.</Empty></td></tr>}
             </tbody>
           </table>
         </div>

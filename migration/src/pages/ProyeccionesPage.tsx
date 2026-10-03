@@ -84,7 +84,7 @@ export function ProyeccionesPage() {
       </div>
 
       <Card>
-        <CardHeader title="Supuestos" sub="Interés compuesto + aportes anuales. Editá y se recalcula."
+        <CardHeader title="Supuestos" sub="Interés compuesto + aportes anuales."
           right={<div className="flex items-center gap-1.5">
             <Button variant="ghost" onClick={restablecer}>Restablecer</Button>
             <Button onClick={guardar}>Guardar</Button>

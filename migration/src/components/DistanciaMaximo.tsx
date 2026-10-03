@@ -26,7 +26,7 @@ export function DistanciaMaximo({ dd }: { dd: Drawdowns }) {
           );
         })}
       </div>
-      <p className="text-[10px] text-ink-500 mt-1.5">Todo en USD, vs máximo histórico · Merval = ^MERV ÷ CCL (histórico desde ~2011).</p>
+      <p className="text-[10px] text-ink-500 mt-1.5">Todo en USD · Merval = ^MERV ÷ CCL.</p>
     </div>
   );
 }

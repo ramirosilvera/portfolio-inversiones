@@ -179,7 +179,7 @@ export function DashboardPage() {
           <AlertTriangle className="w-4 h-4 shrink-0 text-warn mt-0.5" />
           <p>
             Sin cotización de <b>{sinPrecio.slice(0, 4).join(', ')}{sinPrecio.length > 4 ? ` +${sinPrecio.length - 4}` : ''}</b>:
-            esas posiciones se muestran <b>a costo</b>, así que el patrimonio y el P&L no reflejan el mercado.
+            se muestran <b>a costo</b>: el patrimonio y el P&L no reflejan el mercado.
             No se registra el histórico del día hasta que vuelvan los precios.
           </p>
         </div>
@@ -357,10 +357,10 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
   const { aportado, retirado, neto } = resumenAportes(aportes);
   const titulo = modo === 'rendimiento' ? 'Rendimiento por año' : modo === 'aportes' ? 'Aportes' : 'Rendimiento y aportes';
   const href = modo === 'aportes' ? '/aportes' : '/aportes#rendimiento-anual';
-  const movimientos = `${aportes.length} movimiento${aportes.length > 1 ? 's' : ''} de capital — lo que mueve la TIR, no el rendimiento de mercado.`;
+  const movimientos = `${aportes.length} movimiento${aportes.length > 1 ? 's' : ''} de capital, no rendimiento de mercado.`;
   const sub = modo === 'aportes' ? movimientos
-    : modo === 'rendimiento' ? 'Cuánto rindió cada año calendario (del pasado, no anualizado).'
-    : `Cuánto rindió cada año calendario, y ${movimientos.charAt(0).toLowerCase()}${movimientos.slice(1)}`;
+    : modo === 'rendimiento' ? 'Rendimiento por año calendario, no anualizado.'
+    : `Rendimiento por año calendario y ${movimientos.charAt(0).toLowerCase()}${movimientos.slice(1)}`;
 
   return (
     <Card>
@@ -402,7 +402,7 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
               los años más viejos, que son los que este texto explica; si se evaluara sobre
               `visiblesAnio` desaparecería la explicación exactamente cuando hace falta. */}
           {porAnio.some(r => r.rendimiento == null) && (
-            <p className="px-4 pb-3 text-[11px] text-ink-500">Los años en "—" se completan a medida que la app registra el valor diario; el histórico previo a esta función no se puede reconstruir.</p>
+            <p className="px-4 pb-3 text-[11px] text-ink-500">Los años en "—" se completan a medida que la app registra el valor diario.</p>
           )}
         </div>
       )}
@@ -420,7 +420,7 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
                 segunda línea en vez de esconderse detrás de "…" (mismo criterio que CobrosResumen/
                 LiquidezFci, que ya usan tiles más chicos que Stat por este mismo motivo). */}
             <div className="grid grid-cols-3 gap-2 p-3">
-              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los aportes (inicial + recurrente + adelanto)">
+              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los aportes">
                 <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Aportado</p>
                 <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(aportado, 0)}>{fmtUsdCompact(aportado, { k: true })}</p>
               </div>
@@ -493,7 +493,7 @@ function CedearsResumen({ personalizando }: { personalizando: boolean }) {
 
   return (
     <Card>
-      <CardHeader title="CEDEARs" sub={`${cedears.length} CEDEAR${cedears.length > 1 ? 's' : ''} en cartera · sector y estilo (Peter Lynch)`}
+      <CardHeader title="CEDEARs" sub={`${cedears.length} CEDEAR${cedears.length > 1 ? 's' : ''} en cartera`}
         // Sin link mientras se personaliza el layout — mismo criterio que las tarjetas atómicas: un
         // click acá durante una reordenada navegaría afuera del Dashboard sin querer.
         right={personalizando ? right : <Link to="/cedears" className="inline-flex items-center gap-1.5">{right}</Link>} />
@@ -502,13 +502,13 @@ function CedearsResumen({ personalizando }: { personalizando: boolean }) {
         <Stat label="Mayor posición" value={mayorPosicion
           ? <span className={mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA ? 'text-warn' : 'text-ink-900'}>{mayorPosicion.ticker} · {fmtPct(mayorPosicion.pct, 0)}</span>
           : <span className="text-ink-500">—</span>}
-          hint="% del capital en CEDEARs concentrado en un solo ticker" />
+          hint="% del capital en CEDEARs que está en un solo ticker" />
         <Stat label="Sectores distintos" value={nSectores}
-          hint="Cantidad de sectores distintos con capital cargado (no cuenta 'Sin sector')" />
+          hint="Sectores con capital cargado (no cuenta 'Sin sector')" />
         <Stat label="Concentración sectorial" value={hhiSector != null
           ? <span className={hhiSector >= HHI_SECTOR_ALERTA ? 'text-warn' : 'text-ink-900'}>{fmtNum(hhiSector, 2)}</span>
           : <span className="text-ink-500">—</span>}
-          hint="Índice de Herfindahl (Σ pesoᵢ²) sobre el capital por sector: 1/N con N sectores parejos, 1 = todo en un sector." />
+          hint="Herfindahl (Σ pesoᵢ²) por sector: 1/N con N sectores parejos, 1 = todo en uno." />
       </div>
     </Card>
   );
@@ -536,20 +536,20 @@ function BonosResumen({ personalizando }: { personalizando: boolean }) {
 
   return (
     <Card>
-      <CardHeader title="Bonos" sub={`${bonos.length} bono${bonos.length > 1 ? 's' : ''} en cartera · precio por nominal (data912)`}
+      <CardHeader title="Bonos" sub={`${bonos.length} bono${bonos.length > 1 ? 's' : ''} en cartera · precio por nominal`}
         right={personalizando ? right : <Link to="/bonos" className="inline-flex items-center gap-1.5">{right}</Link>} />
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3">
         <Stat label="Capital" value={fmtUsdCompact(totalMkt)} />
         <Stat label="TIR promedio" value={tirPromedio != null
           ? <span className={tirPromedio >= 0 ? 'text-pos' : 'text-neg'}>{fmtPct(tirPromedio)}</span>
           : <span className="text-ink-500">—</span>}
-          hint="Promedio ponderado por capital de la TIR (YTM) de cada bono" />
+          hint="TIR (YTM) promedio ponderada por capital" />
         <Stat label="Duración prom." value={duracionPromedio != null ? `${fmtNum(duracionPromedio, 1)}a` : '—'}
-          hint="Duración de Macaulay promedio ponderada por capital — sensibilidad de la cartera de bonos a la tasa" />
+          hint="Duración de Macaulay ponderada por capital: sensibilidad a la tasa" />
         <Stat label="Grado inversión" value={fmtPct(distribucionGrado.gradoInversion, 0)}
-          hint="% del capital en bonos calificados grado de inversión, dentro de su propia escala — nacional Arg. (FIX SCR/Moody's Local, lo habitual) o global (S&P/Moody's/Fitch), no mezcladas 1 a 1. El resto es especulativo, default, o sin calificar" />
+          hint="% del capital en grado de inversión, según su escala (nacional o global, no se mezclan). El resto es especulativo, default o sin calificar" />
         <Stat label="Ley local" value={fmtPct(distribucionLey.local, 0)}
-          hint="% del capital en bonos bajo ley Argentina (Bonares y su equivalente en ONs) — cargado a mano por bono, se pre-llena solo desde el catálogo de referencia cuando el ticker matchea. El resto es ley extranjera o sin clasificar." />
+          hint="% del capital en bonos ley Argentina (Bonares y ONs equivalentes). El resto es ley extranjera o sin clasificar." />
       </div>
     </Card>
   );
@@ -927,7 +927,7 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizand
     : <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
   return (
     <Card>
-      <CardHeader title="Cobros" sub="Dividendos, intereses y amortizaciones efectivamente cobrados."
+      <CardHeader title="Cobros" sub="Dividendos, intereses y amortizaciones cobrados."
         right={personalizando ? rightContent : <Link to="/cupones" className="inline-flex items-center gap-1.5">{rightContent}</Link>} />
       <div className="grid grid-cols-3 gap-2 p-3">
         <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-3 min-w-0">
@@ -948,8 +948,8 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizand
       </div>
       {proximoCapital && (
         <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
-          title="Devolución de capital (amortización + rescate al vencimiento) de todos los bonos, ventana de 12 meses — NO es renta. Bonos amortizables sin cronograma cargado se estiman con su valor residual, todo junto al vencimiento.">
-          Próximo mes con capital <span className="italic">proyectado</span> (amortización o rescate al vencimiento, no es renta): <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(proximoCapital.total)}</span> en {MESES_CORTOS[proximoCapital.month - 1]} {proximoCapital.year}
+          title="Devolución de capital de los próximos 12 meses — NO es renta. Sin cronograma cargado, se estima todo al vencimiento.">
+          Próximo capital <span className="italic">proyectado</span> (amortización o rescate, no es renta):<span className="tnum font-semibold text-ink-700">{fmtUsdCompact(proximoCapital.total)}</span> en {MESES_CORTOS[proximoCapital.month - 1]} {proximoCapital.year}
           {personalizando ? ' — detalle en Cupones' : <> — <Link to="/cupones" className="text-celeste-600 hover:underline">detalle en Cupones →</Link></>}
         </p>
       )}
@@ -972,7 +972,7 @@ function FinanzasResumen({ resumen, personalizando }: { resumen: ReturnType<type
   ];
   return (
     <Card>
-      <CardHeader title="Finanzas" sub="Ingresos, egresos y cuánto ya asignaste a inversiones · compartido entre todos tus portfolios."
+      <CardHeader title="Finanzas" sub="Ingresos, egresos y lo asignado a inversiones · compartido entre tus portfolios."
         right={personalizando ? <span className="text-[11px] text-celeste-600">Editar flujo →</span> : <Link to="/finanzas" className="text-[11px] text-celeste-600 hover:underline">Editar flujo →</Link>} />
       <div className="grid grid-cols-3 gap-2 p-3">
         {tiles.map(t => (
@@ -1019,7 +1019,7 @@ function PatrimonioBrokers({ posiciones, quotes, isLoading, personalizando }: {
   }
   return (
     <Card>
-      <CardHeader title="Patrimonio por broker" sub="Dónde está físicamente cada posición." right={right} />
+      <CardHeader title="Patrimonio por broker" sub="Dónde está cada posición." right={right} />
       <div className="p-4 grid sm:grid-cols-[minmax(0,180px)_1fr] gap-4 items-center">
         <div className="h-[160px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -1065,7 +1065,7 @@ function MacroResumen({ resumen, personalizando }: { resumen: ResumenMacro; pers
 
       {/* Salud del tablero: barra verde/amarillo/rojo + leyenda (visual, de un vistazo). */}
       {total === 0 ? (
-        <div className="px-4 pt-3.5 pb-4"><p className="text-sm text-ink-600">Todavía no hay datos de mercado; se completan con el próximo refresco.</p></div>
+        <div className="px-4 pt-3.5 pb-4"><p className="text-sm text-ink-600">Sin datos de mercado todavía.</p></div>
       ) : (
         <div className="px-4 pt-3.5 pb-4">
           <div className="h-2.5 rounded-full bg-canvas overflow-hidden flex">

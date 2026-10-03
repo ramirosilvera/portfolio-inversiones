@@ -84,7 +84,7 @@ export function BrokersPage() {
       <h1 className="text-2xl font-bold text-ink-900 font-display">Brokers · {active.nombre}</h1>
 
       <Card>
-        <CardHeader title="Agregar broker" sub="Ej. Invertir Online, Santander. Después asigná cada posición más abajo." />
+        <CardHeader title="Agregar broker" sub="Después asigná cada posición más abajo." />
         <div className="p-4 flex flex-wrap items-end gap-2">
           <label className="flex-1 min-w-[160px] block">
             <span className="block text-[11px] text-ink-600 mb-1">Nombre</span>
@@ -96,11 +96,11 @@ export function BrokersPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Patrimonio por broker" sub={`Portfolio activo: ${active.nombre} · valuado igual que Posiciones.`} />
+        <CardHeader title="Patrimonio por broker" sub={`${active.nombre} · valuado igual que Posiciones.`} />
         {asigLoading || brokersLoading ? (
           <p className="p-4 text-sm text-ink-600">Cargando…</p>
         ) : resumen.length === 0 ? (
-          <Empty icon={Landmark} title="Sin posiciones abiertas">Cuando tengas posiciones abiertas, van a aparecer acá agrupadas por broker.</Empty>
+          <Empty icon={Landmark} title="Sin posiciones abiertas">Van a aparecer acá agrupadas por broker.</Empty>
         ) : (
           <>
             <div className="p-4 grid sm:grid-cols-[minmax(0,180px)_1fr] gap-4 items-center border-b border-line">
@@ -158,11 +158,11 @@ export function BrokersPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Asignación por posición" sub="Ticker, cantidad y broker. Si una posición está repartida, agregá una fila por cada broker." />
+        <CardHeader title="Asignación por posición" sub="Si una posición está repartida, agregá una fila por broker." />
         {asigLoading ? (
           <p className="p-4 text-sm text-ink-600">Cargando…</p>
         ) : abiertas.length === 0 ? (
-          <Empty icon={Landmark} title="Sin posiciones abiertas">Cuando tengas posiciones abiertas, van a aparecer acá para asignarles un broker.</Empty>
+          <Empty icon={Landmark} title="Sin posiciones abiertas">Van a aparecer acá para asignarles un broker.</Empty>
         ) : (
           <div className="divide-y divide-line">
             {abiertas.map(pos => (

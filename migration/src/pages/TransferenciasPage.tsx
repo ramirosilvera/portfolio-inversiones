@@ -46,7 +46,7 @@ export function TransferenciasPage() {
       <TransferirForm portfolioOrigenId={active.id} posiciones={abiertas} destinos={destinos} transferir={transferir} />
 
       <Card>
-        <CardHeader title="Historial" sub="Transferencias donde participó alguno de tus portfolios." />
+        <CardHeader title="Historial" sub="Transferencias de tus portfolios." />
         {histLoading ? (
           <p className="p-4 text-sm text-ink-600">Cargando…</p>
         ) : transferencias.length === 0 ? (
@@ -121,7 +121,7 @@ function TransferirForm({ portfolioOrigenId, posiciones, destinos, transferir }:
     return (
       <Card>
         <CardHeader title="Transferir posición" />
-        <Empty icon={ArrowRightLeft} title="Necesitás otro portfolio">Creá otro portfolio en Configuración para poder transferir activos entre ellos.</Empty>
+        <Empty icon={ArrowRightLeft} title="Necesitás otro portfolio">Creá otro portfolio en Configuración para transferir.</Empty>
       </Card>
     );
   }
@@ -129,14 +129,14 @@ function TransferirForm({ portfolioOrigenId, posiciones, destinos, transferir }:
     return (
       <Card>
         <CardHeader title="Transferir posición" />
-        <Empty icon={ArrowRightLeft} title="Sin posiciones abiertas">Cuando tengas posiciones abiertas en este portfolio, vas a poder transferirlas acá.</Empty>
+        <Empty icon={ArrowRightLeft} title="Sin posiciones abiertas">Vas a poder transferir cuando tengas posiciones abiertas.</Empty>
       </Card>
     );
   }
 
   return (
     <Card>
-      <CardHeader title="Transferir posición" sub="Reclasificación contable entre tus portfolios: preserva el costo y la fecha de compra exactos. No es una venta." />
+      <CardHeader title="Transferir posición" sub="Preserva costo y fecha de compra. No es una venta." />
       <div className="p-4 flex flex-wrap items-end gap-2 text-sm">
         <Field label="Posición" className="flex-1 min-w-[160px]">
           <select value={posicionId} onChange={e => { setPosicionId(e.target.value); setCantidad(''); }} className={`${inputCls} appearance-none`}>

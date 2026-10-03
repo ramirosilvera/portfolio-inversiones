@@ -77,7 +77,7 @@ export function AdminPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Actividad reciente" sub="Últimas acciones de administración (altas, bajas, permisos)." />
+        <CardHeader title="Actividad reciente" sub="Últimas acciones de administración." />
         {auditLoading ? (
           <p className="p-4 text-sm text-ink-600">Cargando…</p>
         ) : entries.length === 0 ? (
@@ -117,7 +117,7 @@ function CrearUsuario({ onCrear }: { onCrear: (b: { email: string; password: str
 
   return (
     <Card>
-      <CardHeader title="Crear usuario" sub="Vos elegís la contraseña inicial y se la pasás por fuera de la app — no depende de que el proyecto tenga email de invitación configurado." />
+      <CardHeader title="Crear usuario" sub="Elegís la contraseña inicial y se la pasás por fuera de la app." />
       <div className="p-4 flex flex-wrap items-end gap-2">
         <Field label="Email" className="flex-1 min-w-[200px]">
           <input value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="usuario@ejemplo.com" type="email" />

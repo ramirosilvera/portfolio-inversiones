@@ -53,7 +53,7 @@ function AnalisisVariable() {
   return (
     <>
       <Card>
-        <CardHeader title="Analizá una empresa" sub="Valuación por Owner Earnings + ratios + chequeos Munger. Funciona con empresas que reportan a la SEC (EE.UU.)." />
+        <CardHeader title="Analizá una empresa" sub="DCF por Owner Earnings, ratios y chequeos Munger. Solo empresas que reportan a la SEC." />
         <form className="p-4 flex flex-wrap gap-2 items-end" onSubmit={e => { e.preventDefault(); ir(ticker); }}>
           <Field label="Ticker" className="flex-1 min-w-[160px]">
             <input autoFocus placeholder="ej. GOOGL, MSFT, KO" value={ticker}
@@ -64,7 +64,7 @@ function AnalisisVariable() {
           </div>
         </form>
         <p className="px-4 pb-4 text-[11px] text-ink-600">
-          Si la empresa no se reconoce por defecto, cargá su par <b className="text-ink-800">ticker → CIK</b> en Configuración.
+          Si no se reconoce, cargá su par <b className="text-ink-800">ticker → CIK</b> en Configuración.
         </p>
       </Card>
 
@@ -100,7 +100,7 @@ function AnalisisFija({ bonosRef }: { bonosRef: { ticker: string; emisor: string
   return (
     <>
       <Card>
-        <CardHeader title="Buscar un bono u ON" sub="TIR, duración y cronograma de flujos — no hay DCF acá (Owner Earnings no aplica a renta fija). Para comparar varios a la vez, ver Radar." />
+        <CardHeader title="Buscar un bono u ON" sub="TIR, duración y cronograma de flujos (sin DCF). Para comparar varios, ver Radar." />
         <div className="p-4">
           <Field label="Ticker o emisor">
             <div className="relative">

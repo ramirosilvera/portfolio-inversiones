@@ -137,7 +137,7 @@ export function Layout() {
       </header>
 
       {/* ── Main ──────────────────────────────────────────────── */}
-      <main className="mx-auto max-w-6xl w-full px-4 py-6 flex-1 animate-fade-in">
+      <main className="mx-auto max-w-6xl w-full min-w-0 px-4 py-6 flex-1 animate-fade-in">
         {loading ? (
           <div className="text-center py-20 text-ink-600">Cargando…</div>
         ) : portfolios.length === 0 ? (
@@ -234,7 +234,7 @@ function ConsolidadoHint() {
   return (
     <div className="text-center py-20">
       <p className="text-ink-900 font-bold text-lg font-display">Estás en vista consolidada</p>
-      <p className="text-sm text-ink-600 mt-1 mb-5">La gestión se hace por portfolio. Elegí uno en el selector de arriba, o mirá el total.</p>
+      <p className="text-sm text-ink-600 mt-1 mb-5">Elegí un portfolio en el selector de arriba, o mirá el total.</p>
       <Link to="/consolidado" className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface text-ink-800 px-5 py-2.5 text-sm font-semibold hover:border-celeste-300 transition-colors">
         Ver Consolidado
       </Link>

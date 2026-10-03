@@ -276,7 +276,7 @@ function RadarVariable() {
               {(Object.keys(AMPLITUD_LABEL) as AmplitudFoso[]).map(a => <option key={a} value={a}>{AMPLITUD_LABEL[a]}</option>)}
             </select>
           </Field>
-          <Field label="Ticker" hint={`${tickersFiltrados.length} de ${TICKERS_CONOCIDOS.length} verificadas con este filtro, o escribí cualquier otro ticker`}>
+          <Field label="Ticker" hint={`${tickersFiltrados.length} de ${TICKERS_CONOCIDOS.length} con este filtro, o escribí otro ticker`}>
             <TickerCombobox value={ticker} onChange={setTicker} tickers={tickersFiltrados} />
           </Field>
           <Field label="Nota (opcional)" className="flex-1 min-w-[140px]">
@@ -297,7 +297,7 @@ function RadarVariable() {
 
       <Card>
         <CardHeader title="Tickers en seguimiento"
-          sub="Score = valuación (MoS) + calidad (ROIC−Ke, margen) + crecimiento (EG5Y) + solidez (deuda). Calculado por el código."
+          sub="Score = valuación (MoS) + calidad (ROIC−Ke, margen) + crecimiento (EG5Y) + solidez (deuda)."
           right={<div className="flex items-center gap-2 flex-wrap justify-end">
             {compraAgresivaCount > 0 &&
               <Badge tone="pos"><Flame className="w-3 h-3" /><span className="ml-1">{compraAgresivaCount} compra agresiva{compraAgresivaCount > 1 ? 's' : ''}</span></Badge>}
@@ -330,7 +330,7 @@ function RadarVariable() {
           </table>
         </div>
         <p className="px-4 py-3 text-[11px] text-ink-600">
-          El score de fundamentos requiere datos de EDGAR (SEC proxy). Sin eso, se muestra solo el precio y el score queda parcial o —.
+          El score requiere datos de EDGAR; sin ellos se muestra solo el precio.
         </p>
       </Card>
     </div>
@@ -390,7 +390,7 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
       <td className="px-4 py-2">
         <div className="flex items-center gap-2">
           {agresiva && (
-            <span title={`Compra agresiva — margen de seguridad ≥${Math.round(MARGEN_COMPRA_AGRESIVA * 100)}%, estándar Buffett de oportunidad amplia`}>
+            <span title={`Compra agresiva — margen de seguridad ≥${Math.round(MARGEN_COMPRA_AGRESIVA * 100)}%`}>
               <Flame className="w-3.5 h-3.5 text-pos shrink-0" aria-label="Compra agresiva" />
             </span>
           )}
@@ -404,7 +404,7 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
           ? <span title={`${AMPLITUD_LABEL[moat.amplitud]} · ${moat.fosos.length > 0 ? moat.fosos.map(f => FOSO_LABEL[f]).join(', ') : 'sin foso claro'} — ${moat.nota}`}>
               <Badge tone={AMPLITUD_TONE[moat.amplitud]}>{AMPLITUD_LABEL[moat.amplitud]}</Badge>
             </span>
-          : <span className="text-ink-500 text-xs" title="Ticker agregado a mano, fuera del listado hardcodeado clasificado">—</span>}
+          : <span className="text-ink-500 text-xs" title="Ticker agregado a mano, sin clasificar">—</span>}
       </td>
       <td className="text-right px-3 tnum">{fmtUsd(price)}</td>
       <td className="text-right px-3 tnum">{dcf ? fmtPct(dcf.marginOfSafety) : '—'}</td>
@@ -425,11 +425,11 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
         {score?.score != null
           ? <span className="inline-flex items-center gap-1.5"><span className="tnum font-bold text-ink-900">{score.score}</span><Badge tone={RATING_TONE[score.rating!]}>{score.rating}</Badge></span>
           : isFetching
-            ? <span className="text-ink-500 text-xs" title="Cargando fundamentals de EDGAR (probando resolver el CIK solo, si hace falta)…">…</span>
+            ? <span className="text-ink-500 text-xs" title="Cargando fundamentals de EDGAR…">…</span>
             : isError && !cik
-              ? <Link to="/config" className="text-[10px] text-warn hover:underline" title="No pudimos identificar el CIK automáticamente — cargalo a mano en Configuración">sin CIK</Link>
+              ? <Link to="/config" className="text-[10px] text-warn hover:underline" title="No se pudo identificar el CIK — cargalo en Configuración">sin CIK</Link>
               : isError
-                ? <span className="text-neg text-[10px]" title="No se pudo cargar (ya reintentó solo) — probá 'Refrescar' arriba">falló</span>
+                ? <span className="text-neg text-[10px]" title="No se pudo cargar — probá 'Refrescar'">falló</span>
                 : <span className="text-ink-600">—</span>}
       </td>
       <td className="px-2 text-right whitespace-nowrap">
@@ -465,7 +465,7 @@ const OPERABLE_DOT: Record<OperabilidadNivel, string> = { verde: 'bg-pos', amari
 const OPERABLE_LABEL: Record<OperabilidadNivel, string> = {
   verde: 'Operable con holgura para este monto',
   amarillo: 'Operable, pero con riesgo de spread ancho en un día flojo',
-  rojo: 'Poco líquido para este monto — alto riesgo de mal precio de entrada/salida',
+  rojo: 'Poco líquido para este monto — alto riesgo de mal precio',
 };
 const MONTO_OPERAR_DEFAULT = 1000;
 
@@ -617,7 +617,7 @@ function RadarFija() {
               {(Object.keys(FILTRO_GRADO_LABEL) as FiltroGrado[]).map(g => <option key={g} value={g}>{FILTRO_GRADO_LABEL[g]}</option>)}
             </select>
           </Field>
-          <Field label="Ley" hint="Jurisdicción aplicable — Bonares/Globales en soberanos, y su equivalente en ONs">
+          <Field label="Ley" hint="Jurisdicción de cobro (local o extranjera)">
             <select value={filtroLey} onChange={e => setFiltroLey(e.target.value as FiltroLey)} className={`${inputCls} w-32`}>
               {(Object.keys(FILTRO_LEY_LABEL) as FiltroLey[]).map(l => <option key={l} value={l}>{FILTRO_LEY_LABEL[l]}</option>)}
             </select>
@@ -640,7 +640,7 @@ function RadarFija() {
                 onChange={e => setFiltroDuracionMax(e.target.value)} className={`${inputCls} w-20`} />
             </div>
           </Field>
-          <Field label="Monto a operar (USD)" hint="Para la columna Operable: ¿alcanza el volumen real reciente para este monto?">
+          <Field label="Monto a operar (USD)" hint="Para la columna Operable">
             <input type="number" min="0" step="100" value={montoOperarStr}
               onChange={e => setMontoOperarStr(e.target.value)} className={`${inputCls} w-28`} />
           </Field>
@@ -648,7 +648,7 @@ function RadarFija() {
       </Card>
 
       <Card>
-        <CardHeader title="Curva TIR / duración" sub="Cada punto es un bono u ON — eje X duración (Macaulay, años, sensibilidad a la tasa), eje Y TIR. Calculado por el código a partir del cronograma real (fuente: IOL)."
+        <CardHeader title="Curva TIR / duración" sub="Cada punto es un bono u ON — eje X duración (Macaulay, años), eje Y TIR (fuente: IOL)."
           right={<div className="flex items-center gap-1.5">
             <span className="text-[11px] text-ink-600 mr-1">Colorear por</span>
             <ViewToggle value={colorPor} onChange={setColorPor} label="Colorear por"
@@ -692,17 +692,17 @@ function RadarFija() {
             </div>
           </>
         ) : (
-          <div className="p-4"><Empty icon={Radar} title="Sin puntos para graficar">Ningún bono del filtro actual tiene cotización de mercado todavía.</Empty></div>
+          <div className="p-4"><Empty icon={Radar} title="Sin puntos para graficar">Ningún bono del filtro tiene cotización todavía.</Empty></div>
         )}
       </Card>
 
       <Card>
-        <CardHeader title="Catálogo de referencia" sub={`${ordenados.length} de ${bonosRef.length} instrumentos · TIR y duración calculadas por el código, no cargás cupón a mano.`}
+        <CardHeader title="Catálogo de referencia" sub={`${ordenados.length} de ${bonosRef.length} instrumentos · TIR y duración calculadas por el código.`}
           right={<div className="flex items-center gap-1.5">
             {/* Exporta EXACTAMENTE lo que está en pantalla — mismo filtro/orden/destacados que
                 `ordenados`, así "catálogo completo o filtrado" no necesita un modo separado: sin
                 filtros aplicados ya es el completo. */}
-            <span title="Exporta a CSV (Excel/Sheets) exactamente lo que se ve en la tabla de abajo">
+            <span title="Exporta a CSV lo que se ve en la tabla">
               <Button variant="ghost" onClick={() => descargarTexto(bonosACSV(ordenados), nombreArchivoCsv(hoy), 'text/csv;charset=utf-8')}
                 disabled={ordenados.length === 0}>
                 <Download className="w-4 h-4" /> Exportar CSV
@@ -726,7 +726,7 @@ function RadarFija() {
                 <ThSort<SortKeyRF> label="TIR" sortKey="tir" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Duración" sortKey="duracion" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Vencimiento" sortKey="vencimiento" sort={sortRF} onClick={handleSortRF} />
-                <th className="px-3" title="¿Alcanza el volumen real reciente para el monto de arriba?">Operable</th>
+                <th className="px-3" title="¿Alcanza el volumen reciente para el monto de arriba?">Operable</th>
                 <th className="px-3"></th>
               </tr>
             </thead>
@@ -737,10 +737,10 @@ function RadarFija() {
                   montoOperar={montoOperar} />
               ))}
               {bonosRefError && (
-                <tr><td colSpan={12}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página — si sigue fallando, puede ser un problema temporal de conexión.</Empty></td></tr>
+                <tr><td colSpan={12}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página; si sigue fallando, puede ser un problema de conexión.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length === 0 && (
-                <tr><td colSpan={12}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé a mirar en unos días.</Empty></td></tr>
+                <tr><td colSpan={12}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé en unos días.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length > 0 && ordenados.length === 0 && (
                 <tr><td colSpan={12}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
@@ -810,7 +810,7 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado,
           <span className="inline-flex items-center gap-1.5" title={`${OPERABLE_LABEL[operable]} · mediana ${fmtUsd(volumen!.medianaUsd, 0)}/día, peor día reciente ${fmtUsd(volumen!.minimoUsd, 0)} (últimas ${volumen!.diasConDatos} ruedas)`}>
             <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${OPERABLE_DOT[operable]}`} />
           </span>
-        ) : <span className="text-ink-500 text-xs" title="Catálogo todavía sin volumen refrescado para este ticker">—</span>}
+        ) : <span className="text-ink-500 text-xs" title="Sin volumen refrescado para este ticker">—</span>}
       </td>
       <td className="px-2 text-right whitespace-nowrap">
         <Link to={`/analisis/bono/${ref.ticker}`} className="text-ink-600 hover:text-accent inline-flex items-center justify-center w-9 h-9" title="Análisis" aria-label="Análisis del bono"><LineChart className="w-4 h-4" /></Link>
@@ -843,13 +843,13 @@ function EditarClasificacionModal({ calc, onClose, onGuardar }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-sm" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Clasificación de ${calc.ref.ticker}`}>
+      <div className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Clasificación de ${calc.ref.ticker}`}>
         <Card className="animate-rise">
           <CardHeader title={`Clasificación · ${calc.ref.ticker}`}
-            sub="Cargada a mano — no hay API gratuita de rating ni de ley aplicable para renta fija argentina."
+            sub="Se carga a mano: no hay API gratuita de rating ni de ley."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 space-y-3">
-            <Field label="Ley aplicable" hint="Jurisdicción — Bonares/Globales en soberanos, y su equivalente en ONs">
+            <Field label="Ley aplicable" hint="Jurisdicción de cobro (local o extranjera)">
               <select value={ley} onChange={e => setLey(e.target.value as typeof ley)} className={inputCls}>
                 <option value="">Sin clasificar</option>
                 <option value="local">{LEY_LABEL.local}</option>

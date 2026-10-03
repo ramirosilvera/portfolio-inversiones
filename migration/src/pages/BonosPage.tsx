@@ -26,7 +26,7 @@ const SIN_DATO_COLOR = '#8B96A5';
 // al costo). Además, si "hoy" cae cerca de una fecha de cupón calculada desde el vencimiento, el
 // motor no descuenta el interés corrido (no modela precio "sucio") y ese cupón casi inmediato puede
 // inflar la TIR bastante por encima del cupón nominal — no es que el bono rinda eso en la práctica.
-const SIN_COTIZACION_HINT = 'Sin cotización de mercado todavía (puede ser un bono recién suscripto en licitación primaria) — se estima con tu precio de compra. Si hay un pago de cupón próximo, esta TIR puede estar inflada (el cálculo no descuenta el interés corrido).';
+const SIN_COTIZACION_HINT = 'Sin cotización todavía: se estima con tu precio de compra. Con un cupón próximo, la TIR puede estar inflada (no descuenta interés corrido).';
 
 // Ningún proveedor (ni data912, verificado a mano contra su respuesta real) publica cronograma de
 // amortización ni valor residual — TIR/duración/rendimiento corriente asumen bullet (100% del
@@ -35,7 +35,7 @@ const SIN_COTIZACION_HINT = 'Sin cotización de mercado todavía (puede ser un b
 // puede ser grande (no "leve") y cambia de signo según si el bono cotiza bajo o sobre la par — ver
 // el comentario de ytm() en engine/coupons.ts. "Paridad" y "Valor mercado" NUNCA se ajustan por
 // valor residual: si hay cotización de mercado, el precio ya refleja lo que vale el bono hoy.
-const BULLET_HINT = 'TIR, duración y rendimiento corriente asumen bullet (100% del capital al vencimiento) salvo que marques el bono como "Amortizable" y cargues el valor residual con el ✏️. Paridad y Valor mercado no se ajustan por esto: si hay cotización de mercado, ya reflejan el valor real.';
+const BULLET_HINT = 'TIR, duración y rendimiento corriente asumen bullet (100% al vencimiento) salvo que lo marques "Amortizable" y cargues el valor residual (✏️). Paridad y Valor mercado no se ajustan.';
 
 export function BonosPage() {
   const { active } = usePortfolios();
@@ -82,7 +82,7 @@ export function BonosPage() {
       <h1 className="text-2xl font-bold text-ink-900 font-display">Renta fija · {active.nombre}</h1>
       <AlertasBanner alertas={alertas} />
       <Card>
-        <CardHeader title="Bonos y ONs" sub="Precio por nominal (data912). Editá el cupón (✏️) para que aparezcan en el calendario de Cupones."
+        <CardHeader title="Bonos y ONs" sub="Precio por nominal (data912). Cargá el cupón (✏️) para verlos en el calendario de Cupones."
           right={<span className="text-xs text-ink-600 tnum">Capital {fmtUsdCompact(totalCapital)} · Mercado {fmtUsdCompact(totalMkt)}</span>} />
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[960px]">
@@ -114,7 +114,7 @@ export function BonosPage() {
                         {b.amortizable && (
                           <span title={b.valor_residual != null
                             ? `Amortizable — valor residual cargado: ${fmtPct(b.valor_residual, 0)} del nominal original`
-                            : 'Amortizable, pero sin valor residual cargado todavía — se está calculando como bullet (100%). Editalo con el ✏️.'}>
+                            : 'Amortizable sin valor residual cargado — se calcula como bullet (100%). Editalo con el ✏️.'}>
                             <Badge tone={b.valor_residual != null ? 'accent' : 'warn'}>Amort.</Badge>
                           </span>
                         )}
@@ -169,29 +169,29 @@ export function BonosPage() {
         )}
         {haySinCotizacion && (
           <p className="px-4 pb-3 text-[11px] text-ink-500">
-            <sup className="text-[9px]">e</sup> Sin cotización de mercado todavía (puede ser un bono recién suscripto en licitación primaria, que suele tardar en aparecer en el proveedor de precios) — TIR y duración se estiman con tu precio de compra, y pueden estar distorsionadas si hay un pago de cupón próximo (el cálculo no descuenta el interés corrido).
+            <sup className="text-[9px]">e</sup> Sin cotización todavía — TIR y duración se estiman con tu precio de compra y pueden distorsionarse con un cupón próximo.
           </p>
         )}
       </Card>
 
       {bonos.length > 0 && (
         <Card>
-          <CardHeader title="Indicadores clave" sub="Rendimiento, riesgo de crédito, jurisdicción y concentración de la cartera de renta fija." />
+          <CardHeader title="Indicadores clave" sub="Rendimiento, crédito, jurisdicción y concentración de la renta fija." />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
             <Stat label="TIR promedio" value={tirPromedio != null
               ? <span className={tirPromedio >= 0 ? 'text-pos' : 'text-neg'}>{fmtPct(tirPromedio)}</span>
               : <span className="text-ink-500">—</span>}
-              hint="Promedio ponderado por capital de la TIR (YTM) de cada bono" />
+              hint="TIR (YTM) promedio ponderada por capital" />
             <Stat label="Rend. corriente" value={rendCorrientePromedio != null ? fmtPct(rendCorrientePromedio) : '—'}
-              hint="Cupón/precio, ponderado por capital — a diferencia de la YTM, ignora la ganancia o pérdida de capital hasta el rescate" />
+              hint="Cupón/precio ponderado por capital — ignora la ganancia o pérdida de capital" />
             <Stat label="Spread s/UST10y" value={spreadPromedio != null
               ? <span className={spreadPromedio >= 0 ? 'text-ink-900' : 'text-neg'}>{spreadPromedio >= 0 ? '+' : ''}{fmtPct(spreadPromedio)}</span>
               : <span className="text-ink-500">—</span>}
-              hint="TIR promedio menos la tasa libre de riesgo (UST10y) — la prima de riesgo que exige el mercado por esta cartera" />
+              hint="TIR promedio menos UST10y: la prima de riesgo de la cartera" />
             <Stat label="Mayor posición" value={mayorPosicion
               ? <span className={mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA ? 'text-warn' : 'text-ink-900'}>{mayorPosicion.ticker} · {fmtPct(mayorPosicion.pct, 0)}</span>
               : <span className="text-ink-500">—</span>}
-              hint={`% del capital en bonos concentrado en un solo ticker — alerta a partir de ${fmtPct(CONCENTRACION_POSICION_ALERTA, 0)}. No agrupa por emisor real: distintas series del mismo emisor (ej. varios bonos soberanos) cuentan aparte.`} />
+              hint={`% del capital en un solo ticker — alerta desde ${fmtPct(CONCENTRACION_POSICION_ALERTA, 0)}. No agrupa series del mismo emisor.`} />
           </div>
           <div className="px-4 pb-4">
             <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold mb-1.5">Calidad crediticia</p>
@@ -214,7 +214,7 @@ export function BonosPage() {
                   {distribucionGrado.sinCalificar > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: SIN_DATO_COLOR }} />Sin calificar {fmtPct(distribucionGrado.sinCalificar, 0)}</span>}
                 </div>
                 <p className="text-[10px] text-ink-500 mt-1.5">
-                  Clasificado en escala NACIONAL argentina (FIX SCR/Moody's Local) — la que aplica a la gran mayoría de bonos y ONs locales. No equivale a grado de inversión global (S&amp;P/Moody's/Fitch), que solo aparecería en alguna ON hard-dollar con rating internacional.
+                  Escala NACIONAL argentina (FIX SCR/Moody's Local) — no equivale a grado de inversión global (S&amp;P/Moody's/Fitch).
                 </p>
                 <div className="flex items-end gap-3 mt-3">
                   <Field label="Grado de inversión mínimo (%)">
@@ -223,7 +223,7 @@ export function BonosPage() {
                       onEmptyBlur={() => setMinGradoInversionPct(DEFAULT_MIN_GRADO_INVERSION_PCT)}
                       className={`${inputCls} w-24`} />
                   </Field>
-                  <p className="text-[11px] text-ink-500">Alerta si el % del capital en grado de inversión cae por debajo de tu mínimo personal.</p>
+                  <p className="text-[11px] text-ink-500">Alerta si el % en grado de inversión cae por debajo de tu mínimo.</p>
                 </div>
               </>
             ) : <p className="text-[11px] text-ink-500">Sin capital valuado todavía.</p>}
@@ -246,16 +246,16 @@ export function BonosPage() {
                   {distribucionLey.sinClasificar > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: SIN_DATO_COLOR }} />Sin clasificar {fmtPct(distribucionLey.sinClasificar, 0)}</span>}
                 </div>
                 <p className="text-[10px] text-ink-500 mt-1.5">
-                  Se pre-llena sola desde el catálogo de referencia si el ticker matchea (Radar); para los que no, editala con el ✏️ de la tabla de arriba.
+                  Se completa desde el catálogo de referencia si el ticker coincide; si no, editala con el ✏️.
                 </p>
                 <div className="flex items-end gap-3 mt-3">
-                  <Field label="Ley extranjera mínima (%)" hint="Ley extranjera es más segura (jurisdicción de cobro fuera de Argentina); ley local suele rendir más — este mínimo es tu piso de cobertura segura para balancear riesgo y rendimiento.">
+                  <Field label="Ley extranjera mínima (%)" hint="Ley extranjera: cobro fuera de Argentina (más segura); ley local suele rendir más. Este es tu piso.">
                     <NumField min="0" max="100" step="5" value={minLeyExtranjeraPct}
                       onChange={n => setMinLeyExtranjeraPct(Math.min(100, Math.max(0, n)))}
                       onEmptyBlur={() => setMinLeyExtranjeraPct(DEFAULT_MIN_LEY_EXTRANJERA_PCT)}
                       className={`${inputCls} w-24`} />
                   </Field>
-                  <p className="text-[11px] text-ink-500">Alerta si el % del capital bajo ley extranjera cae por debajo de tu mínimo personal.</p>
+                  <p className="text-[11px] text-ink-500">Alerta si el % bajo ley extranjera cae por debajo de tu mínimo.</p>
                 </div>
               </>
             ) : <p className="text-[11px] text-ink-500">Sin capital valuado todavía.</p>}
@@ -266,7 +266,7 @@ export function BonosPage() {
       {bonos.length > 0 && (
         <Card>
           <CardHeader title="Duración vs. capital"
-            sub="Cada punto es un bono: eje X = duración (Macaulay, años, sensibilidad a la tasa) · eje Y = capital. Definí tu máximo aceptable de duración promedio."
+            sub="Cada punto es un bono: eje X = duración (Macaulay, años) · eje Y = capital."
             right={duracionPromedio != null &&
               <Badge tone={cumpleObjetivo ? 'pos' : 'warn'}>
                 {fmtNum(duracionPromedio, 1)}a promedio (máx. {maxDuracionAnios}a)
@@ -316,7 +316,7 @@ export function BonosPage() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <p className="p-4 text-sm text-ink-600">Ningún bono tiene cupón + vencimiento cargados todavía — no se puede estimar duración. Editalos con el ✏️ de la tabla.</p>
+            <p className="p-4 text-sm text-ink-600">Sin cupón ni vencimiento cargados no se puede estimar la duración. Editalos con el ✏️.</p>
           )}
           {sinDuracion.length > 0 && puntos.length > 0 && (
             <p className="px-4 pb-3 text-[11px] text-ink-500">
@@ -393,9 +393,9 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-md" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Detalles de ${bono.ticker}`}>
+      <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Detalles de ${bono.ticker}`}>
         <Card className="animate-rise">
-          <CardHeader title={`Detalles del bono · ${bono.ticker}`} sub="Cupón para el calendario de Cupones · calificación y ley para los indicadores de calidad crediticia y jurisdicción."
+          <CardHeader title={`Detalles del bono · ${bono.ticker}`} sub="Cupón para el calendario · calificación y ley para los indicadores de crédito y jurisdicción."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 grid grid-cols-2 gap-3 text-sm">
             <Field label="Tasa cupón (% anual)">
@@ -425,7 +425,7 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
             <Field label="Calificación">
               <input value={calificacion} onChange={e => setCalificacion(e.target.value)} placeholder="ej. BB-, Ba3, AAA(arg)" className={inputCls} />
             </Field>
-            <Field label="Ley aplicable" hint="Jurisdicción: Bonares/Globales en soberanos, su equivalente en ONs">
+            <Field label="Ley aplicable" hint="Jurisdicción de cobro (local o extranjera)">
               <select value={ley} onChange={e => setLey(e.target.value as typeof ley)} className={`${inputCls} appearance-none`}>
                 <option value="">—</option>
                 <option value="local">{LEY_LABEL.local}</option>
@@ -439,24 +439,24 @@ function CuponModal({ bono, onClose, onSave, cuotas, onAgregarCuota, onEliminarC
               </select>
             </Field>
             {amortizable && (
-              <Field label="Valor residual actual (%)" className="col-span-2" hint="% del nominal original que todavía queda por cobrar. No hay ninguna fuente que lo publique automático (ni data912) — cargalo cuando lo confirmes en la ficha técnica del bono o el extracto de tu bróker.">
+              <Field label="Valor residual actual (%)" className="col-span-2" hint="% del nominal original que queda por cobrar. No se obtiene automático: tomalo de la ficha técnica o de tu bróker.">
                 <input type="number" min="1" max="100" step="1" value={valorResidualPct}
                   onChange={e => setValorResidualPct(e.target.value)} placeholder="ej. 75" className={inputCls} />
               </Field>
             )}
           </div>
           <p className="px-4 -mt-1 text-[11px] text-ink-500 flex items-center gap-1.5">
-            <CalendarClock className="w-3.5 h-3.5 shrink-0" /> El "mes de un pago" alcanza: los demás se derivan por la frecuencia (ej. semestral desde mayo → may y nov).
+            <CalendarClock className="w-3.5 h-3.5 shrink-0" /> Con el mes de un pago alcanza: los demás se derivan de la frecuencia.
           </p>
           <p className="px-4 pt-1.5 text-[11px] text-ink-500">
-            Marcar "Amortizable" y cargar el valor residual corrige la TIR, la duración y el rendimiento corriente de esta pantalla. Si además cargás el cronograma de cuotas de abajo, también corrige el calendario de Cupones (proyección) — cupón futuro sobre el saldo remanente, más las cuotas de capital.
+            "Amortizable" + valor residual corrige TIR, duración y rendimiento corriente. Con el cronograma de cuotas también corrige la proyección de Cupones.
           </p>
           {amortizable && (
             <CronogramaCuotas cuotas={cuotas} onAgregar={onAgregarCuota} onEliminar={onEliminarCuota}
               valorResidualActual={(() => { const n = Number(valorResidualPct); return valorResidualPct !== '' && n > 0 && n <= 100 ? n / 100 : 1; })()} />
           )}
           <p className="px-4 pt-1.5 text-[11px] text-ink-500">
-            FIX SCR y Moody's Local (escala nacional argentina, la que vas a usar casi siempre) clasifican en grado de inversión/especulativo/default automáticamente (badge de color). S&amp;P/Moody's/Fitch (escala global) también, solo para el caso puntual de una ON con rating internacional — no equivale a la escala nacional. "Otra" no se clasifica (notación desconocida).
+            FIX SCR y Moody's Local (escala nacional) y S&amp;P/Moody's/Fitch (global) se clasifican solas; no son equivalentes entre sí. "Otra" no se clasifica.
           </p>
           {err && <p className="px-4 pt-2 text-xs text-warn">{err}</p>}
           <div className="px-4 py-4 flex justify-end gap-2">
@@ -489,7 +489,7 @@ function CronogramaCuotas({ cuotas, onAgregar, onEliminar, valorResidualActual }
   const agregar = async () => {
     setErr(null);
     if (!fecha) { setErr('Elegí una fecha.'); return; }
-    if (ordenadas.some(c => c.fecha === fecha)) { setErr('Ya hay una cuota cargada para esa fecha — borrala primero si querés corregirla.'); return; }
+    if (ordenadas.some(c => c.fecha === fecha)) { setErr('Ya hay una cuota para esa fecha — borrala para corregirla.'); return; }
     const n = Number(pct);
     if (!(n > 0 && n <= 100)) { setErr('El % debe ser mayor a 0 y hasta 100.'); return; }
     setBusy(true);
@@ -520,7 +520,7 @@ function CronogramaCuotas({ cuotas, onAgregar, onEliminar, valorResidualActual }
             </div>
           ))}
           <p className="text-[10px] text-ink-500">
-            Cubierto por el cronograma: {Math.round(cubierto * 100)}%{cubierto > valorResidualActual + 0.0001 ? ` — suma más de tu valor residual actual (${Math.round(valorResidualActual * 100)}%), revisá las fechas` : ''}. El resto ({Math.max(0, Math.round((valorResidualActual - cubierto) * 100))}%) se proyecta como rescate entero al vencimiento.
+            Cubierto por el cronograma: {Math.round(cubierto * 100)}%{cubierto > valorResidualActual + 0.0001 ? ` — supera tu valor residual actual (${Math.round(valorResidualActual * 100)}%)` : ''}. El resto ({Math.max(0, Math.round((valorResidualActual - cubierto) * 100))}%) se proyecta al vencimiento.
           </p>
         </div>
       )}

@@ -39,7 +39,7 @@ export function PortfolioReview({ posiciones, pfName, pesos }: {
 
   return (
     <Card>
-      <CardHeader title="Revisión de cartera (IA)" sub="Concentración, correlación entre posiciones, diversificación sectorial y coherencia con la estrategia. No es recomendación de inversión."
+      <CardHeader title="Revisión de cartera (IA)" sub="Concentración, correlación y diversificación sectorial. No es recomendación de inversión."
         right={<Button variant="ghost" onClick={run} disabled={busy}><Sparkles className="w-4 h-4" /> {busy ? 'Analizando…' : txt ? 'Regenerar' : 'Analizar cartera'}</Button>} />
       {err && <p className="px-4 pt-1 text-xs text-neg">No se pudo generar: {err}</p>}
       {txt && (

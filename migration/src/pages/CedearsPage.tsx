@@ -56,7 +56,7 @@ export function CedearsPage() {
       <h1 className="text-2xl font-bold text-ink-900 font-display">CEDEARs · {active.nombre}</h1>
       <AlertasBanner alertas={alertas} />
       <Card>
-        <CardHeader title="Renta variable" sub="Sector y estilo (Peter Lynch) por posición. Editá con el ✏️ para clasificar."
+        <CardHeader title="Renta variable" sub="Sector y estilo (Peter Lynch) por posición. Clasificá con el ✏️."
           // "Capital" acá (y en la columna de la tabla) es el COSTO — distinto de "Capital" en la
           // tarjeta "Indicadores clave" de abajo, que es valor de MERCADO (mismo criterio que
           // CedearsResumen del Dashboard). Etiquetado "Costo" para no repetir la misma palabra con
@@ -107,26 +107,26 @@ export function CedearsPage() {
 
       {cedears.length > 0 && (
         <Card>
-          <CardHeader title="Indicadores clave" sub="Concentración y diversificación de la cartera de renta variable." />
+          <CardHeader title="Indicadores clave" sub="Concentración y diversificación de la renta variable." />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
             <Stat label="Capital" value={fmtUsdCompact(totalMkt)} />
             <Stat label="Mayor posición" value={mayorPosicion
               ? <span className={mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA ? 'text-warn' : 'text-ink-900'}>{mayorPosicion.ticker} · {fmtPct(mayorPosicion.pct, 0)}</span>
               : <span className="text-ink-500">—</span>}
-              hint={`% del capital en CEDEARs concentrado en un solo ticker — alerta a partir de ${fmtPct(CONCENTRACION_POSICION_ALERTA, 0)}`} />
+              hint={`% del capital en un solo ticker — alerta desde ${fmtPct(CONCENTRACION_POSICION_ALERTA, 0)}`} />
             <Stat label="Sectores distintos" value={nSectores}
-              hint="Cantidad de sectores distintos con capital cargado (no cuenta 'Sin sector')" />
+              hint="Sectores con capital cargado (sin contar 'Sin sector')" />
             <Stat label="Concentración sectorial" value={hhiSector != null
               ? <span className={hhiSector >= HHI_SECTOR_ALERTA ? 'text-warn' : 'text-ink-900'}>{fmtNum(hhiSector, 2)}</span>
               : <span className="text-ink-500">—</span>}
-              hint={`Índice de Herfindahl (Σ pesoᵢ²) sobre el capital por sector: 1/N con N sectores parejos, 1 = todo en un sector. Por encima de ${fmtNum(HHI_SECTOR_ALERTA, 2)} (equivalente a ~3 sectores parejos) empieza a ser una concentración alta.`} />
+              hint={`Herfindahl (Σ pesoᵢ²) por sector: 1 = todo en un sector. Desde ${fmtNum(HHI_SECTOR_ALERTA, 2)} (~3 sectores parejos) la concentración es alta.`} />
           </div>
         </Card>
       )}
 
       {cedears.length > 0 && (
         <Card>
-          <CardHeader title="Distribución por sector y estilo" sub="Peso sobre el capital en CEDEARs (valor de mercado, o costo si no hay cotización)." />
+          <CardHeader title="Distribución por sector y estilo" sub="Peso sobre el capital (valor de mercado, o costo sin cotización)." />
           <div className="px-4 py-3 flex flex-wrap gap-3 items-end text-sm border-b border-line">
             <Field label="Concentración sectorial máxima (%)">
               <NumField min="0" max="100" step="5" value={concentracionSectorPct}
@@ -140,7 +140,7 @@ export function CedearsPage() {
                 onEmptyBlur={() => setConcentracionEstiloPct(DEFAULT_CONCENTRACION_ESTILO_PCT)}
                 className={`${inputCls} w-24`} />
             </Field>
-            <p className="text-[11px] text-ink-600 ml-auto">Umbrales personales — alertan arriba cuando un sector o estilo concentra más de lo que definiste acá.</p>
+            <p className="text-[11px] text-ink-600 ml-auto">Umbrales personales: alertan cuando un sector o estilo los supera.</p>
           </div>
           <div className="p-4 grid sm:grid-cols-2 gap-6">
             <div>
@@ -199,7 +199,7 @@ export function CedearsPage() {
             </div>
           </div>
           <p className="px-4 pb-4 text-[10px] text-ink-500">
-            "Compounder" no es una de las 6 categorías de "One Up on Wall Street" — es un agregado del proyecto para negocios que reinvierten capital a tasas altas de forma sostenida (pasá el mouse sobre cada estilo para ver su descripción).
+            "Compounder" no es una de las 6 categorías de Lynch: es un agregado para negocios que reinvierten a tasas altas.
           </p>
         </Card>
       )}
@@ -227,9 +227,9 @@ function ClasificarModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () 
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-md" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Clasificar ${pos.ticker}`}>
+      <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Clasificar ${pos.ticker}`}>
         <Card className="animate-rise">
-          <CardHeader title={`Clasificar · ${pos.ticker}`} sub="Alimenta la distribución por sector y por estilo, y el resumen de cartera con IA."
+          <CardHeader title={`Clasificar · ${pos.ticker}`} sub="Alimenta la distribución por sector y estilo, y el resumen con IA."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 space-y-3 text-sm">
             <Field label="Sector">
