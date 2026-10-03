@@ -18,7 +18,7 @@ export function UpdatedAt({ className = '', icon = false, tickers }: { className
       </span>
       {viejos.length > 0 && (
         <span className="inline-flex items-center gap-1 text-warn"
-          title={`Sin precio fresco hace más de 72 h (se muestra el último conocido): ${viejos.join(', ')}`}>
+          title={`Sin precio fresco hace más de 72 h (se muestra el último): ${viejos.join(', ')}`}>
           <AlertTriangle className="w-3 h-3" /> {viejos.length} precio{viejos.length > 1 ? 's' : ''} viejo{viejos.length > 1 ? 's' : ''}
         </span>
       )}

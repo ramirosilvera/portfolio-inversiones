@@ -159,12 +159,12 @@ export function AnalisisPage() {
           {reintentable ? (
             <>
               <p className="text-warn">EDGAR no devolvió los datos de <b>{T}</b> en este intento.</p>
-              <p className="text-ink-600">Suele ser un límite de tasa momentáneo de la SEC, no un problema de la empresa. Reintentá en unos segundos.</p>
+              <p className="text-ink-600">Suele ser un límite de tasa momentáneo de la SEC. Reintentá en unos segundos.</p>
             </>
           ) : (
             <>
               <p className="text-warn">No hay fundamentals de <b>{T}</b> vía EDGAR.</p>
-              <p className="text-ink-600">Solo funciona con empresas que reportan a la SEC. Si es una grande de EE.UU. que no reconocemos, cargá su par ticker → CIK en <b>Configuración</b>.</p>
+              <p className="text-ink-600">Solo funciona con empresas que reportan a la SEC. Si no la reconocemos, cargá su par ticker → CIK en <b>Configuración</b>.</p>
             </>
           )}
           {detalleServidor && <p className="text-[11px] text-ink-500">Detalle: {detalleServidor}</p>}
@@ -246,12 +246,12 @@ export function AnalisisPage() {
         <p className="text-[11px] text-warn">{(fund as { warning?: string }).warning}</p>
       )}
       {(fund as { stale?: boolean }).stale && !(fund as { warning?: string }).warning && (
-        <p className="text-[11px] text-warn">La SEC no respondió en el último intento — estos números son del último fetch exitoso (no necesariamente de hoy). Probá "Actualizar datos".</p>
+        <p className="text-[11px] text-warn">La SEC no respondió: estos números son del último fetch exitoso, no necesariamente de hoy. Probá "Actualizar datos".</p>
       )}
       {dcf.motivoInestable && (
         <div className="rounded-xl bg-warn/10 ring-1 ring-inset ring-warn/25 px-3 py-2 text-[11px] text-ink-700 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0 text-warn mt-0.5" />
-          <p>El veredicto no puede ser COMPRAR: {dcf.motivoInestable}. Revisá los supuestos abajo — con estos, el valor intrínseco no es confiable.</p>
+          <p>El veredicto no puede ser COMPRAR: {dcf.motivoInestable}. Con estos supuestos el valor intrínseco no es confiable.</p>
         </div>
       )}
 
@@ -270,7 +270,7 @@ export function AnalisisPage() {
           otro tipo de dato. Solo aparece para las ~84 empresas hardcodeadas ya clasificadas. */}
       {moat && (
         <Card>
-          <CardHeader title="Foso económico" sub="Buffett/Munger — juicio cualitativo curado a mano, no calculado por el código." />
+          <CardHeader title="Foso económico" sub="Juicio cualitativo curado a mano, no calculado." />
           <div className="p-4 space-y-2 text-sm">
             <div className="flex items-center gap-2 flex-wrap">
               <Badge tone="gray">{SECTOR_LABEL[moat.sector]}</Badge>
@@ -294,7 +294,7 @@ export function AnalisisPage() {
           contra el NEGOCIO (owner earnings), que es una pregunta distinta y más útil: "esta caída,
           ¿es pánico de mercado o el negocio también se deterioró?". */}
       <Card>
-        <CardHeader title="Precio — tendencia" sub="Histórico semanal — Yahoo Finance, referencial."
+        <CardHeader title="Precio — tendencia" sub="Semanal, Yahoo Finance (referencial)."
           right={<ViewToggle value={rangoPrecio} onChange={setRangoPrecio} label="Ventana"
             options={[{ value: '1a', label: '1 año' }, { value: '5a', label: '5 años' }, { value: '10a', label: '10 años' }]} />} />
         {histLoading ? (
@@ -340,34 +340,34 @@ export function AnalisisPage() {
                   : <TrendingUp className={`w-4 h-4 shrink-0 mt-0.5 ${lecturaTendencia === 'posible-recalentamiento' ? 'text-warn' : 'text-pos'}`} />}
                 <p className="text-ink-700">
                   {lecturaTendencia === 'posible-panico' &&
-                    <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado, no deterioro del negocio. No es una señal de compra por sí sola: cruzá igual con los Chequeos Munger de abajo.</>}
+                    <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), pero los Owner Earnings no acompañaron esa caída (CAGR histórico {fmtPct(dcf.histCagrOE)}) — puede ser sobre-reacción del mercado. No es señal de compra por sí sola: cruzala con los Chequeos Munger.</>}
                   {lecturaTendencia === 'posible-deterioro' && (deterioroConPrecioAlza
-                    ? <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), pero los Owner Earnings cayeron (CAGR histórico {fmtPct(dcf.histCagrOE)}) — el mercado le pagó más a un negocio que empeora, euforia sin respaldo en los números.</>
-                    : <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — nada acá contradice que el negocio se haya deteriorado. Un precio bajo por sí solo no es garantía de descuento.</>)}
+                    ? <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), pero los Owner Earnings cayeron (CAGR histórico {fmtPct(dcf.histCagrOE)}) — el mercado le pagó más a un negocio que empeora: euforia sin respaldo.</>
+                    : <>Precio y Owner Earnings se movieron en la misma dirección negativa (CAGR histórico {fmtPct(dcf.histCagrOE)}) — el negocio pudo haberse deteriorado. Un precio bajo no garantiza descuento.</>)}
                   {lecturaTendencia === 'posible-recalentamiento' &&
-                    <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), bastante más rápido que el negocio (Owner Earnings creciendo a un CAGR histórico de {fmtPct(dcf.histCagrOE)}) — parte de la suba vino de que el mercado le puso un múltiplo mayor a la empresa, no de que el negocio haya mejorado al mismo ritmo. No es lo mismo que "cara" (eso ya lo dice el margen de seguridad de arriba, con el valor intrínseco de hoy): es una advertencia distinta — sostener este precio de acá en más depende de que el negocio siga alcanzando al múltiplo, no de que el mercado se lo siga expandiendo.</>}
+                    <>Precio {fmtPct(priceCagr5y)} anual en 5 años (acumulado {fmtPct(var5yCruce)}), bastante más rápido que el negocio (Owner Earnings creciendo a un CAGR histórico de {fmtPct(dcf.histCagrOE)}) — parte de la suba es múltiplo mayor, no negocio. No equivale a "cara" (eso lo dice el margen de seguridad): sostener este precio depende de que el negocio alcance al múltiplo.</>}
                   {lecturaTendencia === 'sin-señal-clara' &&
-                    <>Sin movimiento fuerte de precio ni de Owner Earnings en 5 años — no hay una lectura clara de pánico ni de deterioro.</>}
+                    <>Sin movimiento fuerte de precio ni de Owner Earnings en 5 años: sin señal de pánico ni deterioro.</>}
                 </p>
               </div>
             )}
-            <p className="px-4 pb-3 text-[10px] text-ink-500">Puede diferir levemente del precio de arriba (Finnhub/FMP) — esta serie es de Yahoo Finance.</p>
+            <p className="px-4 pb-3 text-[10px] text-ink-500">Puede diferir levemente del precio de arriba (Finnhub/FMP).</p>
           </>
         )}
       </Card>
 
       {/* Ratios */}
       <Card>
-        <CardHeader title="Ratios" sub="Calculados por el código desde EDGAR (no por IA)." />
+        <CardHeader title="Ratios" sub="Calculados desde EDGAR, no por IA." />
         <div className="p-4 grid grid-cols-2 sm:grid-cols-6 gap-3 text-sm">
           <Metric l="P/E" v={fmtNum(ratios.pe, 1)} />
           <Metric l="P/E fwd" v={fmtNum(ratios.peForward, 1)} />
           <Metric l="P/B" v={fmtNum(ratios.pb, 1)} />
           <Metric l="ROIC" v={`${fmtPct(ratios.roic)}${ratios.roic != null && ratios.wacc != null && ratios.roic > ratios.wacc ? ' ✓' : ''}`} tone={ratios.roic != null && ratios.wacc != null && ratios.roic > ratios.wacc ? 'pos' : 'warn'} />
           <Metric l="Ke (CAPM)" v={fmtPct(ratios.costOfEquity)}
-            hint="Ke = tasa libre de riesgo (FRED, real) + beta × 5% (prima de riesgo de mercado, supuesto fijo). El beta es de mercado (Finnhub/FMP) salvo que lo edites vos abajo — EDGAR no tiene beta ni prima de riesgo, son datos de mercado, no contables." />
+            hint="Ke = tasa libre de riesgo (FRED) + beta × 5% (prima de riesgo, supuesto fijo). El beta es de mercado salvo que lo edites vos." />
           <Metric l="WACC" v={fmtPct(ratios.wacc)}
-            hint="Mezcla Ke (de arriba) con el costo de deuda después de impuestos — ese sí sale de EDGAR (intereses/deuda/impuestos reales del balance). No es un número inventado, pero tampoco 'exacto': la parte de mercado (beta, prima de riesgo) es siempre un supuesto, EDGAR no la tiene." />
+            hint="Mezcla Ke con el costo de deuda después de impuestos (de EDGAR). La parte de mercado (beta, prima de riesgo) es siempre un supuesto." />
           <Metric l="EG5Y (real)" v={fmtPct(ratios.eg5y)} />
           <Metric l="Margen op." v={fmtPct(ratios.operatingMargin)} />
           <Metric l="Deuda/Eq." v={fmtNum(ratios.debtToEquity, 2)} />
@@ -380,7 +380,7 @@ export function AnalisisPage() {
 
       {/* Inputs DCF + nota tasa/dividendo */}
       <Card>
-        <CardHeader title="Supuestos del DCF" sub="Editá los supuestos y guardalos por ticker: el Radar usará estos mismos para el score."
+        <CardHeader title="Supuestos del DCF" sub="Se guardan por ticker; el Radar usa los mismos."
           right={
             <div className="flex items-center gap-2">
               <Button variant="ghost" onClick={restablecer}>Restablecer</Button>
@@ -415,16 +415,16 @@ export function AnalisisPage() {
             </p>
             <p className="text-[10px] text-ink-500 mt-1">
               {inp.oeMethod === 'ultimo'
-                ? 'Refleja la escala real de hoy. Riesgo: si ese año tuvo margen pico, un swing de capital de trabajo o una venta puntual, capitalizás ese ruido a perpetuidad. El valor es LINEAL en esta base: 25% de error acá se come todo el margen de seguridad.'
+                ? 'Riesgo: si ese año tuvo margen pico o una venta puntual, capitalizás ese ruido a perpetuidad. El valor es LINEAL en esta base: 25% de error se come todo el margen de seguridad.'
                 : inp.oeMethod === 'prom5'
-                  ? 'Promedia el ciclo completo. Correcto en cíclicas. En una que crece, equivale a valuar el negocio de hace ~2 años.'
+                  ? 'Promedia el ciclo completo. En una empresa que crece, equivale a valuar el negocio de hace ~2 años.'
                   : inp.oeMethod === 'mediana5'
-                    ? 'Descarta el año atípico (un cargo puntual o una venta de activos) sin promediar todo a ciegas.'
+                    ? 'Descarta el año atípico sin promediar todo a ciegas.'
                     : inp.oeMethod === 'prom3'
-                      ? 'Ventana corta: más actual que 5 años, con algo de suavizado.'
+                      ? 'Ventana corta: más actual, con algo de suavizado.'
                       : inp.oeMethod === 'margen'
-                        ? 'Normaliza la RENTABILIDAD (mediana del margen) pero mantiene la ESCALA de hoy: sin rezago y sin capitalizar un margen pico. Si no hay ventas para emparejar, usa el ponderado.'
-                        : 'Sigue la tendencia sin saltar al último año, con un rezago de ~1,3 años.'}
+                        ? 'Normaliza la rentabilidad (margen mediano) y mantiene la escala de hoy. Sin ventas para emparejar, usa el ponderado.'
+                        : 'Sigue la tendencia sin saltar al último año (rezago ~1,3 años).'}
             </p>
           </div>
           <div>
@@ -450,16 +450,15 @@ export function AnalisisPage() {
           <AlertTriangle className="w-4 h-4 shrink-0 text-warn mt-0.5" />
           <p>
             Div yield <b className="text-ink-800">{fmtPct(ratios.divYield)}</b> · payout <b className="text-ink-800">{fmtPct(ratios.payout)}</b>.
-            El dividendo YA está dentro de los owner earnings — la tasa NO se ajusta sola por el yield (sería doble conteo).
-            Un dividendo alto y estable con payout sano (&lt;70%) es señal de negocio maduro: esa menor incertidumbre puede
-            justificar que VOS bajes la tasa a mano. Un payout &gt;90% es alarma (dividendo en riesgo), no calidad.
+            El dividendo YA está en los owner earnings: la tasa no se ajusta por el yield (doble conteo).
+            Payout &gt;90% es alarma (dividendo en riesgo), no calidad.
           </p>
         </div>
       </Card>
 
       {/* Owner earnings por año (con capex de crecimiento) */}
       <Card>
-        <CardHeader title="Owner Earnings por año" sub="OCF − capex de mantenimiento. El capex de crecimiento se muestra aparte." />
+        <CardHeader title="Owner Earnings por año" sub="OCF − capex de mantenimiento (el de crecimiento va aparte)." />
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[560px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
@@ -561,7 +560,7 @@ function GeminiAnalysis({ ticker, portfolioId, context }: { ticker: string; port
   };
   return (
     <Card>
-      <CardHeader title="Análisis cualitativo (IA)" sub="Gemini interpreta los números calculados por el código. No es recomendación de inversión."
+      <CardHeader title="Análisis cualitativo (IA)" sub="Gemini interpreta los números del código. No es recomendación."
         right={<Button variant="ghost" onClick={run} disabled={busy}><Sparkles className="w-4 h-4" /> {busy ? 'Analizando…' : mostrado ? 'Regenerar' : 'Analizar'}</Button>} />
       {err && <p className="px-4 pt-1 text-xs text-neg">No se pudo generar: {err}</p>}
       {mostrado && (

@@ -139,7 +139,7 @@ export function AportesPage() {
       <h1 className="text-2xl font-bold text-ink-900 font-display">Aportes · {active.nombre}</h1>
 
       <Card>
-        <CardHeader title="Registrar movimiento de capital" sub="El capital que entra (aporte) o sale (retiro) del portfolio. Impacta la TIR del Dashboard." />
+        <CardHeader title="Registrar movimiento de capital" sub="Capital que entra (aporte) o sale (retiro). Impacta la TIR del Dashboard." />
         <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
           <Field label="Monto (USD)">
             <MontoInput placeholder="Monto USD" value={f.monto} onChange={onUsdChange} className={inputCls} />
@@ -216,7 +216,7 @@ export function AportesPage() {
         <div id="rendimiento-anual" className="scroll-mt-4">
           <Card>
             <CardHeader title="Rendimiento por año"
-              sub="Detalle completo, año por año — rendimiento (%), aportes netos y ganancia en dólares (P&L). Mismo cálculo que el resumen del Dashboard." />
+              sub="Rendimiento (%), aportes netos y P&L en USD por año. Mismo cálculo que el Dashboard." />
             {cargando ? (
               <p className="p-4 text-sm text-ink-600">Cargando…</p>
             ) : (
@@ -228,8 +228,7 @@ export function AportesPage() {
                 {!preciosPendientes && !valuacionDeMercado && (
                   <p className="px-4 pt-3 text-[11px] text-warn">
                     Sin cotización de <b>{sinPrecioRend.slice(0, 4).join(', ')}{sinPrecioRend.length > 4 ? ` +${sinPrecioRend.length - 4}` : ''}</b>:
-                    el año en curso se calcula a costo, no a precio de mercado, y hoy no queda registrado en el histórico —
-                    el año que viene puede quedar sin punto de apertura.
+                    el año en curso se calcula a costo y hoy no queda en el histórico.
                   </p>
                 )}
                 <div role="radiogroup" aria-label="Filtrar años" className="px-4 pt-3 flex flex-wrap gap-2">
@@ -249,7 +248,7 @@ export function AportesPage() {
                         <ThSortAnio label="Aportes netos" sortKey="aportes" sort={sortAnio} onClick={handleSortAnio}
                           title="Aportes − retiros de ESE año, no el acumulado histórico" />
                         <ThSortAnio label="P&L del año" sortKey="pnl" sort={sortAnio} onClick={handleSortAnio}
-                          title="Ganancia en dólares de ESE año — distinto del P&L del Hero del Dashboard, que es la ganancia no realizada actual sobre las posiciones" />
+                          title="Ganancia en USD de ESE año — no es el P&L no realizado del Dashboard" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
@@ -261,7 +260,7 @@ export function AportesPage() {
                           <td className={`px-3 py-2 text-right tnum font-semibold ${rendimiento == null ? 'text-ink-600' : rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}
                             title={rendimiento != null ? undefined
                               : aportadoNeto == null ? 'Sin snapshot de cierre para este año'
-                              : 'Un retiro dejó el capital base en ≤0: el % no es representativo, pero el P&L en dólares sí'}>
+                              : 'Un retiro dejó la base en ≤0: el % no es representativo, el P&L sí'}>
                             {rendimiento != null ? fmtPct(rendimiento) : '—'}
                           </td>
                           {/* Sin color pos/neg (a diferencia de Rendimiento/P&L): un aporte neto
@@ -280,7 +279,7 @@ export function AportesPage() {
                     </tbody>
                   </table>
                 </div>
-                <p className="px-4 py-3 text-[11px] text-ink-500">Rendimiento del PASADO, no anualizado ni proyectado. Los años en "—" se completan a medida que la app registra el valor diario; el histórico previo a esta función no se puede reconstruir.</p>
+                <p className="px-4 py-3 text-[11px] text-ink-500">Rendimiento pasado, no anualizado ni proyectado. Los años en "—" se completan con el valor diario que registra la app.</p>
               </>
             )}
           </Card>

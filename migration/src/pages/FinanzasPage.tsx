@@ -20,7 +20,7 @@ const destinoLabel = (d: string | null) => DESTINOS.find(x => x.key === d)?.labe
 const SECCIONES: { cat: FlujoCategoria; titulo: string; sub: string; icon: typeof TrendingUp; nuevo: string }[] = [
   { cat: 'ingreso', titulo: 'Ingresos', sub: 'Sueldo y otras entradas.', icon: TrendingUp, nuevo: 'Nuevo ingreso' },
   { cat: 'egreso', titulo: 'Egresos', sub: 'Tarjetas y gastos principales.', icon: TrendingDown, nuevo: 'Nuevo egreso' },
-  { cat: 'inversion', titulo: 'Inversiones / asignaciones', sub: 'A dónde va lo que te queda: FCI, Mercado Pago, CEDEARs, bonos.', icon: PiggyBank, nuevo: 'Nueva asignación' },
+  { cat: 'inversion', titulo: 'Inversiones / asignaciones', sub: 'A dónde va lo que te queda.', icon: PiggyBank, nuevo: 'Nueva asignación' },
 ];
 
 export function FinanzasPage() {
@@ -47,7 +47,7 @@ export function FinanzasPage() {
 
       {r.pendientesConversion > 0 && (
         <p className="text-[11px] text-warn">
-          {r.pendientesConversion} fila(s) en USD sin poder convertir (no hay MEP disponible); no se suman a los totales hasta que vuelva el dato.
+          {r.pendientesConversion} fila(s) en USD sin MEP para convertir: no se suman a los totales.
         </p>
       )}
 
@@ -67,8 +67,7 @@ export function FinanzasPage() {
       )}
 
       <p className="text-[11px] text-ink-600 leading-relaxed">
-        Es tu planilla: agregá o quitá filas, editá conceptos y montos como en Excel (se guardan solos al salir del campo).
-        Los totales los calcula el código; el MEP convierte las filas en USD. La parte de FCI + Mercado Pago se muestra en el Dashboard.
+        Editá filas como en Excel (se guardan al salir del campo). El MEP convierte las filas en USD. FCI + Mercado Pago se ve en el Dashboard.
       </p>
     </div>
   );
@@ -117,7 +116,7 @@ function ResumenFlujoCard({ r }: { r: ResumenFlujo }) {
             </span>
           ))}
         </div>
-        {S < 0 && <p className="mt-2 text-[11px] text-warn">Estás asignando más de lo disponible ({fmtArs(-S)} de más): revisá las inversiones o los egresos.</p>}
+        {S < 0 && <p className="mt-2 text-[11px] text-warn">Asignás más de lo disponible ({fmtArs(-S)} de más).</p>}
       </div>
     </Card>
   );

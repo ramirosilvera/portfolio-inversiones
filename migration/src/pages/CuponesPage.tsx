@@ -137,7 +137,7 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
       <SaldoInvertibleCard saldo={saldo} inversiones={inversiones} onMarcar={marcarInversion} onBorrar={removeInversion} />
 
       <Card>
-        <CardHeader title="Registrar un cobro" sub="Dividendo/interés no tocan la posición. Amortización cambia la posición de una de dos formas — elegí según lo que muestre tu bróker." />
+        <CardHeader title="Registrar un cobro" sub="Dividendo/interés no tocan la posición; amortización sí, según lo que muestre tu bróker." />
         <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           <div role="radiogroup" aria-label="Origen del cobro" className="col-span-2 sm:col-span-2 flex items-center gap-2">
             <button type="button" onClick={() => setModo('existente')} disabled={opcionesPosicion.length === 0} role="radio" aria-checked={modo === 'existente'}
@@ -191,11 +191,11 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
                 </Field>
               )}
               <p className="col-span-2 sm:col-span-4 text-[11px] text-ink-500 -mt-1">
-                Son excluyentes para el mismo pago: o baja tu cantidad de nominales, o baja el valor residual de cada uno — nunca las dos, sería contar la baja de capital dos veces.
+                Excluyentes por pago: o bajan los nominales o baja el valor residual, nunca ambos (contaría la baja dos veces).
               </p>
               {modoAmort === 'nominales' && pos?.amortizable && (
                 <p className="col-span-2 sm:col-span-4 -mt-1 text-[11px] text-warn">
-                  {pos.ticker} ya tiene un valor residual cargado ({pos.valor_residual != null ? `${Math.round(pos.valor_residual * 100)}%` : 'sin cargar todavía'}) — este bono viene usando la convención de "valor residual", no la de nominales. Si en tu bróker los nominales realmente NO bajaron, usá "Nominales iguales, bajó el valor residual" en vez de esto, o vas a contar la baja de capital dos veces.
+                  {pos.ticker} ya tiene un valor residual cargado ({pos.valor_residual != null ? `${Math.round(pos.valor_residual * 100)}%` : 'sin cargar todavía'}) — usa la convención de "valor residual". Si tus nominales NO bajaron, usá "Nominales iguales, bajó el valor residual" o vas a contar la baja dos veces.
                 </p>
               )}
             </>
@@ -206,8 +206,8 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
           <label className="col-span-2 sm:col-span-4 flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
             <input type="checkbox" checked={acreditar} onChange={e => setAcreditar(e.target.checked)} className="mt-0.5" />
             <span>
-              Acreditar en la Liquidez del portfolio{tieneLiquidez ? '' : ' (se crea)'}. Si la plata quedó en la cuenta del bróker, tildalo: si no, el
-              cobro no está en el patrimonio y el rendimiento por año no lo cuenta{tipo === 'amortizacion' ? ' (el capital devuelto se vería como pérdida)' : ''}.
+              Acreditar en la Liquidez del portfolio{tieneLiquidez ? '' : ' (se crea)'}. Tildalo si la plata quedó en tu bróker: si no, el
+              rendimiento por año no la cuenta{tipo === 'amortizacion' ? ' (el capital devuelto se vería como pérdida)' : ''}.
             </span>
           </label>
         </div>
@@ -218,12 +218,12 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
       </Card>
 
       <Card>
-        <CardHeader title="Historial" sub="Marcá un cobro puntual como Reinvertido solo si sabés en qué activo lo pusiste — reduce el saldo de 'Saldo disponible para invertir' de arriba. Para invertir un monto general sin atarlo a un cobro puntual, usá esa tarjeta en vez de esto (no marques las dos cosas para la misma plata)." />
+        <CardHeader title="Historial" sub="Marcá Reinvertido solo si sabés en qué activo lo pusiste; descuenta del saldo de arriba. No lo combines con esa tarjeta para la misma plata." />
         {deleteErr && <p className="px-4 pt-2 text-xs text-warn">{deleteErr}</p>}
         {isLoading ? (
           <p className="p-4 text-sm text-ink-600">Cargando…</p>
         ) : confirmados.length === 0 ? (
-          <Empty icon={Wallet} title="Sin cobros registrados">Registrá el primero arriba cuando cobres un dividendo, interés o amortización.</Empty>
+          <Empty icon={Wallet} title="Sin cobros registrados">Registrá el primero arriba.</Empty>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]">
@@ -278,7 +278,7 @@ function PendientesCard({ pendientes, acreditarDefault, onConfirmar, onDescartar
 }) {
   return (
     <Card className="ring-1 ring-inset ring-warn/30">
-      <CardHeader title="Por confirmar" sub="Sugeridos automáticamente — revisá el monto (es bruto, sin retención) y confirmá uno por uno."
+      <CardHeader title="Por confirmar" sub="Sugeridos: revisá el monto (bruto, sin retención) y confirmá uno por uno."
         right={<Badge tone="warn">{pendientes.length}</Badge>} />
       <div className="divide-y divide-line">
         {pendientes.map(p => <PendienteRow key={p.id} p={p} acreditarDefault={acreditarDefault} onConfirmar={onConfirmar} onDescartar={onDescartar} />)}
@@ -388,7 +388,7 @@ function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onBorrar }: {
 
   return (
     <Card className={saldo.sobregirado ? 'ring-1 ring-inset ring-warn/40' : undefined}>
-      <CardHeader title="Saldo disponible para invertir" sub="Los cobros confirmados se acumulan solos; marcá acá cuánto de ese saldo ya pusiste a trabajar (no hace falta también tocar el toggle Reinvertido del Historial para la misma plata)." />
+      <CardHeader title="Saldo disponible para invertir" sub="Los cobros confirmados se acumulan solos; marcá cuánto ya invertiste (sin tocar Reinvertido del Historial)." />
       <div className="p-4 space-y-3">
         <div className="flex items-baseline gap-3 flex-wrap">
           <span className="text-2xl font-bold text-ink-900 tnum">{fmtUsd(saldo.neto, 0)}</span>
@@ -400,7 +400,7 @@ function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onBorrar }: {
           )}
         </div>
         {saldo.sobregirado && (
-          <p className="text-xs text-warn">Marcaste más inversión de la que hay disponible (seguramente porque un cobro se editó o borró después). Revisá el historial de abajo.</p>
+          <p className="text-xs text-warn">Marcaste más inversión que saldo disponible (¿se editó o borró un cobro?). Revisá el historial.</p>
         )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm items-end">
           <Field label="Monto a invertir (USD)"><input type="number" value={monto} onChange={e => setMonto(e.target.value)} className={inputCls} placeholder="USD" /></Field>
@@ -554,10 +554,10 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
         <Stat label="Dividendos anual (estimado)" value={fmtUsd(divAnual, 0)} hint="CEDEARs/acciones — a confirmar contra el cobro real" />
         <Stat label="Próximo dividendo" value={proximoDiv ? `${MESES[proximoDiv.month - 1]} ${proximoDiv.year}` : '—'} hint={proximoDiv ? fmtUsd(proximoDiv.total, 0) : undefined} />
         <Stat label="Cargados (dividendos)" value={`${conDividendo}/${equities.length}`} hint="con dato del proveedor / total de CEDEARs-acciones" />
-        <Stat label="Total renta 12m" value={fmtUsd(anual + divAnual, 0)} hint="cupones (confiables) + dividendos (mezcla declarado/estimado) — sin capital, ver el gráfico de Capital abajo" />
+        <Stat label="Total renta 12m" value={fmtUsd(anual + divAnual, 0)} hint="cupones + dividendos (declarados/estimados), sin capital" />
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Stat label="Capital a cobrar 12m" value={fmtUsd(capitalAnual, 0)} hint="Devolución de capital (amortización + rescate al vencimiento) — NO es renta, no suma al total de arriba. Bonos amortizables sin cronograma cargado se estiman con su valor residual, todo junto al vencimiento." />
+        <Stat label="Capital a cobrar 12m" value={fmtUsd(capitalAnual, 0)} hint="Amortización + rescate al vencimiento — NO es renta ni suma al total de arriba." />
         <Stat label="Próximo capital" value={proximoCapital ? `${MESES[proximoCapital.month - 1]} ${proximoCapital.year}` : '—'} hint={proximoCapital ? fmtUsd(proximoCapital.total, 0) : undefined} />
       </div>
 
@@ -566,14 +566,14 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
       ) : sinDatos ? (
         <Card>
           <Empty icon={CalendarClock} title="Sin datos para proyectar">
-            En Posiciones, cargá tasa/frecuencia/mes de cupón en tus bonos, o esperá a que el proveedor tenga calendario de dividendos para tus CEDEARs/acciones.
+            Cargá tasa/frecuencia/mes de cupón en tus bonos (Posiciones) o esperá el calendario de dividendos.
           </Empty>
         </Card>
       ) : (
         <>
           {hayRenta ? (
             <Card>
-              <CardHeader title="Calendario 12 meses — Renta" sub="Proyección — cuánto DEBERÍAS cobrar cada mes (USD) en cupones + dividendos, no lo ya cobrado. Cupones (confiables si el bono no entra en default) + dividendos (mezcla declarado/estimado). El capital (amortización/rescate) tiene escala propia abajo — mezclarlo acá tapa la renta cuando hay un rescate grande." />
+              <CardHeader title="Calendario 12 meses — Renta" sub="Proyección en USD de cupones + dividendos (declarados/estimados), no lo ya cobrado. El capital va aparte, abajo." />
               <div className="p-2 h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
@@ -592,13 +592,13 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
           ) : (
             <Card>
               <CardHeader title="Calendario 12 meses — Renta" />
-              <p className="px-4 pb-4 text-[11px] text-ink-500">Sin cupones ni dividendos proyectados en los próximos 12 meses — cargá tasa/frecuencia/mes de cupón en tus bonos o esperá a que el proveedor tenga calendario de dividendos.</p>
+              <p className="px-4 pb-4 text-[11px] text-ink-500">Sin cupones ni dividendos proyectados en 12 meses — cargá tasa/frecuencia/mes de cupón en tus bonos.</p>
             </Card>
           )}
 
           {capitalAnual > 0 ? (
             <Card>
-              <CardHeader title="Calendario 12 meses — Capital" sub="Devolución de capital proyectada (amortización programada o rescate al vencimiento) — NO es renta, escala propia (los montos acá suelen ser mucho más grandes que los de arriba, sobre todo el mes del rescate)." />
+              <CardHeader title="Calendario 12 meses — Capital" sub="Amortización o rescate proyectado — NO es renta; escala propia." />
               <div className="p-2 h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
@@ -615,7 +615,7 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
           ) : totalBonos > 0 && (
             <Card>
               <CardHeader title="Calendario 12 meses — Capital" />
-              <p className="px-4 pb-4 text-[11px] text-ink-500">Sin capital proyectado en los próximos 12 meses (tenés bonos, pero ninguno amortiza ni vence en esta ventana) — ver "Próximo capital" arriba.</p>
+              <p className="px-4 pb-4 text-[11px] text-ink-500">Sin capital proyectado en 12 meses: ningún bono amortiza ni vence en esta ventana.</p>
             </Card>
           )}
 

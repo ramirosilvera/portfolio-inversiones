@@ -88,10 +88,10 @@ export function AddWidgetModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Agregar tarjeta">
+      <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Agregar tarjeta">
         <Card className="animate-rise">
           <CardHeader title={editing ? 'Editar tarjeta' : 'Agregar tarjeta'}
-            sub={editing ? 'Agregá o quitá métricas, cambiá el título — para cambiar de visualización, dejá una sola métrica elegida.' : 'Elegí una sección completa, o armá una tarjeta a medida con una o más métricas.'}
+            sub={editing ? 'Agregá o quitá métricas y cambiá el título. Para cambiar la visualización, dejá una sola métrica.' : 'Elegí una sección completa o armá una tarjeta con una o más métricas.'}
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
 
           {!editing && seccionesDisponibles.length > 0 && (

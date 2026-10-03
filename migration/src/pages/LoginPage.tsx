@@ -28,8 +28,8 @@ export function LoginPage() {
       if (error) setMsg({ text: error });
       else setMsg({
         text: needsConfirm
-          ? 'Cuenta creada. Revisá tu email para confirmarla — después, un administrador tiene que aprobar el acceso antes de que puedas usar la app.'
-          : 'Cuenta creada. Un administrador tiene que aprobar el acceso antes de que puedas usar la app.',
+          ? 'Cuenta creada. Confirmala desde tu email; después un administrador tiene que aprobar el acceso.'
+          : 'Cuenta creada. Un administrador tiene que aprobar el acceso.',
         ok: true,
       });
     }
@@ -78,7 +78,7 @@ export function LoginPage() {
               {modo === 'ingresar' ? 'Bienvenido de nuevo' : 'Creá tu cuenta'}
             </h2>
             <p className="text-sm text-ink-600 mt-1">
-              {modo === 'ingresar' ? 'Ingresá para ver tu portfolio' : 'Un admin tiene que aprobar el acceso antes de poder usarla'}
+              {modo === 'ingresar' ? 'Ingresá para ver tu portfolio' : 'Un admin tiene que aprobar el acceso'}
             </p>
           </div>
 

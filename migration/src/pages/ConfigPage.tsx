@@ -50,7 +50,7 @@ export function ConfigPage() {
       <h1 className="text-2xl font-bold text-ink-900 font-display">Configuración</h1>
 
       <Card>
-        <CardHeader title="Nuevo portfolio" sub="Cada portfolio es independiente: posiciones, capital y análisis no se mezclan." />
+        <CardHeader title="Nuevo portfolio" sub="Cada portfolio es independiente." />
         <div className="p-4 grid sm:grid-cols-2 gap-3">
           <Field label="Nombre">
             <input placeholder="Nombre (ej. Ahorros, Herencia)" value={nuevo.nombre}
@@ -76,7 +76,7 @@ export function ConfigPage() {
 
       {portfolios.length > 1 && (
         <Card>
-          <CardHeader title="Portfolio por defecto" sub="Cuál se muestra primero al abrir la app. Podés seguir cambiando de portfolio cuando quieras." />
+          <CardHeader title="Portfolio por defecto" sub="Cuál se muestra primero al abrir la app." />
           <div className="p-4 flex flex-wrap items-center gap-3">
             <Field label="Mostrar por defecto" className="flex-1 min-w-[200px]">
               <select value={defaultId ?? ''}
@@ -160,11 +160,11 @@ function BackupSection() {
 
   return (
     <Card>
-      <CardHeader title="Backup de tus datos" sub="Descargá un archivo JSON con TODOS tus portfolios y datos para guardarlo por tu cuenta (ej. en tu Drive)." />
+      <CardHeader title="Backup de tus datos" sub="Descargá un JSON con TODOS tus portfolios y datos." />
       <div className="p-4 space-y-3">
         <div className="flex items-start gap-2 rounded-xl bg-canvas ring-1 ring-inset ring-line px-3 py-2.5 text-[11px] text-ink-600">
           <ShieldCheck className="w-4 h-4 shrink-0 text-pos mt-0.5" />
-          <p>Incluye portfolios, brokers y su asignación, posiciones, movimientos, aportes, transferencias entre portfolios, cobros (dividendos/intereses/amortizaciones) y el saldo ya invertido, flujo de caja, supuestos de DCF y de Proyección, cronograma de amortización manual, layout del Dashboard, histórico, watchlist, bonos destacados del Radar, mapa de CIK, análisis de IA y tu perfil. Se genera en tu navegador (no se sube a ningún lado). El proyecto está en el plan gratuito de Supabase, que NO incluye backups automáticos — este archivo es la única copia de tus datos fuera de la base. Guardalo en tu Drive u otro lugar seguro cada tanto.</p>
+          <p>Se genera en tu navegador. Supabase (plan gratuito) NO hace backups automáticos: este archivo es la única copia de tus datos fuera de la base. Guardalo en tu Drive u otro lugar seguro cada tanto.</p>
         </div>
         {haceFalta && (
           <p className="flex items-center gap-1.5 text-[11px] text-warn">
@@ -227,11 +227,11 @@ function RestoreSection() {
 
   return (
     <Card>
-      <CardHeader title="Restaurar backup" sub="Cargá un archivo de backup (JSON) para recuperar tus datos en esta cuenta." />
+      <CardHeader title="Restaurar backup" sub="Cargá un backup (JSON) para recuperar tus datos." />
       <div className="p-4 space-y-3">
         <div className="flex items-start gap-2 rounded-xl bg-warn/10 ring-1 ring-inset ring-warn/20 px-3 py-2.5 text-[11px] text-ink-700">
           <AlertTriangle className="w-4 h-4 shrink-0 text-warn mt-0.5" />
-          <p><b>Agrega y sobrescribe</b> con los datos del backup (no borra lo que no esté en él). Ideal para una cuenta <b>vacía</b> o recuperación. Si ya tenés portfolios, podrían quedar duplicados.</p>
+          <p><b>Agrega y sobrescribe</b> con los datos del backup (no borra el resto). Pensado para cuentas <b>vacías</b>: si ya tenés portfolios, podrían duplicarse.</p>
         </div>
 
         <input type="file" accept="application/json,.json" onChange={onFile} aria-label="Archivo de backup a restaurar"
@@ -290,7 +290,7 @@ function CikMapSection() {
 
   return (
     <Card>
-      <CardHeader title="Tickers → CIK (EDGAR)" sub="Para analizar empresas que no reconocemos por defecto. El CIK es el número de la empresa en SEC EDGAR (10 dígitos)." />
+      <CardHeader title="Tickers → CIK (EDGAR)" sub="Para empresas no reconocidas. El CIK es el número de SEC EDGAR (10 dígitos)." />
       <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
         <Field label="Ticker">
           <input placeholder="Ticker (ej. TSLA)" value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} className={inputCls} />
@@ -338,7 +338,7 @@ function ChangePassword() {
 
   return (
     <Card>
-      <CardHeader title="Cambiar contraseña" sub="Se aplica a tu cuenta de acceso." />
+      <CardHeader title="Cambiar contraseña" sub="Se aplica a tu cuenta." />
       <div className="p-4 grid sm:grid-cols-2 gap-3">
         <Field label="Nueva contraseña">
           <input type="password" placeholder="Nueva contraseña" value={p1} onChange={e => setP1(e.target.value)} autoComplete="new-password"

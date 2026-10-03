@@ -20,7 +20,7 @@ export function PendingApprovalPage() {
           </div>
           <p className="font-display font-bold text-lg text-ink-900">Cuenta pendiente de aprobación</p>
           <p className="text-sm text-ink-600 leading-relaxed">
-            {session?.user.email} ya se registró, pero un administrador todavía tiene que aprobar el acceso antes de que puedas usar la app.
+            {session?.user.email} ya se registró; un administrador tiene que aprobar el acceso.
           </p>
         </div>
         <Button variant="ghost" onClick={() => void signOut()} className="w-full py-2.5">Salir</Button>

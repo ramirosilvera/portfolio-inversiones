@@ -283,7 +283,7 @@ function BonosProximoCapitalMetric({ viz, titulo, sub, detalleHref, personalizan
     : !proximoCapital ? { status: 'empty', motivo: 'Sin capital proyectado en los próximos 12 meses.' }
     : {
         status: 'ok', shape: 'scalar', value: proximoCapital.total, format: 'usd-compact',
-        sub: `${MESES_CORTOS[proximoCapital.month - 1]} ${proximoCapital.year} — amortización o rescate, no es renta`,
+        sub: `${MESES_CORTOS[proximoCapital.month - 1]} ${proximoCapital.year} — amortización o rescate, no renta`,
       };
   return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
 }

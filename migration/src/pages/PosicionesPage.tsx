@@ -101,7 +101,7 @@ export function PosicionesPage() {
   };
 
   const borrar = async (p: Posicion) => {
-    if (!window.confirm(`¿Borrar ${p.ticker}? Se elimina la posición y su historial. No se puede deshacer.`)) return;
+    if (!window.confirm(`¿Borrar ${p.ticker}? Se elimina con su historial. No se puede deshacer.`)) return;
     setDeletingId(p.id);
     try { await remove(p.id); }
     catch (e) { window.alert(`No se pudo borrar: ${e instanceof Error ? e.message : 'error'}`); }
@@ -131,7 +131,7 @@ export function PosicionesPage() {
       </div>
 
       <Card>
-        <CardHeader title="Cartera" sub="Al agregar un activo ya existente se consolida (costo promedio ponderado); mirá el historial con el ícono de reloj."
+        <CardHeader title="Cartera" sub="Un activo ya existente se consolida a costo promedio ponderado."
           right={
             <div className="flex items-center gap-3">
               {cerradas > 0 && (
@@ -387,9 +387,9 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-lg" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Agregar posición">
-        <Card className="animate-rise max-h-[90vh] overflow-y-auto">
-          <CardHeader title="Agregar posición" sub="Alta manual — para dimensionar una compra contra el resto de la cartera, usá Simular compra."
+      <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Agregar posición">
+        <Card className="animate-rise">
+          <CardHeader title="Agregar posición" sub="Alta manual. Para dimensionar una compra, usá Simular compra."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 grid grid-cols-2 gap-3 text-sm">
             <Field label="Tipo">
@@ -424,7 +424,7 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
               </Field>
             )}
             {form.tipo === 'cash' && (
-              <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada — cargala a mano, el bróker/banco la cambia sin aviso.">
+              <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada; cargala a mano.">
                 <NumField placeholder="ej. 4.5" step="0.1" value={form.tir_esperada != null ? form.tir_esperada * 100 : null}
                   onChange={n => setForm({ ...form, tir_esperada: n / 100 })}
                   onEmptyBlur={() => setForm(f => ({ ...f, tir_esperada: null }))} className={inputCls} />
@@ -446,10 +446,10 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
           {form.tipo === 'bono' && (
             <div className="px-4 pb-4 grid grid-cols-2 gap-3 text-sm border-t border-line pt-3">
               <div className="col-span-2 text-[11px] text-ink-600">
-                Datos de cupón (para el flujo de cupones):
+                Datos de cupón:
                 {bonoDelCatalogo && (
                   <span className="ml-1.5 text-pos font-medium">
-                    ✓ precargado desde el catálogo de referencia (calificación {bonoDelCatalogo.calificadora ?? 'sin cargar'}{bonoDelCatalogo.amortizable ? ', amortizable' : ''}) — revisá y ajustá si hace falta.
+                    ✓ precargado del catálogo (calificación {bonoDelCatalogo.calificadora ?? 'sin cargar'}{bonoDelCatalogo.amortizable ? ', amortizable' : ''}) — revisá y ajustá.
                   </span>
                 )}
               </div>
@@ -488,9 +488,7 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
             <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
               <input type="checkbox" checked={capitalNuevo} onChange={e => { setCapitalNuevo(e.target.checked); if (e.target.checked) setPagarLiq(false); }} className="mt-0.5" />
               <span>
-                ¿Es capital nuevo (recién ingresado, no plata que ya estaba en el portfolio)? Si tildás esto se registra
-                un aporte de {fmtUsd((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), 0)} automáticamente,
-                para no tener que cargarlo dos veces en Aportes.
+                ¿Es capital nuevo (no estaba en el portfolio)? Registra un aporte de {fmtUsd((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), 0)} en Aportes.
               </span>
             </label>
             {liquidez != null && form.tipo !== 'cash' && (
@@ -498,7 +496,7 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
                 <input type="checkbox" checked={pagarLiq} onChange={e => { setPagarLiq(e.target.checked); if (e.target.checked) setCapitalNuevo(false); }} className="mt-0.5" />
                 <span>
                   Pagar con la Liquidez del portfolio (hay {fmtUsd(liquidez, 2)}): se debita {fmtUsd((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), 2)}.
-                  Si no, el valor de la compra aparece en el patrimonio sin que salga plata de ningún lado.
+                  Si no, la compra suma patrimonio sin descontar plata.
                 </span>
               </label>
             )}
@@ -609,13 +607,13 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-lg" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Editar ${pos.ticker}`}>
+      <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Editar ${pos.ticker}`}>
         <Card className="animate-rise">
           <CardHeader title={`Editar · ${pos.ticker}`} sub="Corrección directa de los datos (no registra compra/venta)."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 grid grid-cols-2 gap-3 text-sm">
             {tickerEditable && (
-              <Field label="Ticker" hint="Bono licitado sin ticker asignado todavía: podés corregirlo acá cuando lo tengas.">
+              <Field label="Ticker" hint="Bono licitado sin ticker: corregilo acá cuando lo tengas.">
                 <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} className={inputCls} />
               </Field>
             )}
@@ -638,14 +636,14 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
               <Field label="Vencimiento" className="col-span-2"><input type="date" value={vto} onChange={e => setVto(e.target.value)} className={inputCls} /></Field>
             </>}
             {pos.tipo === 'cash' && (
-              <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada — cambia con el tiempo, actualizala cuando tu bróker la mueva.">
+              <Field label="TIR (% anual)" hint="Tasa de la cuenta remunerada; actualizala si cambia.">
                 <input type="number" step="0.1" value={tir} onChange={e => setTir(e.target.value)} className={inputCls} />
               </Field>
             )}
           </div>
           {dejaCikHuerfano && (
             <p className="px-4 pb-2 text-xs text-warn">
-              Tenías un CIK cargado para {pos.ticker} en Configuración — al cambiar el ticker queda sin usar (no se borra, pero ya no aplica a esta posición).
+              El CIK de {pos.ticker} cargado en Configuración queda sin usar al cambiar el ticker (no se borra).
             </p>
           )}
           {err && <p className="px-4 pb-2 text-xs text-warn">{err}</p>}
@@ -732,7 +730,7 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-md" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Vender ${pos.ticker}`}>
+      <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Vender ${pos.ticker}`}>
         <Card className="animate-rise">
           <CardHeader title={`Vender · ${pos.ticker}`} sub={`Tenés ${fmtNum(pos.cantidad, 0)} un. · costo prom. ${fmtUsd(pos.precio_compra)}`}
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
@@ -760,8 +758,8 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
             <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
               <input type="checkbox" checked={retiro} onChange={e => setRetiro(e.target.checked)} className="mt-0.5" />
               <span>
-                ¿Sacás esta plata del portfolio? Si tildás esto se registra un retiro de {fmtUsd(n * p, 0)} en Aportes
-                automáticamente. Dejalo destildado si el efectivo se queda adentro para la próxima compra: se acredita en la Liquidez del portfolio.
+                ¿Sacás esta plata del portfolio? Registra un retiro de {fmtUsd(n * p, 0)} en Aportes.
+                Destildado, el efectivo se acredita en la Liquidez del portfolio.
               </span>
             </label>
           </div>
@@ -1024,9 +1022,9 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-lg" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Simular compra">
-        <Card className="animate-rise max-h-[90vh] overflow-y-auto">
-          <CardHeader title="Simular compra" sub="Agregá una o varias en simultáneo — el peso resultante de cada una se ajusta con todas."
+      <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Simular compra">
+        <Card className="animate-rise">
+          <CardHeader title="Simular compra" sub="Simulá una o varias compras; el peso de cada una considera a todas."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
 
           <div className="p-4 space-y-4 text-sm">
@@ -1085,7 +1083,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
                           enrichBono) — sin catálogo la posición queda sin esos datos, mismo aviso que el Radar
                           usa para "sin calificar". Para cargarlos a mano hace falta el formulario de Agregar. */}
                       {s.nTipo === 'bono' && d.ticker && !catalogoBonos.find(b => b.ticker === d.ticker) && (
-                        <p className="col-span-2 text-[11px] text-warn">{d.ticker} no está en el catálogo de referencia — se va a guardar sin cupón ni vencimiento. Para cargarlos a mano, usá "Agregar".</p>
+                        <p className="col-span-2 text-[11px] text-warn">{d.ticker} no está en el catálogo: se guarda sin cupón ni vencimiento (cargalos con "Agregar").</p>
                       )}
                     </div>
                   )}
@@ -1108,7 +1106,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
                   {s.metodo === 'monto' && <Field label="Monto a invertir (USD)"><input type="number" value={s.montoStr} onChange={e => patchSim(s.key, { montoStr: e.target.value })} className={inputCls} placeholder="USD" /></Field>}
                   {s.metodo === 'cantidad' && <Field label="Cantidad a comprar"><input type="number" value={s.cantStr} onChange={e => patchSim(s.key, { cantStr: e.target.value })} className={inputCls} placeholder="unidades" /></Field>}
                   {s.metodo === 'objetivo' && (
-                    <Field label="% objetivo del activo" hint={targets.length > 1 ? 'se resuelve junto con las demás simulaciones por objetivo' : 'cuánto querés que pese en la cartera'}>
+                    <Field label="% objetivo del activo" hint={targets.length > 1 ? 'se resuelve junto con las demás por objetivo' : 'peso deseado en la cartera'}>
                       <input type="number" value={s.objStr} onChange={e => patchSim(s.key, { objStr: e.target.value })} className={inputCls} placeholder="ej. 10" />
                     </Field>
                   )}
@@ -1153,20 +1151,19 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
             <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
               <input type="checkbox" checked={capitalNuevo} onChange={e => { setCapitalNuevo(e.target.checked); if (e.target.checked) setPagarLiq(false); }} className="mt-0.5" />
               <span>
-                ¿Es capital nuevo (recién ingresado, no plata que ya estaba en el portfolio)? Si tildás esto se registra
-                un aporte por cada compra que ejecutes ({fmtUsd(totalInvertido, 0)} en total), para no tener que cargarlo dos veces en Aportes.
+                ¿Es capital nuevo (no estaba en el portfolio)? Registra un aporte por cada compra ({fmtUsd(totalInvertido, 0)} en total).
               </span>
             </label>
             {liquidez != null && (
               <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
                 <input type="checkbox" checked={pagarLiq} onChange={e => { setPagarLiq(e.target.checked); if (e.target.checked) setCapitalNuevo(false); }} className="mt-0.5" />
                 <span>
-                  Pagar con la Liquidez del portfolio (hay {fmtUsd(liquidez, 2)}): se debita cada compra que ejecutes ({fmtUsd(totalInvertido, 2)} en total).
+                  Pagar con la Liquidez del portfolio (hay {fmtUsd(liquidez, 2)}): se debita cada compra ({fmtUsd(totalInvertido, 2)} en total).
                 </span>
               </label>
             )}
           </div>
-          {objetivosInalcanzables && <p className="px-4 pb-2 text-xs text-warn">Los objetivos combinados suman demasiado del total resultante — no son alcanzables comprando. Bajá alguno.</p>}
+          {objetivosInalcanzables && <p className="px-4 pb-2 text-xs text-warn">Los objetivos combinados no son alcanzables comprando. Bajá alguno.</p>}
           {tickerDuplicado && <p className="px-4 pb-2 text-xs text-warn">Hay un ticker repetido entre las simulaciones activas.</p>}
           {err && <p className="px-4 pb-2 text-xs text-warn">{err}</p>}
           <div className="px-4 pb-4 flex justify-end gap-2">
@@ -1191,16 +1188,16 @@ function MovimientosModal({ portfolioId, ticker, onClose }: { portfolioId: strin
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-md" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Movimientos ${ticker}`}>
+      <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Movimientos ${ticker}`}>
         <Card className="animate-rise">
-          <CardHeader title={`Movimientos · ${ticker}`} sub="Registro de cada compra que consolidó esta posición."
+          <CardHeader title={`Movimientos · ${ticker}`} sub="Cada compra que consolidó esta posición."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           {errMov && <p className="px-4 pt-2 text-xs text-warn">{errMov}</p>}
           <div className="max-h-[55vh] overflow-y-auto divide-y divide-line">
             {isLoading
               ? <p className="p-4 text-sm text-ink-600">Cargando…</p>
               : movs.length === 0
-                ? <Empty icon={History} title="Sin movimientos">Las compras que hagas quedarán registradas acá.</Empty>
+                ? <Empty icon={History} title="Sin movimientos">Tus compras quedan registradas acá.</Empty>
                 : movs.map(m => (
                   <div key={m.id} className="px-4 py-2.5 flex items-center gap-3 text-sm flex-wrap">
                     <span className="text-ink-600 tnum w-24 shrink-0">{m.fecha}</span>
@@ -1213,7 +1210,7 @@ function MovimientosModal({ portfolioId, ticker, onClose }: { portfolioId: strin
                       <span className="font-semibold tnum text-ink-900 w-24 text-right">{fmtUsd(m.cantidad * m.precio, 0)}</span>
                     </>}
                     <button
-                      onClick={() => { setErrMov(null); if (window.confirm(`¿Borrar este movimiento (${m.tipo} ${fmtNum(m.cantidad, 0)} × ${fmtUsd(m.precio)})? Se recalculan la cantidad y el costo promedio.`)) removeMovimiento(m).catch(e => setErrMov(e instanceof Error ? e.message : 'No se pudo borrar')); }}
+                      onClick={() => { setErrMov(null); if (window.confirm(`¿Borrar este movimiento (${m.tipo} ${fmtNum(m.cantidad, 0)} × ${fmtUsd(m.precio)})? Se recalculan cantidad y costo promedio.`)) removeMovimiento(m).catch(e => setErrMov(e instanceof Error ? e.message : 'No se pudo borrar')); }}
                       title="Borrar movimiento" aria-label="Borrar movimiento"
                       className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>

@@ -52,7 +52,7 @@ export function TasasPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Peldaños de la escalera" sub="Cada ETF representa un tramo de la curva de Treasuries." />
+        <CardHeader title="Peldaños de la escalera" sub="Cada ETF cubre un tramo de la curva de Treasuries." />
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[560px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
@@ -88,8 +88,7 @@ export function TasasPage() {
           </table>
         </div>
         <p className="px-4 py-3 text-[11px] text-ink-600">
-          Regla de duración: ΔPrecio ≈ −Duración × ΔTasa. El tramo largo (TLT) es el que más sube
-          cuando bajan las tasas… y el que más cae cuando suben.
+          ΔPrecio ≈ −Duración × ΔTasa: el tramo largo (TLT) es el más sensible, para ambos lados.
         </p>
       </Card>
     </div>
