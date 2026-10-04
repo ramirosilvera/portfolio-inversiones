@@ -12,11 +12,24 @@ import { RESTORE_ORDER, type BackupFile } from './backupParse';
 // quien ya importaba parseBackup/BackupFile/Preview desde este archivo.
 export { parseBackup, type BackupFile, type Preview } from './backupParse';
 
-export interface RestoreResult { restaurados: Record<string, number>; errores: string[]; total: number; }
+export interface FilaFallida { table: string; fila: string; error: string }
+export interface Faltante { table: string; esperado: number; enBase: number }
+export interface RestoreResult {
+  restaurados: Record<string, number>;
+  errores: string[];
+  fallidas: FilaFallida[];        // filas que no entraron ni una por una (máx. 30 en total, para el reporte)
+  faltantes: Faltante[];          // verificación posterior: tablas donde la base quedó con menos filas que el backup
+  total: number;
+}
+
+const LOTE = 400;
+const MAX_FALLIDAS = 30;
+const claveFila = (r: Record<string, unknown>) => String(r.id ?? r.ticker ?? r.fecha ?? r.portfolio_id ?? r.user_id ?? '?');
 
 export async function restoreBackup(backup: BackupFile, userId: string): Promise<RestoreResult> {
   const restaurados: Record<string, number> = {};
   const errores: string[] = [];
+  const fallidas: FilaFallida[] = [];
   for (const { table, onConflict, userScoped } of RESTORE_ORDER) {
     const rows = Array.isArray(backup.tables?.[table]) ? backup.tables![table] : [];
     if (!rows.length) { restaurados[table] = 0; continue; }
@@ -24,19 +37,41 @@ export async function restoreBackup(backup: BackupFile, userId: string): Promise
     let prepared: Record<string, unknown>[] = userScoped ? rows.map(r => ({ ...r, user_id: userId })) : rows;
     // movimientos.liquidez_mov_id apunta a OTRO movimiento (el de LIQUIDEZ, que nunca tiene link
     // propio — migración 0050): subir primero los que no tienen link, para que la FK no falle cuando
-    // el referenciado cae en un chunk posterior.
+    // el referenciado cae en un lote posterior.
     if (table === 'movimientos') prepared = [...prepared].sort((a, b) => Number(!!a.liquidez_mov_id) - Number(!!b.liquidez_mov_id));
     let done = 0; let tableErr: string | null = null;
-    for (let i = 0; i < prepared.length; i += 400) {
-      const chunk = prepared.slice(i, i + 400);
+    for (let i = 0; i < prepared.length; i += LOTE) {
+      const chunk = prepared.slice(i, i + LOTE);
       const { error } = await supabase.from(table).upsert(chunk, { onConflict });
-      // Si un chunk falla, seguimos con los demás (no cortamos): maximiza lo recuperado. Guardamos
-      // el primer error de la tabla para reportarlo una vez.
-      if (error) { if (!tableErr) tableErr = error.message; continue; }
-      done += chunk.length;
+      if (!error) { done += chunk.length; continue; }
+      if (!tableErr) tableErr = error.message;
+      // Un lote entero falla por UNA fila mala (FK, check, dato corrupto): reintentar fila por fila
+      // para salvar el resto y saber exactamente cuáles no entraron (antes se perdían hasta 400 filas
+      // sin decir cuáles).
+      for (const fila of chunk) {
+        const { error: e1 } = await supabase.from(table).upsert(fila, { onConflict });
+        if (!e1) { done++; continue; }
+        if (fallidas.length < MAX_FALLIDAS) fallidas.push({ table, fila: claveFila(fila), error: e1.message });
+      }
     }
     if (tableErr) errores.push(`${table}: ${tableErr}`);
     restaurados[table] = done;
   }
-  return { restaurados, errores, total: Object.values(restaurados).reduce((a, b) => a + b, 0) };
+  const faltantes = await verificarRestauracion(backup);
+  return { restaurados, errores, fallidas, faltantes, total: Object.values(restaurados).reduce((a, b) => a + b, 0) };
+}
+
+// Verificación posterior: cuenta las filas de cada tabla restaurada en la base (con RLS: solo las del
+// usuario) y las compara con el backup. En cuenta vacía debe haber ≥ lo del backup; si hay menos, algo
+// no entró aunque el upsert no haya devuelto error.
+export async function verificarRestauracion(backup: BackupFile): Promise<Faltante[]> {
+  const out: Faltante[] = [];
+  for (const { table } of RESTORE_ORDER) {
+    const esperado = Array.isArray(backup.tables?.[table]) ? backup.tables![table].length : 0;
+    if (esperado === 0) continue;
+    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true });
+    if (error) continue;   // no se pudo contar: no se afirma nada
+    if ((count ?? 0) < esperado) out.push({ table, esperado, enBase: count ?? 0 });
+  }
+  return out;
 }
