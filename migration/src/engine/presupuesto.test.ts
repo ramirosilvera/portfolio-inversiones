@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  presupuestoMensual, realMensual, cruzar, reproyectar, valorAlHorizonte, tasaMensual, sumarMeses, finDeMes, calcularForecast,
+  presupuestoMensual, realMensual, cruzar, reproyectar, valorAlHorizonte, tasaMensual, sumarMeses, finDeMes, calcularForecast, llegadaAMeta, analisisMeta,
   type Presupuesto,
 } from './presupuesto';
 
@@ -188,6 +188,67 @@ describe('mes en curso parcial (hallazgos F1/F2 de la auditoría)', () => {
     expect(r.meses[0].proyectado).toBe(true);
     expect(r.meses[0].valor).toBeCloseTo(finDeEneroEsperado, 9);
     expect(r.meses[1].valor).toBeCloseTo(finDeEneroEsperado * (1 + rm) + B.aporteAnual / 12, 9);
+  });
+});
+
+describe('objetivo de capital: cuándo se llega', () => {
+  // Verificación independiente: bucle anual simple (con aporte 0 la composición mensual equivale a la anual).
+  const aniosHasta = (v0: number, A: number, r: number, meta: number) => { let v = v0, n = 0; while (v < meta && n < 200) { v = v * (1 + r) + A; n++; } return n; };
+
+  it('Herencia (sin aportes): 8,5% llega a US$300.000 en 25 años (2051); con −2 pp en 33 (2059) y NO dentro del horizonte de 30', () => {
+    const b = { inicio: '2026-10', valorInicial: 39_378, aporteAnual: 0, tasaAnual: 0.085, anios: 30 };
+    const a = analisisMeta(b, 300_000, 39_396)!;
+    expect(aniosHasta(39_378, 0, 0.085, 300_000)).toBe(25);
+    expect(a.presupuesto.llegada).toEqual({ meses: 300, anio: 2051 });
+    expect(a.presupuesto.dentroDelHorizonte).toBe(true);
+    const [menos, base, mas] = a.sensibilidad;
+    expect(aniosHasta(39_378, 0, 0.065, 300_000)).toBe(33);
+    expect(menos.llegada).toEqual({ meses: 396, anio: 2059 });
+    expect(menos.dentroDelHorizonte).toBe(false);          // 33 años > 30: la meta no se cumple en el horizonte
+    expect(menos.valorHorizonte).toBeLessThan(300_000);
+    expect(base.llegada).toEqual(a.presupuesto.llegada);
+    expect(mas.llegada.anio!).toBeLessThan(base.llegada.anio!);
+    expect(menos.llegada.anio!).toBeGreaterThan(base.llegada.anio!);   // menos retorno → más tarde
+  });
+
+  it('con aportes: Ahorros (10%, US$4.800/año) llega a US$1.000.000 cerca del año 30, consistente con el bucle anual', () => {
+    const b = { inicio: '2026-10', valorInicial: 16_507, aporteAnual: 4_800, tasaAnual: 0.10, anios: 40 };
+    const a = analisisMeta(b, 1_000_000, 16_455)!;
+    const n = aniosHasta(16_507, 4_800, 0.10, 1_000_000);
+    // los aportes mensuales rinden dentro del año → el resultado mensual puede adelantarse a lo sumo 1 año al bucle anual
+    const anios = a.presupuesto.llegada.meses! / 12;
+    expect(anios).toBeLessThanOrEqual(n);
+    expect(anios).toBeGreaterThanOrEqual(n - 1);
+    expect(a.presupuesto.dentroDelHorizonte).toBe(true);
+  });
+
+  it('llegada dentro de los primeros 12 meses, meta ya alcanzada y casos que nunca llegan', () => {
+    const b = { inicio: '2026-10', valorInicial: 1_000, aporteAnual: 1_200, tasaAnual: 0, anios: 5 };
+    expect(llegadaAMeta('2026-10', presupuestoMensual({ ...b, fijadoEn: 'x', edadInicial: 35 }).map(f => f.valor), 1_200, 0, 1_500)).toEqual({ meses: 5, anio: 2027 });   // oct+4 = feb 2027
+    expect(analisisMeta(b, 500, 1_000)!.yaAlcanzada).toBe(true);
+    // sin retorno ni aportes nunca llega
+    const quieto = { inicio: '2026-10', valorInicial: 1_000, aporteAnual: 0, tasaAnual: 0, anios: 5 };
+    expect(analisisMeta(quieto, 5_000, 1_000)!.presupuesto.llegada).toEqual({ meses: null, anio: null });
+  });
+
+  it('meta inválida o supuestos inválidos: sin análisis (no NaN)', () => {
+    const b = { inicio: '2026-10', valorInicial: 1_000, aporteAnual: 0, tasaAnual: 0.1, anios: 10 };
+    expect(analisisMeta(b, 0, 1_000)).toBeNull();
+    expect(analisisMeta(b, NaN, 1_000)).toBeNull();
+    expect(analisisMeta({ ...b, anios: 0 }, 5_000, 1_000)).toBeNull();
+    expect(analisisMeta({ ...b, tasaAnual: -0.99 }, 5_000, 1_000)).toBeNull();
+  });
+
+  it('calcularForecast con meta: trae el análisis y la llegada con el forecast actualizado (un mal arranque la posterga)', () => {
+    const hoy = '2026-03-31';
+    const buen = calcularForecast(B, presupuestoMensual(B).slice(0, 3).map(p => ({ fecha: `${p.periodo}-28`, valor: p.valor })),
+      presupuestoMensual(B).slice(0, 3).map(p => ({ fecha: `${p.periodo}-15`, monto: p.aporte })), hoy, 'presupuesto', 20_000);
+    expect(buen.meta?.objetivo).toBe(20_000);
+    expect(buen.llegadaForecast?.meses).toBe(buen.meta?.presupuesto.llegada.meses);   // real = presupuesto → misma fecha
+    const mal = calcularForecast(B, [{ fecha: '2026-03-31', valor: 8_500 }], [], hoy, 'presupuesto', 20_000);
+    expect(mal.llegadaForecast!.meses!).toBeGreaterThan(buen.llegadaForecast!.meses!);
+    expect(calcularForecast(B, [], [], hoy, 'presupuesto', 20_000).llegadaForecast).toBeNull();   // sin datos reales no hay forecast
+    expect(calcularForecast(B, [{ fecha: hoy, valor: 10_000 }], [], hoy).meta).toBeNull();        // sin meta, sin análisis
   });
 });
 

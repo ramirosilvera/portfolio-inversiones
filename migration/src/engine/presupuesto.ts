@@ -195,6 +195,73 @@ export function reproyectar(
   };
 }
 
+// ── objetivo de capital: ¿cuándo se llega? ──────────────────────────────────────────────────────
+// Conecta el Forecast con la meta (portfolios.capital_objetivo): en qué mes/año el valor proyectado
+// alcanza la meta, y qué tan sensible es eso al retorno. Misma convención que el resto del motor: los
+// 12 primeros meses con aporte mensual y retorno mensual equivalente, después años completos con el
+// aporte al final del año (valorAlHorizonte / engine/projection.ts).
+export const MAX_ANIOS_META = 80;
+
+export interface Llegada {
+  meses: number | null;   // meses desde el inicio hasta alcanzar la meta (null = no llega dentro de MAX_ANIOS_META)
+  anio: number | null;    // año calendario en que se alcanza
+}
+
+// `valoresMes` = valor proyectado al cierre de cada uno de los primeros meses (normalmente 12).
+export function llegadaAMeta(inicio: string, valoresMes: number[], aporteAnual: number, tasaAnual: number, meta: number): Llegada {
+  const sinLlegada: Llegada = { meses: null, anio: null };
+  if (!(meta > 0) || valoresMes.length === 0 || !Number.isFinite(meta)) return sinLlegada;
+  const [y0, m0] = inicio.split('-').map(Number);
+  const aAnio = (meses: number) => Math.floor((y0 * 12 + (m0 - 1) + (meses - 1)) / 12);
+  for (let i = 0; i < valoresMes.length; i++) {
+    if (valoresMes[i] >= meta) return { meses: i + 1, anio: aAnio(i + 1) };
+  }
+  let v = valoresMes[valoresMes.length - 1];
+  for (let k = 1; k <= MAX_ANIOS_META; k++) {
+    v = v * (1 + tasaAnual) + aporteAnual;
+    if (!Number.isFinite(v)) return sinLlegada;
+    const meses = valoresMes.length + 12 * k;
+    if (v >= meta) return { meses, anio: aAnio(meses) };
+  }
+  return sinLlegada;
+}
+
+export interface EscenarioMeta {
+  delta: number;                 // variación del retorno en puntos (−0.02 = −2 pp)
+  tasa: number;
+  llegada: Llegada;
+  valorHorizonte: number;        // valor al horizonte del presupuesto con esa tasa
+  dentroDelHorizonte: boolean;   // la meta se alcanza antes de cumplirse `anios`
+}
+export interface AnalisisMeta {
+  objetivo: number;
+  yaAlcanzada: boolean;
+  presupuesto: EscenarioMeta;    // con los supuestos tal cual (delta 0)
+  sensibilidad: EscenarioMeta[]; // −2 pp, base, +2 pp
+}
+
+type SupuestosMeta = Pick<Presupuesto, 'inicio' | 'valorInicial' | 'aporteAnual' | 'tasaAnual' | 'anios'>;
+
+function escenarioMeta(b: SupuestosMeta, meta: number, delta: number): EscenarioMeta {
+  const tasa = b.tasaAnual + delta;
+  const filas = presupuestoMensual({ ...b, tasaAnual: tasa } as Presupuesto);
+  const llegada = llegadaAMeta(b.inicio, filas.map(f => f.valor), b.aporteAnual, tasa, meta);
+  const valorHorizonte = valorAlHorizonte(filas[filas.length - 1].valor, b.aporteAnual, tasa, b.anios);
+  return { delta, tasa, llegada, valorHorizonte, dentroDelHorizonte: llegada.meses != null && llegada.meses <= b.anios * 12 };
+}
+
+// Análisis de la meta a partir de unos supuestos (los del presupuesto fijado o, en la página, los de
+// pantalla). `valorActual` decide si la meta ya se alcanzó.
+export function analisisMeta(b: SupuestosMeta, meta: number, valorActual: number, delta = 0.02): AnalisisMeta | null {
+  if (!(meta > 0) || !Number.isFinite(meta) || !(b.anios >= 1) || !(b.tasaAnual > -1 + delta)) return null;
+  return {
+    objetivo: meta,
+    yaAlcanzada: valorActual >= meta,
+    presupuesto: escenarioMeta(b, meta, 0),
+    sensibilidad: [escenarioMeta(b, meta, -delta), escenarioMeta(b, meta, 0), escenarioMeta(b, meta, delta)],
+  };
+}
+
 // ── resumen listo para mostrar (página Forecast y tarjeta del Inicio) ───────────────────────────
 // Una sola función arma todo: así la tarjeta del Inicio y la página muestran EXACTAMENTE los mismos
 // números (regla de oro #1: un solo cálculo, dos presentaciones).
@@ -203,14 +270,23 @@ export interface ResumenForecast {
   cruce: FilaCruce[];
   ultimo: FilaCruce | null;        // último mes con dato real (base de los indicadores)
   repro: Reproyeccion | null;
+  meta: AnalisisMeta | null;       // solo si se pasó una meta válida
+  llegadaForecast: Llegada | null; // cuándo llega a la meta con el forecast ACTUALIZADO (null si no hay reproyección o meta)
 }
 
 export function calcularForecast(
   b: Presupuesto, puntos: PuntoValor[], flujos: FlujoFirmado[], hoy: string, modo: ModoAportes = 'presupuesto',
+  meta: number | null = null,
 ): ResumenForecast {
   const ppto = presupuestoMensual(b);
   const real = realMensual(b, puntos, flujos, hoy);
   const cruce = cruzar(ppto, real, b.valorInicial);
   const ultimo = [...cruce].reverse().find(f => f.valorReal != null) ?? null;
-  return { ppto, cruce, ultimo, repro: reproyectar(b, ppto, real, modo) };
+  const repro = reproyectar(b, ppto, real, modo);
+  const valorActual = ultimo?.valorReal ?? b.valorInicial;
+  const analisis = meta != null ? analisisMeta(b, meta, valorActual) : null;
+  const llegadaForecast = analisis && repro
+    ? llegadaAMeta(b.inicio, repro.meses.map(m => m.valor), repro.aporteMensualUsado * 12, b.tasaAnual, analisis.objetivo)
+    : null;
+  return { ppto, cruce, ultimo, repro, meta: analisis, llegadaForecast };
 }

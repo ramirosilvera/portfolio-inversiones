@@ -67,11 +67,13 @@ export function DashboardPage() {
   // pueden divergir. El punto de hoy es el patrimonio en vivo (el snapshot del día puede estar viejo).
   const { data: forecastGuardado, isLoading: forecastLoading } = useProyeccionInputs(active?.id);
   const presupuesto = forecastGuardado?.presupuesto ?? null;
+  const metaCapital = active?.capital_objetivo ?? null;   // (más abajo `objetivo` es el mismo dato; se declara después de este bloque)
   const forecast = useMemo<ResumenForecast | null>(() => {
     if (!presupuesto || !(patrimonio > 0)) return null;
     const puntos = [...snaps.filter(s => s.fecha !== hoy).map(s => ({ fecha: s.fecha, valor: s.valor })), { fecha: hoy, valor: patrimonio }];
-    return calcularForecast(presupuesto, puntos, flujosFirmados(aportes), hoy);
-  }, [presupuesto, snaps, aportes, patrimonio, hoy]);
+    // `objetivo`: la meta del portfolio (Configuración) — conecta el Forecast con "cuándo llego".
+    return calcularForecast(presupuesto, puntos, flujosFirmados(aportes), hoy, 'presupuesto', metaCapital);
+  }, [presupuesto, snaps, aportes, patrimonio, hoy, metaCapital]);
   // Próximo capital (amortización/rescate) proyectado — separado de resumenCobrado (que es SOLO plata
   // ya cobrada) a propósito. Se calcula acá (no dentro de CobrosResumen) para poder mostrar la tarjeta
   // aunque todavía no haya ningún cobro registrado (portfolio nuevo con un bono por vencer pronto).
@@ -978,6 +980,33 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizand
 // fijarlo (en las demás secciones el vacío oculta la tarjeta, pero esta no se descubre sola).
 const signoK = (n: number) => `${n >= 0 ? '+' : '−'}${fmtUsdCompact(Math.abs(n), { k: true })}`;
 const mesCorto = (ym: string) => `${MESES_CORTOS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
+// Cuándo se alcanza la meta de capital (si el portfolio tiene una): con el forecast actualizado, con la
+// sensibilidad ±2 pp de retorno en el tooltip. Todos los años salen de engine/presupuesto (analisisMeta);
+// acá solo se formatea. Si la meta no se alcanza dentro del horizonte del presupuesto se marca en warn.
+const textoLlegada = (l: { meses: number | null; anio: number | null } | null | undefined) =>
+  l?.anio != null && l.meses != null ? `${l.anio} (año ${Math.ceil(l.meses / 12)})` : null;
+function MetaForecast({ presupuesto, resumen }: { presupuesto: Presupuesto; resumen: ResumenForecast }) {
+  const m = resumen.meta;
+  if (!m) return null;
+  const meta = fmtUsdCompact(m.objetivo, { k: true });
+  if (m.yaAlcanzada) {
+    return <p className="px-4 pb-3 text-[11px] text-pos font-semibold border-t border-line pt-2.5">Meta de {meta} alcanzada ✓</p>;
+  }
+  const llegada = resumen.llegadaForecast ?? m.presupuesto.llegada;
+  const txt = textoLlegada(llegada);
+  const dentro = llegada.meses != null && llegada.meses <= presupuesto.anios * 12;
+  const ppto = textoLlegada(m.presupuesto.llegada);
+  const sens = m.sensibilidad.filter(e => e.delta !== 0).map(e => `${e.delta < 0 ? '−' : '+'}${Math.abs(e.delta * 100).toFixed(0)} pp de retorno: ${textoLlegada(e.llegada) ?? 'no llega'}`).join(' · ');
+  return (
+    <p className={`px-4 pb-3 text-[11px] border-t border-line pt-2.5 ${dentro ? 'text-ink-500' : 'text-warn'}`} title={sens}>
+      Meta {meta}: {txt
+        ? <>la alcanzás en <span className="tnum font-semibold">{txt}</span>{!dentro && ` — fuera del horizonte de ${presupuesto.anios} años`}</>
+        : 'no la alcanzás con estos supuestos'}
+      {resumen.llegadaForecast && ppto && ppto !== txt && <> (presupuesto: {ppto})</>}
+    </p>
+  );
+}
+
 function ForecastResumen({ presupuesto, resumen, personalizando }: { presupuesto: Presupuesto | null; resumen: ResumenForecast | null; personalizando: boolean }) {
   const link = (txt: string) => personalizando
     ? <span className="text-[11px] text-celeste-600">{txt}</span>
@@ -1030,6 +1059,7 @@ function ForecastResumen({ presupuesto, resumen, personalizando }: { presupuesto
           {' '}(presupuesto {fmtUsdCompact(r.valorHorizontePpto, { k: true })}, <span className={`tnum font-semibold ${tono(r.difHorizonte)}`}>{signoK(r.difHorizonte)}</span>)
         </p>
       )}
+      <MetaForecast presupuesto={presupuesto} resumen={resumen} />
     </Card>
   );
 }
