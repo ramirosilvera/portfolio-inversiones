@@ -120,7 +120,7 @@ export function ForecastPage() {
         {saveMsg && <p className={`px-4 pb-3 text-[11px] ${saveMsg.err ? 'text-neg' : 'text-ink-600'}`}>{saveMsg.text}</p>}
       </Card>
 
-      <PresupuestoVsReal portfolioId={active.id} valorActual={valorActual} cargando={savedLoading || posLoading} error={savedError}
+      <PresupuestoVsReal portfolioId={active.id} valorActual={valorActual} cargando={savedLoading || posLoading} error={savedError} rendAnios={porAnio}
         supuestos={{ aporteAnual, tasaAnual, anios, edadInicial }}
         presupuesto={saved?.presupuesto ?? null}
         onFijar={savePresupuesto} onBorrar={() => savePresupuesto(null)} />

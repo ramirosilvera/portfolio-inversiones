@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { useSnapshots } from '../hooks/useSnapshots';
 import { useAportes } from '../hooks/useAportes';
-import { useChartTheme } from '../hooks/usePrefs';
 import { flujosFirmados } from '../engine/aportes';
 import { calcularForecast, sumarMeses, finDeMes, type Presupuesto, type ModoAportes } from '../engine/presupuesto';
+import { resumenPorAnio } from '../engine/forecastAnual';
+import type { RendAnio } from '../engine/rendimiento';
 import { Card, CardHeader, Button, Stat, Badge, Field, inputCls, fmtUsd, fmtUsdCompact, fmtPct, fmtPctSigno } from './ui';
 import { RendimientoLinea, AportesLinea } from './ForecastLineas';
 
@@ -14,6 +14,7 @@ interface Props {
   valorActual: number;
   supuestos: Supuestos;
   presupuesto: Presupuesto | null;
+  rendAnios?: RendAnio[];   // rendimiento por año (el de la tarjeta de rendimiento): historia y % de cada año calendario
   cargando?: boolean;   // supuestos/posiciones todavía cargando: no mostrar la invitación ni cifras con patrimonio 0
   error?: boolean;      // falló la lectura del presupuesto guardado: no ofrecer fijar uno (pisaría el existente)
   onFijar: (p: Presupuesto) => Promise<void>;
@@ -35,8 +36,7 @@ const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 // Presupuesto vs real vs forecast actualizado, mes a mes. Todos los números salen de
 // engine/presupuesto.ts (puro y testeado); acá solo se arman los insumos y se muestran.
-export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupuesto, cargando = false, error = false, onFijar, onBorrar }: Props) {
-  const chart = useChartTheme();
+export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupuesto, rendAnios = [], cargando = false, error = false, onFijar, onBorrar }: Props) {
   const { data: snaps = [] } = useSnapshots(portfolioId);
   const { data: aportes = [] } = useAportes(portfolioId);
   const [modo, setModo] = useState<ModoAportes>('presupuesto');
@@ -87,6 +87,13 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
   };
 
   // ── cálculo ──
+  // Resumen por año calendario (historia + años con presupuesto + cierre estimado del año en curso).
+  const anual = useMemo(() => {
+    if (!presupuesto) return [];
+    const puntos = [...snaps.filter(s => s.fecha !== hoy).map(s => ({ fecha: s.fecha, valor: s.valor })), { fecha: hoy, valor: valorActual }];
+    return resumenPorAnio(presupuesto, puntos, flujosFirmados(aportes), hoy, rendAnios, modo);
+  }, [presupuesto, snaps, aportes, valorActual, hoy, modo, rendAnios]);
+
   const calc = useMemo(() => {
     if (!presupuesto) return null;
     // El punto de hoy es el patrimonio en vivo (el snapshot del día puede estar desactualizado).
@@ -154,17 +161,7 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
   }
 
   if (!presupuesto || !calc) return null;   // (ya cubierto arriba; deja el tipo estrecho)
-  const { cruce, repro, ultimo, ppto } = calc;
-  const chartData = cruce.map((f, i) => ({
-    mes: etiqueta(f.periodo),
-    // La línea usa el presupuesto del FIN de cada mes (la tabla, en el mes en curso, muestra el prorrateado a
-    // hoy): si no, la curva bajaría en el último punto.
-    Presupuesto: Math.round(ppto[i].valor),
-    Real: f.valorReal != null ? Math.round(f.valorReal) : null,
-    // El forecast se dibuja desde el último dato real (para que la línea "salga" de lo real).
-    Forecast: repro && f.k >= repro.ultimoRealK ? Math.round(repro.meses[i].valor) : null,
-  }));
-
+  const { repro, ultimo } = calc;
   return (
     <Card>
       <CardHeader title="Presupuesto vs real"
@@ -213,57 +210,47 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
             {repro && <span>({fmtUsd(repro.aporteMensualUsado, 0)}/mes, retorno presupuestado)</span>}
           </div>
 
-          <div className="p-2 h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
-                <CartesianGrid stroke={chart.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="mes" stroke={chart.axis} fontSize={11} />
-                <YAxis stroke={chart.axis} fontSize={11} domain={['auto', 'auto']} tickFormatter={v => `US$${(v / 1000).toFixed(0)}k`} width={52} />
-                <Tooltip contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 12, fontSize: 12, color: chart.tooltipText }}
-                  formatter={(v: number) => fmtUsd(v, 0)} />
-                <Legend wrapperStyle={{ fontSize: 11, color: chart.tooltipText }} />
-                <Line isAnimationActive={false} type="monotone" dataKey="Presupuesto" stroke={chart.line2} strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
-                <Line isAnimationActive={false} type="monotone" dataKey="Forecast" stroke={chart.warn} strokeWidth={1.5} strokeDasharray="2 3" dot={false} connectNulls />
-                <Line isAnimationActive={false} type="monotone" dataKey="Real" stroke="#4F97D4" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
+          {/* Vista POR AÑO calendario: el modelo sigue siendo mensual por dentro (los aportes rinden la fracción del año que
+              corresponde) pero se reporta por año; los % son los de la tarjeta "Rendimiento por año". */}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
+            <table className="w-full text-sm min-w-[720px]">
               <thead className="text-[11px] text-ink-600 border-b border-line">
                 <tr>
-                  <th className="text-left px-4 py-2">Mes</th>
-                  <th className="text-right px-2">Aporte ppto</th><th className="text-right px-2">Aporte real</th>
+                  <th className="text-left px-4 py-2">Año</th>
+                  <th className="text-right px-2">Aportes ppto</th><th className="text-right px-2">Aportes real</th>
                   <th className="text-right px-2">Valor ppto</th><th className="text-right px-2">Valor real</th>
-                  <th className="text-right px-2">Desvío</th><th className="text-right px-2">Aportes</th><th className="text-right px-4">Mercado</th>
+                  <th className="text-right px-2">Desvío</th><th className="text-right px-2">Aportes</th><th className="text-right px-2">Mercado</th>
+                  <th className="text-right px-2">Rend. real</th><th className="text-right px-4">Objetivo</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {cruce.map(f => (
-                  <tr key={f.periodo} className="hover:bg-canvas">
+                {anual.map(f => (
+                  <tr key={`${f.anio}-${f.tipo}`} className={`hover:bg-canvas ${f.tipo === 'cierre' ? 'text-ink-600 italic' : ''}`}>
                     <td className="px-4 py-1.5 text-ink-700 whitespace-nowrap">
-                      {etiqueta(f.periodo)}{f.parcial && <Badge tone="gray">a la fecha</Badge>}
+                      {f.anio}{' '}
+                      {f.tipo === 'historia' && <Badge tone="gray">sin presupuesto</Badge>}
+                      {f.tipo === 'presupuesto' && f.aLaFecha && <Badge tone="gray">a la fecha</Badge>}
+                      {f.tipo === 'cierre' && <Badge tone="warn">cierre estimado</Badge>}
                     </td>
-                    <td className="text-right px-2 tnum text-ink-600">{fmtUsd(f.aportePpto, 0)}</td>
+                    <td className="text-right px-2 tnum text-ink-600">{f.aportePpto != null ? fmtUsd(f.aportePpto, 0) : '—'}</td>
                     <td className="text-right px-2 tnum text-ink-600">{f.aporteReal != null ? fmtUsd(f.aporteReal, 0) : '—'}</td>
-                    <td className="text-right px-2 tnum text-ink-600">{fmtUsd(f.valorPpto, 0)}</td>
-                    <td className="text-right px-2 tnum text-ink-900" title={f.valorEstimado ? 'Sin snapshot en el mes: último valor conocido' : undefined}>
-                      {f.valorReal != null ? `${fmtUsd(f.valorReal, 0)}${f.valorEstimado ? '*' : ''}` : '—'}
-                    </td>
+                    <td className="text-right px-2 tnum text-ink-600">{f.valorPpto != null ? fmtUsd(f.valorPpto, 0) : '—'}</td>
+                    <td className="text-right px-2 tnum text-ink-900">{f.valorReal != null ? fmtUsd(f.valorReal, 0) : '—'}</td>
                     <td className={`text-right px-2 tnum font-semibold ${tono(f.desvio)}`}>
                       {f.desvio != null ? `${signo(f.desvio)} (${fmtPctSigno(f.desvioPct, 1)})` : '—'}
                     </td>
                     <td className={`text-right px-2 tnum ${tono(f.desvioAportes)}`}>{f.desvioAportes != null ? signo(f.desvioAportes) : '—'}</td>
-                    <td className={`text-right px-4 tnum ${tono(f.desvioMercado)}`}>{f.desvioMercado != null ? signo(f.desvioMercado) : '—'}</td>
+                    <td className={`text-right px-2 tnum ${tono(f.desvioMercado)}`}>{f.desvioMercado != null ? signo(f.desvioMercado) : '—'}</td>
+                    <td className={`text-right px-2 tnum font-semibold ${tono(f.rendReal)}`}>{f.rendReal != null ? <>{fmtPctSigno(f.rendReal, 1)}{f.concentrado && '*'}</> : '—'}</td>
+                    <td className="text-right px-4 tnum text-ink-600">{f.rendObjetivo != null ? fmtPctSigno(f.rendObjetivo, 1) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="px-4 py-3 text-[11px] text-ink-600">
-            Desvío = aportes + mercado (acumulados). Los aportes mensuales presupuestados rinden dentro del año, por eso el mes 12 queda apenas por encima del año 1 de la tabla de abajo.
-            {cruce.some(f => f.valorEstimado) && ' * Sin snapshot ese mes: se usa el último conocido.'}
+            Rend. real = año calendario (mismo cálculo que "Rendimiento por año"); Objetivo = retorno presupuestado prorrateado a los días del año. El desvío del año se parte en aportes y mercado.
+            El cierre estimado proyecta lo que falta con el retorno presupuestado y el aporte elegido arriba. {anual.some(f => f.concentrado) && '* Casi todo el capital entró hace pocos días: el % exagera.'}
           </p>
         </>
       )}
