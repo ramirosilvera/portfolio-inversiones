@@ -79,6 +79,8 @@ export const api = {
   historico: (ticker: string) =>
     get<{ ticker: string; puntos: PuntoPrecio[]; parcial?: boolean; cached?: boolean; stale?: boolean }>(
       `/api/market/historico?ticker=${encodeURIComponent(ticker)}`),
+  // Serie diaria del S&P 500 con retorno total (SPY ajustado) para comparar el rendimiento por año.
+  sp500Anual: () => get<{ fuente: string; puntos: { f: string; c: number }[]; stale?: boolean }>('/api/market/sp500-anual'),
   // `tickers` (opcional): los tenidos — devuelve además la frescura de ESOS precios (`cartera`).
   status: (tickers: string[] = []) => get<{
     precios: string | null; macro: string | null; fundamentals: string | null; last: string | null;
