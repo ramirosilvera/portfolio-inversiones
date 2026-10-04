@@ -1085,13 +1085,18 @@ function ForecastResumen({ presupuesto, resumen, personalizando, hoy }: { presup
           <AportesLinea resumen={resumen} />
         </div>
       )}
-      {r && (
-        <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
-          title={`Forecast actualizado ${fmtUsd(r.valorHorizonte, 0)} · presupuesto ${fmtUsd(r.valorHorizontePpto, 0)}`}>
-          Forecast a {presupuesto.anios} años (aportes presupuestados): <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(r.valorHorizonte, { k: true })}</span>
-          {' '}(presupuesto {fmtUsdCompact(r.valorHorizontePpto, { k: true })}, <span className={`tnum font-semibold ${tono(r.difHorizonte)}`}>{signoK(r.difHorizonte)}</span>)
-        </p>
-      )}
+      {r && (() => {
+        // Sin aportes (Herencia: capital inicial único) el forecast es solo rendimiento: la diferencia contra el presupuesto no
+        // puede venir de aportes, es el desvío de mercado de hoy llevado al horizonte. La etiqueta lo dice explícito.
+        const sinAportes = presupuesto.aporteAnual === 0;
+        return (
+          <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
+            title={`Forecast actualizado ${fmtUsd(r.valorHorizonte, 0)} · presupuesto ${fmtUsd(r.valorHorizontePpto, 0)}${sinAportes ? ` · sin aportes nuevos: la diferencia es el desvío de mercado a hoy (${fmtPctSigno(u.desvioPct, 1)} vs presupuesto) capitalizado al ${fmtPct(presupuesto.tasaAnual, 0)} anual hasta el año ${presupuesto.anios}.` : ''}`}>
+            Forecast a {presupuesto.anios} años ({sinAportes ? 'sin aportes nuevos, solo rendimiento' : 'aportes presupuestados'}): <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(r.valorHorizonte, { k: true })}</span>
+            {' '}(presupuesto {fmtUsdCompact(r.valorHorizontePpto, { k: true })}, <span className={`tnum font-semibold ${tono(r.difHorizonte)}`}>{signoK(r.difHorizonte)}</span>{sinAportes && ' por el rendimiento a hoy'})
+          </p>
+        );
+      })()}
       <MetaForecast presupuesto={presupuesto} resumen={resumen} />
     </Card>
   );
