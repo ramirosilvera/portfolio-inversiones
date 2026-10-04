@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosiciones, useQuotes } from '../hooks/usePosiciones';
 import { useChartTheme } from '../hooks/usePrefs';
 import { useProyeccionInputs, type ProyeccionInputs } from '../hooks/useProyeccionInputs';
 import { project } from '../engine/projection';
+import { analisisMeta } from '../engine/presupuesto';
 import { marketValueUSD, costUSD } from '../lib/valuation';
 import { Card, CardHeader, Button, Stat, inputCls, fmtUsd, fmtUsdCompact, fmtPct } from '../components/ui';
 import { PresupuestoVsReal } from '../components/PresupuestoVsReal';
@@ -51,6 +52,12 @@ export function ForecastPage() {
   }), [valorActual, aporteAnual, tasaAnual, anios, edadInicial]);
 
   const fin = rows[rows.length - 1];
+  // Meta de capital del portfolio (Configuración) cruzada con los supuestos de pantalla: cuándo se llega y
+  // qué tan sensible es al retorno. Mismo cálculo que la tarjeta del Inicio (engine/presupuesto).
+  const meta = active?.capital_objetivo ?? null;
+  const analisis = useMemo(() => (meta && !posLoading)
+    ? analisisMeta({ inicio: new Date().toISOString().slice(0, 7), valorInicial: Math.round(valorActual), aporteAnual, tasaAnual, anios }, meta, valorActual)
+    : null, [meta, posLoading, valorActual, aporteAnual, tasaAnual, anios]);
   const chartData = rows.map(r => ({ anio: r.anio, Patrimonio: Math.round(r.valor), Aportado: Math.round(r.aportadoTotal) }));
 
   const guardar = async () => {
@@ -111,16 +118,48 @@ export function ForecastPage() {
             <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
               <CartesianGrid stroke={chart.grid} strokeDasharray="3 3" />
               <XAxis dataKey="anio" stroke={chart.axis} fontSize={11} />
-              <YAxis stroke={chart.axis} fontSize={11} tickFormatter={v => `US$${(v / 1000).toFixed(0)}k`} width={52} />
+              {/* Con meta, el eje siempre la incluye (si no, la línea quedaba fuera de escala). */}
+              <YAxis stroke={chart.axis} fontSize={11} tickFormatter={v => `US$${(v / 1000).toFixed(0)}k`} width={52}
+                domain={meta ? [0, (max: number) => Math.max(max, meta) * 1.05] : undefined} />
               <Tooltip contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 12, fontSize: 12, color: chart.tooltipText }}
                 formatter={(v: number) => fmtUsd(v, 0)} />
               <Legend wrapperStyle={{ fontSize: 11, color: chart.tooltipText }} />
+              {meta && <ReferenceLine y={meta} stroke={chart.warn} strokeDasharray="5 4" label={{ value: 'Meta', position: 'insideTopLeft', fill: chart.warn, fontSize: 11 }} />}
               <Line type="monotone" dataKey="Aportado" stroke={chart.line2} strokeWidth={1.5} dot={false} />
               <Line type="monotone" dataKey="Patrimonio" stroke="#4F97D4" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </Card>
+
+      {analisis && (
+        <Card>
+          <CardHeader title="Objetivo de capital"
+            sub={`Meta ${fmtUsdCompact(analisis.objetivo)} · con los supuestos de arriba${analisis.yaAlcanzada ? ' · ya alcanzada ✓' : ''}.`} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[420px]">
+              <thead className="text-[11px] text-ink-600 border-b border-line">
+                <tr><th className="text-left px-4 py-2">Escenario</th><th className="text-right px-3">Retorno</th>
+                  <th className="text-right px-3">Llegás a la meta</th><th className="text-right px-4">A {anios} años</th></tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {analisis.sensibilidad.map(e => (
+                  <tr key={e.delta} className={e.delta === 0 ? 'bg-canvas' : ''}>
+                    <td className="px-4 py-1.5 text-ink-700">{e.delta === 0 ? 'Supuestos' : `${e.delta < 0 ? '−' : '+'}${Math.abs(e.delta * 100).toFixed(0)} pp`}</td>
+                    <td className="text-right px-3 tnum text-ink-600">{fmtPct(e.tasa, 1)}</td>
+                    <td className={`text-right px-3 tnum font-semibold ${e.dentroDelHorizonte ? 'text-ink-900' : 'text-warn'}`}
+                      title={e.dentroDelHorizonte ? undefined : `Fuera del horizonte de ${anios} años`}>
+                      {e.llegada.anio != null && e.llegada.meses != null ? `${e.llegada.anio} (año ${Math.ceil(e.llegada.meses / 12)})` : 'no llega'}
+                    </td>
+                    <td className={`text-right px-4 tnum ${e.valorHorizonte >= analisis.objetivo ? 'text-ink-900' : 'text-warn'}`}>{fmtUsdCompact(e.valorHorizonte)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="px-4 py-3 text-[11px] text-ink-600">En ámbar, lo que no cumple la meta dentro del horizonte. ±2 pp muestra qué tan sensible es la fecha al retorno.</p>
+        </Card>
+      )}
 
       <Card>
         <CardHeader title="Año a año (cada 5)" />
