@@ -153,7 +153,7 @@ export interface CobroInversion {
 // la ausencia acá no rompe datos existentes.
 export type SeccionKey =
   | 'objetivo_capital' | 'rendimiento_por_anio' | 'distribucion' | 'cedears' | 'bonos' | 'radar'
-  | 'patrimonio_broker' | 'cobros' | 'liquidez_fci' | 'macro';
+  | 'patrimonio_broker' | 'cobros' | 'forecast' | 'liquidez_fci' | 'macro';
 
 export type MetricKey =
   | 'distribucion_categoria' | 'distribucion_tipo_activo'

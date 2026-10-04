@@ -4,10 +4,7 @@ import { useSnapshots } from '../hooks/useSnapshots';
 import { useAportes } from '../hooks/useAportes';
 import { useChartTheme } from '../hooks/usePrefs';
 import { flujosFirmados } from '../engine/aportes';
-import {
-  presupuestoMensual, realMensual, cruzar, reproyectar, sumarMeses, finDeMes,
-  type Presupuesto, type ModoAportes,
-} from '../engine/presupuesto';
+import { calcularForecast, sumarMeses, finDeMes, type Presupuesto, type ModoAportes } from '../engine/presupuesto';
 import { Card, CardHeader, Button, Stat, Badge, Field, inputCls, fmtUsd, fmtUsdCompact, fmtPct } from './ui';
 
 interface Supuestos { aporteAnual: number; tasaAnual: number; anios: number; edadInicial: number }
@@ -65,7 +62,7 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
     finally { setBusy(false); }
   };
   const borrar = async () => {
-    if (!window.confirm('¿Borrar el presupuesto fijado? Los supuestos de la Proyección no cambian.')) return;
+    if (!window.confirm('¿Borrar el presupuesto fijado? Los supuestos del Forecast no cambian.')) return;
     setBusy(true); setMsg(null);
     try { await onBorrar(); }
     catch (e) { setMsg({ text: `No se pudo borrar: ${e instanceof Error ? e.message : 'error'}`, err: true }); }
@@ -77,11 +74,7 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
     if (!presupuesto) return null;
     // El punto de hoy es el patrimonio en vivo (el snapshot del día puede estar desactualizado).
     const puntos = [...snaps.filter(s => s.fecha !== hoy).map(s => ({ fecha: s.fecha, valor: s.valor })), { fecha: hoy, valor: valorActual }];
-    const ppto = presupuestoMensual(presupuesto);
-    const real = realMensual(presupuesto, puntos, flujosFirmados(aportes), hoy);
-    const cruce = cruzar(ppto, real);
-    const repro = reproyectar(presupuesto, ppto, real, modo);
-    return { ppto, cruce, repro };
+    return calcularForecast(presupuesto, puntos, flujosFirmados(aportes), hoy, modo);
   }, [presupuesto, snaps, aportes, valorActual, hoy, modo]);
 
   const supuestosCambiaron = presupuesto && (
@@ -129,8 +122,7 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
   }
 
   if (!presupuesto || !calc) return null;   // (ya cubierto arriba; deja el tipo estrecho)
-  const { cruce, repro } = calc;
-  const ultimo = [...cruce].reverse().find(f => f.valorReal != null) ?? null;
+  const { cruce, repro, ultimo } = calc;
   const chartData = cruce.map((f, i) => ({
     mes: etiqueta(f.periodo),
     Presupuesto: Math.round(f.valorPpto),

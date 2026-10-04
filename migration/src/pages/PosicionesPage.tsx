@@ -689,7 +689,7 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
 
   // Bidireccional: tipear en un campo recalcula el otro con el MEP vigente. Cada campo conserva SU
   // PROPIO string tal cual se tipeó (no se reformatea a sí mismo en cada tecla) — evita el bug de
-  // "se pierde el punto decimal al tipear" que ya se resolvió una vez en ProyeccionesPage con el
+  // "se pierde el punto decimal al tipear" que ya se resolvió una vez en ForecastPage con el
   // mismo patrón. El USD (`precio`) es el que de verdad se manda a onSell — el ARS es solo vista.
   // Un valor no positivo (0, negativo, a medio tipear) LIMPIA el otro campo en vez de dejarlo con un
   // número viejo que ya no corresponde — dos campos vinculados nunca deberían mostrar valores que

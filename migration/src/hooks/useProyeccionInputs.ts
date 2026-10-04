@@ -9,7 +9,7 @@ export interface ProyeccionInputs {
   edadInicial: number;
 }
 
-// Lo que se guarda por portfolio: los supuestos de la Proyección y, aparte, el PRESUPUESTO congelado
+// Lo que se guarda por portfolio: los supuestos del Forecast y, aparte, el PRESUPUESTO congelado
 // (ver engine/presupuesto.ts). Comparten la fila jsonb de `proyeccion_inputs` (sin migración), así que
 // cada escritura LEE la fila actual y mezcla: guardar/restablecer supuestos no puede borrar el
 // presupuesto, ni fijar un presupuesto pisar los supuestos.

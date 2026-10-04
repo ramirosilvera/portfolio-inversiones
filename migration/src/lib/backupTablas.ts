@@ -47,14 +47,14 @@ export const BACKUP_TABLAS: TablaBackup[] = [
   { table: 'movimientos', label: 'movimientos', onConflict: 'id', userScoped: false, restaurable: true, desde: 1 },
   // Depende de posiciones Y movimientos (movimiento_id, liquidez_mov_id).
   { table: 'cobros', label: 'cobros', onConflict: 'id', userScoped: false, restaurable: true, desde: 2,
-    avisoSiFalta: 'Backup v1 (anterior a Cobros y Proyección): no va a traer el historial de dividendos/intereses/amortizaciones ni los supuestos de Proyección guardados, porque todavía no existían.' },
+    avisoSiFalta: 'Backup v1 (anterior a Cobros y Forecast): no va a traer el historial de dividendos/intereses/amortizaciones ni los supuestos de Forecast guardados, porque todavía no existían.' },
   { table: 'aportes', label: 'aportes', onConflict: 'id', userScoped: false, restaurable: true, desde: 1 },
   // Ledger independiente de cobros: alcanza con que exista el portfolio.
   { table: 'cobros_inversiones', label: 'saldo invertido', onConflict: 'id', userScoped: false, restaurable: true, desde: 5,
     avisoSiFalta: 'Backup anterior al saldo invertible (cobros_inversiones): no va a traer el historial de "cuánto del saldo disponible ya invertiste" — el saldo mostrado después de restaurar va a ser el bruto completo hasta que lo vuelvas a marcar.' },
   { table: 'portfolio_snapshots', label: 'histórico', onConflict: 'portfolio_id,fecha', userScoped: false, restaurable: true, desde: 1 },
-  // Incluye el presupuesto congelado de la Proyección (jsonb `presupuesto`).
-  { table: 'proyeccion_inputs', label: 'supuestos proyección', onConflict: 'portfolio_id', userScoped: false, restaurable: true, desde: 2 },
+  // Incluye el presupuesto congelado del Forecast (jsonb `presupuesto`).
+  { table: 'proyeccion_inputs', label: 'supuestos forecast', onConflict: 'portfolio_id', userScoped: false, restaurable: true, desde: 2 },
   // Legacy (hoy sin uso en la UI), per-portfolio: se respalda por completitud.
   { table: 'dcf_analisis', label: 'DCF por portfolio', onConflict: 'portfolio_id,ticker', userScoped: false, restaurable: true, desde: 11 },
   // Análisis macro con portfolio_id NULL = cache del server legible por todos: no es personal.

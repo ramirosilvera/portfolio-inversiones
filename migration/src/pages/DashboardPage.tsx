@@ -11,6 +11,8 @@ import { type Vista, vistaInicial, guardarVista } from '../lib/radarVista';
 import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 import { useFlujo } from '../hooks/useFlujo';
 import { useCobros } from '../hooks/useCobros';
+import { useProyeccionInputs } from '../hooks/useProyeccionInputs';
+import { calcularForecast, type Presupuesto, type ResumenForecast } from '../engine/presupuesto';
 import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { useBrokers } from '../hooks/useBrokers';
 import { usePosicionBrokers } from '../hooks/usePosicionBrokers';
@@ -27,7 +29,7 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { SEMAFOROS, resumenMacro, type Lectura, type ResumenMacro } from '../engine/semaforos';
 import { resumenFlujo } from '../engine/flujo';
 import { resumenCobros } from '../engine/cobros';
-import { resumenAportes } from '../engine/aportes';
+import { resumenAportes, flujosFirmados } from '../engine/aportes';
 import { capitalCalendar, agruparCuotasPorPosicion, type CapitalBond, type CapitalMonthBucket } from '../engine/coupons';
 import { redondearPct, TOLERANCIA_OBJETIVO } from '../engine/rebalance';
 import { resumenPorBroker } from '../engine/brokers';
@@ -60,6 +62,16 @@ export function DashboardPage() {
   const { data: flujo = [] } = useFlujo();
   const { data: cobros = [] } = useCobros(active?.id);
   const resumenCobrado = useMemo(() => resumenCobros(cobros), [cobros]);
+  // Forecast: el presupuesto congelado vive en proyeccion_inputs (se fija en /forecast). El resumen sale
+  // de engine/presupuesto.calcularForecast — la MISMA función que usa la página, así los números no
+  // pueden divergir. El punto de hoy es el patrimonio en vivo (el snapshot del día puede estar viejo).
+  const { data: forecastGuardado, isLoading: forecastLoading } = useProyeccionInputs(active?.id);
+  const presupuesto = forecastGuardado?.presupuesto ?? null;
+  const forecast = useMemo<ResumenForecast | null>(() => {
+    if (!presupuesto || !(patrimonio > 0)) return null;
+    const puntos = [...snaps.filter(s => s.fecha !== hoy).map(s => ({ fecha: s.fecha, valor: s.valor })), { fecha: hoy, valor: patrimonio }];
+    return calcularForecast(presupuesto, puntos, flujosFirmados(aportes), hoy);
+  }, [presupuesto, snaps, aportes, patrimonio, hoy]);
   // Próximo capital (amortización/rescate) proyectado — separado de resumenCobrado (que es SOLO plata
   // ya cobrada) a propósito. Se calcula acá (no dentro de CobrosResumen) para poder mostrar la tarjeta
   // aunque todavía no haya ningún cobro registrado (portfolio nuevo con un bono por vencer pronto).
@@ -161,6 +173,7 @@ export function DashboardPage() {
     radar: <RadarResumenCombinado personalizando={personalizando} />,
     patrimonio_broker: <PatrimonioBrokers posiciones={posiciones} quotes={quotes} isLoading={qPos.isLoading} personalizando={personalizando} />,
     cobros: (cobros.length > 0 || proximoCapital) ? <CobrosResumen resumen={resumenCobrado} pendientesCount={pendientesCount} proximoCapital={proximoCapital} personalizando={personalizando} /> : null,
+    forecast: forecastLoading ? null : <ForecastResumen presupuesto={presupuesto} resumen={forecast} personalizando={personalizando} />,
     liquidez_fci: flujo.length > 0 ? <FinanzasResumen resumen={flujoR} personalizando={personalizando} /> : null,
     macro: <MacroResumen resumen={resumen} personalizando={personalizando} />,
   };
@@ -951,6 +964,68 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizand
           title="Devolución de capital de los próximos 12 meses — NO es renta. Sin cronograma cargado, se estima todo al vencimiento.">
           Próximo capital <span className="italic">proyectado</span> (amortización o rescate, no es renta):<span className="tnum font-semibold text-ink-700">{fmtUsdCompact(proximoCapital.total)}</span> en {MESES_CORTOS[proximoCapital.month - 1]} {proximoCapital.year}
           {personalizando ? ' — detalle en Cupones' : <> — <Link to="/cupones" className="text-celeste-600 hover:underline">detalle en Cupones →</Link></>}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+// Forecast: presupuesto vs real al último mes con dato, y forecast actualizado al horizonte. Mismo
+// formato de tres indicadores que Cobros/Finanzas (etiqueta, valor, subtexto). Todo viene de
+// engine/presupuesto.calcularForecast; acá solo se presenta. Sin presupuesto fijado: invitación a
+// fijarlo (en las demás secciones el vacío oculta la tarjeta, pero esta no se descubre sola).
+const signoK = (n: number) => `${n >= 0 ? '+' : '−'}${fmtUsdCompact(Math.abs(n), { k: true })}`;
+const mesCorto = (ym: string) => `${MESES_CORTOS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
+function ForecastResumen({ presupuesto, resumen, personalizando }: { presupuesto: Presupuesto | null; resumen: ResumenForecast | null; personalizando: boolean }) {
+  const link = (txt: string) => personalizando
+    ? <span className="text-[11px] text-celeste-600">{txt}</span>
+    : <Link to="/forecast" className="text-[11px] text-celeste-600 hover:underline">{txt}</Link>;
+  if (!presupuesto) {
+    return (
+      <Card>
+        <CardHeader title="Forecast" sub="Fijá un presupuesto y seguí mes a mes cómo vas contra lo previsto." right={link('Fijar presupuesto →')} />
+      </Card>
+    );
+  }
+  const u = resumen?.ultimo ?? null;
+  if (!resumen || !u) {
+    return (
+      <Card>
+        <CardHeader title="Forecast" sub={`Presupuesto desde ${mesCorto(presupuesto.inicio)}.`} right={link('Ver detalle →')} />
+        <p className="px-4 pb-4 text-[11px] text-ink-500">Todavía sin datos reales desde {mesCorto(presupuesto.inicio)}: aparecen con el primer snapshot.</p>
+      </Card>
+    );
+  }
+  const tono = (n: number) => n >= 0 ? 'text-pos' : 'text-neg';
+  const desvio = u.desvio ?? 0;
+  // Textos cortos a propósito: a 390 px cada tile mide ~100 px y `truncate` cortaba etiquetas y el
+  // desvío. El detalle completo (montos exactos, aportes vs mercado) queda en el tooltip.
+  const sinUsd = (txt: string) => txt.replace('US$', '');
+  const tiles = [
+    { label: 'Previsto', val: fmtUsdCompact(u.valorPpto, { k: true }), tone: 'text-ink-900', sub: `a ${mesCorto(u.periodo)}`, title: `Presupuesto al cierre de ${mesCorto(u.periodo)}: ${fmtUsd(u.valorPpto, 0)}` },
+    { label: 'Real', val: fmtUsdCompact(u.valorReal, { k: true }), tone: 'text-ink-900', sub: u.parcial ? 'a la fecha' : `a ${mesCorto(u.periodo)}`, title: fmtUsd(u.valorReal, 0) },
+    { label: 'Desvío US$', val: sinUsd(signoK(desvio)), tone: tono(desvio),
+      sub: u.desvioPct != null ? `${u.desvioPct >= 0 ? '+' : '−'}${fmtPct(Math.abs(u.desvioPct), 1)}` : '—',
+      title: `${desvio >= 0 ? '+' : '−'}${fmtUsd(Math.abs(desvio), 0)} vs presupuesto · aportes ${signoK(u.desvioAportes ?? 0)} · mercado ${signoK(u.desvioMercado ?? 0)}` },
+  ];
+  const r = resumen.repro;
+  return (
+    <Card>
+      <CardHeader title="Forecast" sub={`Presupuesto vs real · desde ${mesCorto(presupuesto.inicio)}.`} right={link('Ver detalle →')} />
+      <div className="grid grid-cols-3 gap-2 p-3">
+        {tiles.map(t => (
+          <div key={t.label} className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-3 min-w-0" title={t.title}>
+            <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">{t.label}</p>
+            <p className={`text-lg font-bold font-display tnum mt-1 truncate ${t.tone}`}>{t.val}</p>
+            <p className="text-[10px] text-ink-500 mt-0.5 truncate">{t.sub}</p>
+          </div>
+        ))}
+      </div>
+      {r && (
+        <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
+          title={`Forecast actualizado ${fmtUsd(r.valorHorizonte, 0)} · presupuesto ${fmtUsd(r.valorHorizontePpto, 0)}`}>
+          Forecast a {presupuesto.anios} años: <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(r.valorHorizonte, { k: true })}</span>
+          {' '}(presupuesto {fmtUsdCompact(r.valorHorizontePpto, { k: true })}, <span className={`tnum font-semibold ${tono(r.difHorizonte)}`}>{signoK(r.difHorizonte)}</span>)
         </p>
       )}
     </Card>

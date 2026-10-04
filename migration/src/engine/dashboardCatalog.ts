@@ -53,6 +53,7 @@ export const SECCION_CATALOG: SeccionDef[] = [
   { key: 'radar', titulo: 'Radar', descripcion: 'Renta variable (compra agresiva, DCF) y renta fija (bonos destacados) — con un toggle para cambiar de vista.' },
   { key: 'patrimonio_broker', titulo: 'Patrimonio por broker', descripcion: 'Dónde está físicamente cada posición.' },
   { key: 'cobros', titulo: 'Cobros', descripcion: 'Dividendos, intereses y amortizaciones cobrados + próximo capital proyectado.' },
+  { key: 'forecast', titulo: 'Forecast', descripcion: 'Presupuesto vs real del mes y forecast actualizado a N años — requiere haber fijado el presupuesto en Forecast.' },
   { key: 'liquidez_fci', titulo: 'Finanzas', descripcion: 'Ingresos, egresos y reserva de liquidez ya asignada — compartido entre todos tus portfolios.' },
   { key: 'macro', titulo: 'Contexto macro', descripcion: 'Semáforos de mercado, de un vistazo.' },
 ];
@@ -97,6 +98,7 @@ export const DEFAULT_LAYOUT: DashboardWidget[] = [
   { id: 'default-radar', kind: 'seccion', seccion: 'radar' },
   { id: 'default-patrimonio-broker', kind: 'seccion', seccion: 'patrimonio_broker' },
   { id: 'default-cobros', kind: 'seccion', seccion: 'cobros' },
+  { id: 'default-forecast', kind: 'seccion', seccion: 'forecast' },
   { id: 'default-liquidez-fci', kind: 'seccion', seccion: 'liquidez_fci' },
   { id: 'default-macro', kind: 'seccion', seccion: 'macro' },
 ];
