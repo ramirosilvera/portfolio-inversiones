@@ -7,8 +7,9 @@ import { useProyeccionInputs, type ProyeccionInputs } from '../hooks/useProyecci
 import { project } from '../engine/projection';
 import { analisisMeta } from '../engine/presupuesto';
 import { marketValueUSD, costUSD } from '../lib/valuation';
-import { Card, CardHeader, Button, Stat, inputCls, fmtUsd, fmtUsdCompact, fmtPct } from '../components/ui';
+import { Card, CardHeader, Button, Stat, inputCls, fmtUsd, fmtUsdCompact, fmtPct, fmtPctSigno } from '../components/ui';
 import { PresupuestoVsReal } from '../components/PresupuestoVsReal';
+import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 
 // Año en curso real: si se hardcodea, a partir del año siguiente el eje temporal y las edades
 // quedan desfasados del calendario.
@@ -29,6 +30,8 @@ export function ForecastPage() {
     () => posiciones.reduce((s, p) => s + (marketValueUSD(p, quotes[p.ticker] ?? null) ?? costUSD(p)), 0),
     [posiciones, quotes]);
 
+  // Rendimiento real por año (el de la tarjeta de rendimiento): evidencia para elegir el retorno que se asume acá.
+  const { porAnio } = useRendimientoAnual(active?.id);
   const { data: saved, isLoading: savedLoading, isError: savedError, save: saveInputs, remove: removeInputs, savePresupuesto } = useProyeccionInputs(active?.id);
   const [aporteAnual, setAporteAnual] = useState(DEFAULTS.aporteAnual);
   const [tasaAnual, setTasaAnual] = useState(DEFAULTS.tasaAnual);
@@ -103,6 +106,17 @@ export function ForecastPage() {
           <Num l="Años" v={anios} step={5} onChange={setAnios} />
           <Num l="Edad hoy" v={edadInicial} step={1} onChange={setEdadInicial} />
         </div>
+        {/* Conexión con "Rendimiento por año": lo que rindió de verdad al lado del retorno que se asume. Es una referencia,
+            no una entrada: pocos años y períodos cortos hacen que extrapolarlo sea engañoso. */}
+        {porAnio.some(r => r.rendimiento != null) && (
+          <p className="px-4 pb-3 text-[11px] text-ink-600"
+            title="Rendimiento por año calendario (Modified Dietz), no anualizado en el año en curso. Con poca historia no se usa como supuesto: es solo una referencia.">
+            Rendimiento real: {porAnio.filter(r => r.rendimiento != null).map((r, i) => (
+              <span key={r.anio}>{i > 0 && ' · '}{r.anio} <span className="tnum font-semibold">{fmtPctSigno(r.rendimiento, 1)}{r.concentrado && '*'}</span></span>
+            ))}
+            {' '}— asumís <span className="tnum font-semibold">{fmtPct(tasaAnual, 1)}</span>/año{porAnio.some(r => r.concentrado) && ' (* poco representativo)'}
+          </p>
+        )}
         {saveMsg && <p className={`px-4 pb-3 text-[11px] ${saveMsg.err ? 'text-neg' : 'text-ink-600'}`}>{saveMsg.text}</p>}
       </Card>
 
@@ -157,6 +171,14 @@ export function ForecastPage() {
               </tbody>
             </table>
           </div>
+          {!analisis.yaAlcanzada && analisis.aporteNecesario != null && (
+            <p className="px-4 pt-3 text-[11px] text-ink-700">
+              Para llegar en {anios} años a {fmtPct(tasaAnual, 1)}: <span className="tnum font-semibold">{fmtUsd(Math.ceil(analisis.aporteNecesario / 12), 0)}/mes</span> ({fmtUsd(analisis.aporteNecesario, 0)}/año).
+              {' '}{analisis.aporteNecesario > aporteAnual
+                ? <span className="text-warn">Tus supuestos aportan {fmtUsd(aporteAnual / 12, 0)}/mes: falta {fmtUsd(Math.ceil((analisis.aporteNecesario - aporteAnual) / 12), 0)}/mes.</span>
+                : <span className="text-pos">Tus supuestos ya lo cubren.</span>}
+            </p>
+          )}
           <p className="px-4 py-3 text-[11px] text-ink-600">En ámbar, lo que no cumple la meta dentro del horizonte. ±2 pp muestra qué tan sensible es la fecha al retorno.</p>
         </Card>
       )}

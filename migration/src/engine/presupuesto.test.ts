@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { rendimientoPorAnio } from './rendimiento';
 import {
-  presupuestoMensual, realMensual, cruzar, reproyectar, valorAlHorizonte, tasaMensual, sumarMeses, finDeMes, calcularForecast, llegadaAMeta, analisisMeta,
+  presupuestoMensual, realMensual, cruzar, reproyectar, valorAlHorizonte, tasaMensual, sumarMeses, finDeMes, calcularForecast, llegadaAMeta, analisisMeta, retornoObjetivo, aporteNecesarioParaMeta,
   type Presupuesto,
 } from './presupuesto';
 
@@ -276,6 +276,90 @@ describe('relación entre la tarjeta de rendimiento y la de forecast', () => {
     const rendimientoPeriodo = vHoy - vInicioPpto - 50;
     expect(f.ultimo!.desvioMercado!).toBeCloseTo(rendimientoPeriodo, 9);   // ppto con retorno 0 → desvío mercado = rendimiento real del período
     expect(pnlAntes + rendimientoPeriodo).toBeCloseTo(pnlAnio, 9);
+  });
+});
+
+describe('conexión rendimiento ↔ forecast', () => {
+  it('retornoObjetivo: la tasa anual prorrateada compone a la anual en 365 días', () => {
+    expect(retornoObjetivo(0.08, 365)).toBeCloseTo(0.08, 12);
+    expect(retornoObjetivo(0.08, 0)).toBe(0);
+    expect(Math.pow(1 + retornoObjetivo(0.08, 73), 5)).toBeCloseTo(1.08, 12);
+  });
+
+  it('el rendimiento del período del Forecast usa la MISMA fórmula que la tarjeta de rendimiento (coinciden si los períodos coinciden)', () => {
+    // Año completo: apertura 31-dic con 10.000, aporte de 1.000 el 1-jul, cierre 31-dic con 12.200.
+    const pts = [{ fecha: '2025-12-31', valor: 10_000, aportado: 10_000 }, { fecha: '2026-12-31', valor: 12_200, aportado: 11_000 }];
+    const flujos = [{ fecha: '2026-07-01', monto: 1_000 }];
+    const tarjeta = rendimientoPorAnio(pts, 2025, '2026-12-31', flujos).find(r => r.anio === 2026)!.rendimiento!;
+    const b: Presupuesto = { inicio: '2026-01', valorInicial: 10_000, aporteAnual: 0, tasaAnual: 0.08, anios: 5, edadInicial: 35, fijadoEn: '2026-01-02' };
+    const f = calcularForecast(b, [{ fecha: '2026-12-31', valor: 12_200 }], flujos, '2026-12-31');
+    expect(f.rendimiento!.real!).toBeCloseTo(tarjeta, 12);
+    expect(f.rendimiento!.dias).toBe(365);
+    expect(f.rendimiento!.presupuestado).toBeCloseTo(0.08, 12);
+  });
+
+  it('Herencia (datos reales): −1,51% real vs +0,09% presupuestado en 4 días, sin la señal de concentrado (sin flujos en el período)', () => {
+    const b: Presupuesto = { inicio: '2026-10', valorInicial: 40_000, aporteAnual: 0, tasaAnual: 0.08, anios: 40, edadInicial: 35, fijadoEn: '2026-10-04' };
+    const f = calcularForecast(b, [{ fecha: '2026-10-04', valor: 39_395.88 }], [], '2026-10-04');
+    expect(f.rendimiento!.dias).toBe(4);
+    expect(f.rendimiento!.real!).toBeCloseTo((39_395.88 - 40_000) / 40_000, 12);
+    expect(f.rendimiento!.presupuestado).toBeCloseTo(Math.pow(1.08, 4 / 365) - 1, 12);
+    expect(f.rendimiento!.concentrado).toBe(false);
+  });
+
+  it('sin datos reales no hay rendimiento ni cumplimiento de aportes', () => {
+    const f = calcularForecast(B, [], [], '2026-03-31');
+    expect(f.rendimiento).toBeNull();
+    expect(f.aportes).toBeNull();
+  });
+
+  it('aporte comprometido: faltante y extra se miden en meses CERRADOS y acumulados (el mes en curso no cuenta)', () => {
+    const b: Presupuesto = { ...B, aporteAnual: 2_400 };                    // US$200/mes obligatorios
+    const puntos = [{ fecha: '2026-01-31', valor: 10_100 }, { fecha: '2026-02-28', valor: 10_200 }, { fecha: '2026-03-15', valor: 10_300 }];
+    // Ene 200, feb 0, mar (en curso) 0 → cerrados: presupuestado 400, real 200 → faltan 200
+    const falta = calcularForecast(b, puntos, [{ fecha: '2026-01-10', monto: 200 }], '2026-03-15').aportes!;
+    expect(falta.faltante).toBeCloseTo(200, 9);
+    expect(falta.extra).toBe(0);
+    // Ene 700 (500 extra), feb 0 → acumulado 700 vs 400 → extra 300, sin faltante (el acumulado compensa)
+    const extra = calcularForecast(b, puntos, [{ fecha: '2026-01-10', monto: 700 }], '2026-03-15').aportes!;
+    expect(extra.faltante).toBe(0);
+    expect(extra.extra).toBeCloseTo(300, 9);
+  });
+
+  it("modo ritmo: el aporte comprometido es un PISO (con 0 aportes recientes el forecast sigue asumiendo US$200/mes)", () => {
+    const b: Presupuesto = { ...B, aporteAnual: 2_400 };
+    const puntos = [{ fecha: '2026-01-31', valor: 10_100 }, { fecha: '2026-02-28', valor: 10_200 }, { fecha: '2026-03-31', valor: 10_300 }];
+    const sinAportes = calcularForecast(b, puntos, [], '2026-03-31', 'ritmo').repro!;
+    expect(sinAportes.aporteMensualUsado).toBeCloseTo(200, 9);               // ritmo 0 < comprometido
+    const conExtra = calcularForecast(b, puntos, [{ fecha: '2026-01-10', monto: 3_000 }], '2026-03-31', 'ritmo').repro!;
+    expect(conExtra.aporteMensualUsado).toBeCloseTo(1_000, 9);               // ritmo 3000/3 > comprometido → se respeta
+  });
+});
+
+describe('aporte necesario para la meta', () => {
+  // Ahorros (datos reales): US$200/mes obligatorios, 8%, 40 años, meta US$1.000.000 → con el comprometido NO alcanza.
+  const ahorros = { inicio: '2026-10', valorInicial: 16_507, aporteAnual: 2_400, tasaAnual: 0.08, anios: 40 };
+  const valorAlHor = (A: number) => { const f = presupuestoMensual({ ...ahorros, aporteAnual: A, edadInicial: 35, fijadoEn: 'x' }); return valorAlHorizonte(f[11].valor, A, 0.08, 40); };
+  it('Ahorros: el aporte comprometido (2.400) queda corto y el necesario es mínimo y suficiente (≈US$207/mes)', () => {
+    const a = analisisMeta(ahorros, 1_000_000, 16_455)!;
+    expect(a.presupuesto.dentroDelHorizonte).toBe(false);          // llega en el año 41
+    const n = a.aporteNecesario!;
+    expect(n).toBeGreaterThan(2_400);
+    expect(n).toBeLessThan(2_700);
+    expect(valorAlHor(n)).toBeGreaterThanOrEqual(1_000_000);        // suficiente
+    expect(valorAlHor(n - 1)).toBeLessThan(1_000_000);              // y mínimo (a 1 dólar de distancia no alcanza)
+  });
+  it('si el valor ya llega sin aportes, el necesario es 0; una meta inválida da null', () => {
+    const rico = { inicio: '2026-10', valorInicial: 500_000, aporteAnual: 0, tasaAnual: 0.08, anios: 40 };
+    expect(aporteNecesarioParaMeta(rico, 1_000_000)).toBe(0);
+    expect(aporteNecesarioParaMeta(rico, 0)).toBeNull();
+    expect(aporteNecesarioParaMeta(rico, NaN)).toBeNull();
+  });
+  it('con la meta alcanzable solo con aportes, crece al subir la meta y baja al subir el retorno', () => {
+    const base = { inicio: '2026-10', valorInicial: 1_000, aporteAnual: 0, tasaAnual: 0.05, anios: 20 };
+    const a1 = aporteNecesarioParaMeta(base, 100_000)!, a2 = aporteNecesarioParaMeta(base, 200_000)!;
+    expect(a2).toBeGreaterThan(a1);
+    expect(aporteNecesarioParaMeta({ ...base, tasaAnual: 0.10 }, 100_000)!).toBeLessThan(a1);
   });
 });
 
