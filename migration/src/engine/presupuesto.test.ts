@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { rendimientoPorAnio } from './rendimiento';
 import {
   presupuestoMensual, realMensual, cruzar, reproyectar, valorAlHorizonte, tasaMensual, sumarMeses, finDeMes, calcularForecast, llegadaAMeta, analisisMeta,
   type Presupuesto,
@@ -249,6 +250,32 @@ describe('objetivo de capital: cuándo se llega', () => {
     expect(mal.llegadaForecast!.meses!).toBeGreaterThan(buen.llegadaForecast!.meses!);
     expect(calcularForecast(B, [], [], hoy, 'presupuesto', 20_000).llegadaForecast).toBeNull();   // sin datos reales no hay forecast
     expect(calcularForecast(B, [{ fecha: hoy, valor: 10_000 }], [], hoy).meta).toBeNull();        // sin meta, sin análisis
+  });
+});
+
+describe('relación entre la tarjeta de rendimiento y la de forecast', () => {
+  it('con un presupuesto de retorno 0 que arranca en el capital aportado, el desvío por MERCADO del Forecast = P&L del año de la tarjeta de rendimiento', () => {
+    // Herencia (datos reales 04/10/2026): mismos flujos y mismo patrimonio en las dos tarjetas.
+    const hoy = '2026-10-04', valor = 39395.88;
+    const pts = [{ fecha: '2026-07-24', valor: 2836.51, aportado: 3000 }, { fecha: hoy, valor, aportado: 40000 }];
+    const flujos = [{ fecha: '2026-07-17', monto: 3000 }, { fecha: '2026-09-28', monto: 27000 }, { fecha: '2026-09-29', monto: 10000 }];
+    const pnlAnio = rendimientoPorAnio(pts, 2026, hoy, flujos)[0].pnl!;
+    const b: Presupuesto = { inicio: '2026-10', valorInicial: 40_000, aporteAnual: 0, tasaAnual: 0, anios: 30, edadInicial: 35, fijadoEn: hoy };
+    const f = calcularForecast(b, [{ fecha: hoy, valor }], [], hoy);
+    expect(f.ultimo!.desvioMercado!).toBeCloseTo(pnlAnio, 6);          // −604,12 en las dos
+    expect(f.ultimo!.desvioAportes!).toBeCloseTo(0, 9);
+  });
+
+  it('identidad general: P&L del año = P&L antes del inicio del presupuesto + rendimiento real del período (mismos flujos)', () => {
+    const hoy = '2026-10-04', vIni0 = 1_000, vInicioPpto = 1_200, vHoy = 1_500;
+    const flujos = [{ fecha: '2026-03-10', monto: 100 }, { fecha: '2026-10-02', monto: 50 }];
+    // P&L del año (Jan→hoy): vHoy − vIni0 − ΣF ; P&L antes del presupuesto (Jan→30/09): vInicioPpto − vIni0 − F_antes ; período (Oct→hoy): vHoy − vInicioPpto − F_periodo
+    const pnlAnio = vHoy - vIni0 - 150, pnlAntes = vInicioPpto - vIni0 - 100;
+    const b: Presupuesto = { inicio: '2026-10', valorInicial: vInicioPpto, aporteAnual: 0, tasaAnual: 0, anios: 5, edadInicial: 35, fijadoEn: hoy };
+    const f = calcularForecast(b, [{ fecha: hoy, valor: vHoy }], [flujos[1]], hoy);
+    const rendimientoPeriodo = vHoy - vInicioPpto - 50;
+    expect(f.ultimo!.desvioMercado!).toBeCloseTo(rendimientoPeriodo, 9);   // ppto con retorno 0 → desvío mercado = rendimiento real del período
+    expect(pnlAntes + rendimientoPeriodo).toBeCloseTo(pnlAnio, 9);
   });
 });
 

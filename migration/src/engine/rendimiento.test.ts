@@ -138,3 +138,35 @@ describe('rendimientoPorAnio — Modified Dietz (flujos ponderados por tiempo)',
     expect(r).toBeLessThan(0.15);
   });
 });
+
+describe('rendimientoPorAnio — año con casi todo el capital recién ingresado (señal `concentrado`)', () => {
+  const pts = (rows: string) => rows.split(';').map(r => { const [fecha, valor, aportado] = r.split(','); return { fecha, valor: +valor, aportado: +aportado }; });
+  const fl = (rows: string) => rows.split(';').map(r => { const [fecha, monto] = r.split(','); return { fecha, monto: +monto }; });
+
+  // Datos reales de Herencia (04/10/2026): adelanto de 3.000 en julio y 37.000 el 28-29/09.
+  const herenciaPts = pts('2026-07-24,2836.51,3000;2026-09-20,3148.26,3000;2026-09-28,29777.29,30000;2026-09-29,39523.49,40000;2026-09-30,39378.31,40000;2026-10-04,39395.88,40000');
+  const herenciaFl = fl('2026-07-17,3000;2026-09-28,10000;2026-09-28,15000;2026-09-28,2000;2026-09-29,10000');
+
+  it('Herencia: el % de Dietz NO cambia (método validado), pero se marca no representativo y se da el P&L sobre capital', () => {
+    const r = rendimientoPorAnio(herenciaPts, 2026, '2026-10-04', herenciaFl)[0];
+    expect(r.pnl).toBeCloseTo(39395.88 - 40000, 6);                 // −604,12
+    expect(r.rendimiento).toBeCloseTo(-0.1063, 3);                    // Dietz: base ponderada diminuta
+    expect(r.concentrado).toBe(true);
+    expect(r.pnlSobreCapital).toBeCloseTo(-604.12 / 40000, 6);        // −1,51% del capital aportado
+  });
+
+  it('Ahorros 2026 (aportes repartidos en el año): sin señal', () => {
+    const ahorrosPts = pts('2025-12-31,9361.76,6319.91;2026-07-24,11312.33,9030.74;2026-08-04,11885.28,13030.74;2026-08-20,22834.83,20262.63;2026-09-07,18548.58,15774.63;2026-09-28,16657.57,14424.63;2026-10-04,16455.42,14424.63');
+    const ahorrosFl = fl('2025-06-02,6319.91;2026-03-02,862.83;2026-06-01,1848;2026-08-04,2000;2026-08-04,2000;2026-08-13,2621;2026-08-14,820;2026-08-14,1822;2026-08-19,1968.89;2026-09-07,-1884.96;2026-09-07,-714;2026-09-07,-1889.04;2026-09-25,650;2026-09-28,-2000');
+    const r = rendimientoPorAnio(ahorrosPts, 2025, '2026-10-04', ahorrosFl).find(x => x.anio === 2026)!;
+    expect(r.concentrado).toBeUndefined();
+    expect(r.rendimiento).not.toBeNull();
+  });
+
+  it('el caso sintético "aporte grande en diciembre" también se marca (la señal no toca el número)', () => {
+    const r = rendimientoPorAnio([{ fecha: '2025-12-31', valor: 100, aportado: 100 }, { fecha: '2026-12-31', valor: 1015, aportado: 1000 }], 2025, '2026-12-31', [{ fecha: '2026-12-20', monto: 900 }])[1];
+    expect(r.rendimiento!).toBeGreaterThan(0.08);
+    expect(r.concentrado).toBe(true);
+  });
+});
+
