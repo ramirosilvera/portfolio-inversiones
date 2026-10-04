@@ -4,6 +4,7 @@ import { yahooHist } from '../_market';
 const TTL = 12 * 60 * 60 * 1000; // 12 h — la comparación es anual, no hace falta más fresco
 const CLAVE = 'sp500_spy_diario';
 
+// 5 años alcanzan (los portfolios arrancan en 2025) y mantienen chico el payload, que el front persiste en localStorage.
 // Serie diaria del S&P 500 con RETORNO TOTAL (dividendos reinvertidos): SPY ajustado (adjclose). El índice
 // ^GSPC es solo de precio y subestima ~1,3 pp/año; para comparar contra un portfolio que cobra dividendos y
 // cupones, la vara justa es el retorno total. Todo dato real de Yahoo, nada inventado. La comparación por
@@ -29,7 +30,7 @@ export const onRequestGet = guardAuth(async ({ env }) => {
   const cached = await cacheFresh<{ data_json: PuntoSp[] }>(env, 'macro_cache', 'clave', CLAVE, TTL);
   if (cached?.data_json?.length) return json({ fuente: 'SPY (retorno total)', puntos: cached.data_json, cached: true });
   try {
-    const puntos = parse(await yahooHist('SPY', { interval: '1d', range: '10y' }));
+    const puntos = parse(await yahooHist('SPY', { interval: '1d', range: '5y' }));
     if (puntos.length < 20) throw new Error('sin-datos');
     await sbUpsert(env, 'macro_cache', [{ clave: CLAVE, valor: puntos[puntos.length - 1].c, data_json: puntos, updated_at: new Date().toISOString() }], 'clave');
     return json({ fuente: 'SPY (retorno total)', puntos });

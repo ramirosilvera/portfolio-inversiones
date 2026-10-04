@@ -2,7 +2,7 @@ import type { ResumenForecast } from '../engine/presupuesto';
 import { useMemo } from 'react';
 import { fmtPctSigno, fmtUsd } from './ui';
 import { useSp500 } from '../hooks/useSp500';
-import { retornoSp } from '../engine/sp500';
+import { retornoSp, MIN_DIAS_COMPARABLE } from '../engine/sp500';
 
 // Líneas que conectan el Forecast con el resto de la app (tarjeta de rendimiento y Aportes). Compartidas por la tarjeta del
 // Inicio y la página Forecast para que digan EXACTAMENTE lo mismo; los números salen de engine/presupuesto.calcularForecast.
@@ -43,7 +43,7 @@ export function Sp500Linea({ resumen, hoy, className = '' }: { resumen: ResumenF
   const { data } = useSp500();
   const r = resumen.rendimiento;
   const sp = useMemo(() => {
-    if (!r || r.real == null || !data?.puntos?.length) return null;
+    if (!r || r.real == null || r.dias < MIN_DIAS_COMPARABLE || !data?.puntos?.length) return null;
     const desde = new Date(Date.parse(hoy) - r.dias * 86_400_000).toISOString().slice(0, 10);
     return retornoSp(data.puntos, desde, hoy);
   }, [r, data, hoy]);
