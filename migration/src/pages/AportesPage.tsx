@@ -5,7 +5,7 @@ import { useAportes, useAporteMutations } from '../hooks/useAportes';
 import { useMacro } from '../hooks/usePosiciones';
 import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 import { resumenAportes } from '../engine/aportes';
-import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtArs, fmtPct } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtArs, fmtPct, fmtPctSigno } from '../components/ui';
 import type { Aporte, AporteTipo } from '../types/domain';
 
 // Conversión USD↔ARS con el MEP vigente, mismo criterio que el campo ARS vinculado de Comprar/
@@ -254,14 +254,15 @@ export function AportesPage() {
                     <tbody className="divide-y divide-line">
                       {filasAnio.length === 0 ? (
                         <tr><td colSpan={4} className="px-3 py-3 text-ink-600">Sin años que coincidan con el filtro.</td></tr>
-                      ) : filasAnio.map(({ anio, rendimiento, aportadoNeto, pnl }) => (
+                      ) : filasAnio.map(({ anio, rendimiento, aportadoNeto, pnl, concentrado, pnlSobreCapital }) => (
                         <tr key={anio}>
                           <td className="px-3 py-2 text-left tnum text-ink-800">{anio}{anio === anioActual ? ' · en curso' : ''}</td>
                           <td className={`px-3 py-2 text-right tnum font-semibold ${rendimiento == null ? 'text-ink-600' : rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}
-                            title={rendimiento != null ? undefined
+                            title={rendimiento != null
+                              ? (concentrado && pnlSobreCapital != null ? `Casi todo el capital entró hace pocos días: el % ponderado por tiempo exagera. Sobre el capital aportado: ${fmtPctSigno(pnlSobreCapital, 1)}` : undefined)
                               : aportadoNeto == null ? 'Sin snapshot de cierre para este año'
                               : 'Un retiro dejó la base en ≤0: el % no es representativo, el P&L sí'}>
-                            {rendimiento != null ? fmtPct(rendimiento) : '—'}
+                            {rendimiento != null ? fmtPct(rendimiento) : '—'}{concentrado && rendimiento != null && '*'}
                           </td>
                           {/* Sin color pos/neg (a diferencia de Rendimiento/P&L): un aporte neto
                               positivo no es una ganancia, solo dice que entró más capital del que
@@ -279,6 +280,11 @@ export function AportesPage() {
                     </tbody>
                   </table>
                 </div>
+                {filasAnio.filter(r => r.concentrado && r.pnlSobreCapital != null).map(r => (
+                  <p key={r.anio} className="px-4 pt-3 text-[11px] text-warn">
+                    * {r.anio}: casi todo el capital entró hace pocos días y el % ponderado por tiempo exagera. Sobre el capital aportado: {fmtPctSigno(r.pnlSobreCapital, 1)} (P&L {fmtUsd(r.pnl, 0)}).
+                  </p>
+                ))}
                 <p className="px-4 py-3 text-[11px] text-ink-500">Rendimiento pasado, no anualizado ni proyectado. Los años en "—" se completan con el valor diario que registra la app.</p>
               </>
             )}

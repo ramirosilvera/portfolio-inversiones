@@ -353,7 +353,7 @@ function useModoCapital(portfolioId: string | undefined) {
 }
 
 function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, personalizando }: {
-  porAnio: { anio: number; rendimiento: number | null }[]; anioActual: number; hayDatosRendimiento: boolean;
+  porAnio: { anio: number; rendimiento: number | null; concentrado?: boolean; pnlSobreCapital?: number | null }[]; anioActual: number; hayDatosRendimiento: boolean;
   aportes: Aporte[]; personalizando: boolean;
 }) {
   const { active } = usePortfolios();
@@ -406,11 +406,12 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
             <p className="px-4 pt-3 text-[10px] uppercase tracking-wide text-ink-600 font-semibold">Rendimiento por año</p>
           )}
           <div className="p-3 flex flex-wrap gap-2">
-            {visiblesAnio.map(({ anio, rendimiento }) => (
-              <div key={anio} className="rounded-xl bg-canvas ring-1 ring-inset ring-line px-3 py-2 min-w-[88px]">
+            {visiblesAnio.map(({ anio, rendimiento, concentrado, pnlSobreCapital }) => (
+              <div key={anio} className="rounded-xl bg-canvas ring-1 ring-inset ring-line px-3 py-2 min-w-[88px]"
+                title={concentrado && pnlSobreCapital != null ? `Casi todo el capital entró hace pocos días: el % ponderado por tiempo exagera. Sobre el capital aportado: ${fmtPctSigno(pnlSobreCapital, 1)}` : undefined}>
                 <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold">{anio}{anio === anioActual ? ' · en curso' : ''}</p>
                 <p className={`text-lg font-bold tnum mt-0.5 ${rendimiento == null ? 'text-ink-600' : rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}>
-                  {rendimiento != null ? fmtPct(rendimiento) : '—'}
+                  {rendimiento != null ? fmtPct(rendimiento) : '—'}{concentrado && rendimiento != null && '*'}
                 </p>
               </div>
             ))}
@@ -418,6 +419,13 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
           {/* Evaluado sobre TODOS los años (no solo los visibles) — los "—" se concentran justo en
               los años más viejos, que son los que este texto explica; si se evaluara sobre
               `visiblesAnio` desaparecería la explicación exactamente cuando hace falta. */}
+          {/* Año con casi todo el capital recién ingresado: Modified Dietz exagera el % (denominador diminuto);
+              se aclara con el valor sobre el capital aportado, que coincide con el P&L del Forecast. */}
+          {porAnio.filter(r => r.concentrado && r.pnlSobreCapital != null).map(r => (
+            <p key={r.anio} className="px-4 pb-2 text-[11px] text-warn">
+              * {r.anio}: casi todo el capital entró hace pocos días y el % ponderado por tiempo exagera. Sobre el capital aportado: {fmtPctSigno(r.pnlSobreCapital, 1)}.
+            </p>
+          ))}
           {porAnio.some(r => r.rendimiento == null) && (
             <p className="px-4 pb-3 text-[11px] text-ink-500">Los años en "—" se completan a medida que la app registra el valor diario.</p>
           )}

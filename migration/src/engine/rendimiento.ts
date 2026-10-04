@@ -18,7 +18,14 @@ export interface Flujo { fecha: string; monto: number }                   // fir
 // del año (Vfin − Vini − aportadoNeto). Pueden ser no-nulos aunque `rendimiento` sí sea null (un
 // retiro que deja la base en ≤0 invalida el %, no el monto en dólares) — ver abajo de dónde sale
 // cada uno según el método usado para el %.
-export interface RendAnio { anio: number; rendimiento: number | null; aportadoNeto: number | null; pnl: number | null }
+// `concentrado`: el % de Modified Dietz NO es representativo porque la mayor parte del capital entró hace pocos
+// días (capital ponderado por tiempo < 1/3 del capital aportado). El número no cambia (Dietz sigue siendo el método
+// validado); se marca y se da `pnlSobreCapital` (P&L ÷ capital aportado) para leerlo sin el efecto del denominador
+// diminuto. Caso real: Herencia 2026 — Dietz −10,6% vs −1,5% del capital (P&L −US$604 sobre US$40.000).
+export interface RendAnio { anio: number; rendimiento: number | null; aportadoNeto: number | null; pnl: number | null; concentrado?: boolean; pnlSobreCapital?: number | null }
+
+// Umbral de `concentrado`: capital ponderado ÷ capital aportado por debajo de este cociente.
+export const RATIO_MIN_DIETZ = 1 / 3;
 
 const DIA = 86_400_000;
 const dias = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / DIA;
@@ -31,7 +38,7 @@ const dias = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / DIA;
 // los flujos fechados — más preciso que el delta de `aportado` entre snapshots (ver el llamador),
 // así el caller puede armar aportadoNeto/pnl con el mismo dato que usó para el %, sin inventar un
 // segundo cálculo que podría no coincidir.
-function dietz(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta: string): { rendimiento: number | null; sumF: number } {
+function dietz(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta: string): { rendimiento: number | null; sumF: number; base: number } {
   const T = dias(desde, hasta);
   let sumF = 0, sumPond = 0;
   for (const f of flujos) {
@@ -40,9 +47,9 @@ function dietz(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta
     sumF += f.monto;
     sumPond += w * f.monto;
   }
-  if (!(T > 0)) return { rendimiento: null, sumF };
+  if (!(T > 0)) return { rendimiento: null, sumF, base: 0 };
   const base = vIni + sumPond;
-  return { rendimiento: base > 1e-9 ? (vFin - vIni - sumF) / base : null, sumF };
+  return { rendimiento: base > 1e-9 ? (vFin - vIni - sumF) / base : null, sumF, base };
 }
 
 // `flujos` (aportes/retiros fechados) es opcional: si se pasan, el rendimiento del año se calcula
@@ -82,7 +89,9 @@ export function rendimientoPorAnio(puntos: Punto[], inceptionYear: number, hoy: 
     if (delAnio.length) {
       // Año de creación: desde el primer flujo real. Si no, desde el snapshot de apertura.
       const desde = y === inceptionYear ? delAnio.map(f => f.fecha).sort()[0] : prior!.fecha;
-      const { rendimiento: r, sumF } = dietz(vIni, fin.valor, delAnio.filter(f => f.fecha >= desde), desde, fin.fecha);
+      const { rendimiento: r, sumF, base } = dietz(vIni, fin.valor, delAnio.filter(f => f.fecha >= desde), desde, fin.fecha);
+      const capital = vIni + sumF;   // capital aportado del período (apertura + flujos)
+      const concentrado = r != null && capital > 1e-9 && base > 1e-9 && base / capital < RATIO_MIN_DIETZ;
       // aportadoNeto/pnl acá SALEN DE `sumF` (los flujos fechados que ya usó Dietz para el %), NO del
       // delta `fin.aportado - aIni` entre snapshots. Son dos fuentes de datos distintas: los flujos
       // vienen de la tabla `aportes` (siempre al día); el `aportado` de un snapshot es una FOTO fija
@@ -90,7 +99,10 @@ export function rendimientoPorAnio(puntos: Punto[], inceptionYear: number, hoy: 
       // fecha pasada, o el snapshot simplemente no cayó justo el 31-dic, el delta de snapshots queda
       // desalineado con lo que el % realmente usó. Usar `sumF` mantiene el $ coherente con el % de
       // ESTA fila, en vez de una segunda fuente que puede contradecirlo.
-      out.push({ anio: y, rendimiento: r, aportadoNeto: sumF, pnl: fin.valor - vIni - sumF });
+      const pnlAnio = fin.valor - vIni - sumF;
+      out.push(concentrado
+        ? { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, concentrado: true, pnlSobreCapital: pnlAnio / capital }
+        : { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio });
       continue;
     }
 
