@@ -7,7 +7,9 @@ import { useCikMap } from '../hooks/useCikMap';
 import { Trash2 } from 'lucide-react';
 import { Card, CardHeader, Button, Badge, fmtUsd, Field, inputCls, Empty } from '../components/ui';
 import { buildBackup, descargarBackup } from '../lib/backup';
-import { parseBackup, restoreBackup, type Preview } from '../lib/restore';
+import { restoreBackup } from '../lib/restore';
+import { parseBackupVerificado, type Preview } from '../lib/backupParse';
+import { TABLA_LABEL } from '../lib/backupTablas';
 
 export function ConfigPage() {
   const { portfolios, active, defaultId, setDefaultId, setActiveId, createPortfolio, updatePortfolio, archivePortfolio } = usePortfolios();
@@ -181,15 +183,6 @@ function BackupSection() {
   );
 }
 
-const TABLA_LABEL: Record<string, string> = {
-  portfolios: 'portfolios', posiciones: 'posiciones', movimientos: 'movimientos', aportes: 'aportes',
-  portfolio_snapshots: 'histórico', flujo_items: 'flujo', dcf_inputs: 'DCF', cik_map: 'CIK', watchlist: 'watchlist',
-  analisis_ia: 'análisis IA', profiles: 'perfil', cobros: 'cobros', proyeccion_inputs: 'supuestos proyección',
-  brokers: 'brokers', posicion_brokers: 'asignación de brokers', cobros_inversiones: 'saldo invertido',
-  transferencias: 'transferencias', amortizaciones_programadas: 'cronograma amortización', dashboard_layout: 'layout Dashboard',
-  bonos_destacados: 'destacados renta fija',
-};
-
 function RestoreSection() {
   const { session } = useAuth();
   const qc = useQueryClient();
@@ -203,7 +196,7 @@ function RestoreSection() {
     const input = e.target;
     const file = input.files?.[0];
     if (!file) { setPreview(null); return; }
-    try { setPreview(parseBackup(await file.text())); }
+    try { setPreview(await parseBackupVerificado(await file.text())); }
     catch { setPreview({ ok: false, error: 'No se pudo leer el archivo.', counts: {}, total: 0, avisos: [] }); }
     input.value = ''; // permite volver a elegir el MISMO archivo (si no, onChange no dispara)
   };
@@ -214,9 +207,14 @@ function RestoreSection() {
     try {
       const r = await restoreBackup(preview.backup, session.user.id);
       await qc.invalidateQueries();
-      setResult(r.errores.length
-        ? { text: `Restauración PARCIAL — ${r.total} registros. Errores: ${r.errores.join('; ')}`, err: true }
-        : { text: `Restaurado ✓ — ${r.total} registros. Si algo no aparece, recargá la app.`, ok: true });
+      const detalle = [
+        r.errores.length ? `Errores: ${r.errores.join('; ')}` : '',
+        r.fallidas.length ? `No entraron: ${r.fallidas.slice(0, 8).map(f => `${f.table} ${f.fila}`).join(', ')}${r.fallidas.length > 8 ? '…' : ''}` : '',
+        r.faltantes.length ? `Verificación: ${r.faltantes.map(f => `${TABLA_LABEL[f.table] ?? f.table} ${f.enBase}/${f.esperado}`).join(', ')}` : '',
+      ].filter(Boolean).join(' · ');
+      setResult(detalle
+        ? { text: `Restauración PARCIAL — ${r.total} registros. ${detalle}`, err: true }
+        : { text: `Restaurado y verificado ✓ — ${r.total} registros, todas las tablas coinciden con el backup. Si algo no aparece, recargá la app.`, ok: true });
       setPreview(null); setConfirm(false);
     } catch (e) {
       setResult({ text: `Falló la restauración: ${e instanceof Error ? e.message : 'error'}`, err: true });
@@ -249,6 +247,14 @@ function RestoreSection() {
                 <Badge key={t} tone="gray">{TABLA_LABEL[t] ?? t}: {n}</Badge>
               ))}
             </div>
+            {preview.integridad && (
+              <p className={`text-[11px] ${preview.integridad === 'ok' ? 'text-pos' : preview.integridad === 'distinto' ? 'text-neg' : 'text-ink-600'}`}>
+                {preview.integridad === 'ok' ? 'Integridad verificada ✓ (checksum SHA-256).'
+                  : preview.integridad === 'distinto' ? 'Integridad: el archivo no coincide con su checksum.'
+                  : preview.integridad === 'sin-checksum' ? 'Backup anterior a v11: sin checksum, no se puede verificar la integridad.'
+                  : 'No se pudo verificar la integridad en este navegador.'}
+              </p>
+            )}
             {distintoUsuario && <p className="text-[11px] text-warn">El backup es de otra cuenta ({preview.fromEmail}); se restaurará bajo la tuya ({session?.user.email}).</p>}
             {preview.avisos.map((a, i) => <p key={i} className="text-[11px] text-warn">{a}</p>)}
             <label className="flex items-center gap-2 text-xs text-ink-700 pt-1">
