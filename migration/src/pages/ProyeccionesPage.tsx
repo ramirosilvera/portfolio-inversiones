@@ -7,6 +7,7 @@ import { useProyeccionInputs, type ProyeccionInputs } from '../hooks/useProyecci
 import { project } from '../engine/projection';
 import { marketValueUSD, costUSD } from '../lib/valuation';
 import { Card, CardHeader, Button, Stat, inputCls, fmtUsd, fmtUsdCompact, fmtPct } from '../components/ui';
+import { PresupuestoVsReal } from '../components/PresupuestoVsReal';
 
 // Año en curso real: si se hardcodea, a partir del año siguiente el eje temporal y las edades
 // quedan desfasados del calendario.
@@ -27,7 +28,7 @@ export function ProyeccionesPage() {
     () => posiciones.reduce((s, p) => s + (marketValueUSD(p, quotes[p.ticker] ?? null) ?? costUSD(p)), 0),
     [posiciones, quotes]);
 
-  const { data: saved, isLoading: savedLoading, save: saveInputs, remove: removeInputs } = useProyeccionInputs(active?.id);
+  const { data: saved, isLoading: savedLoading, save: saveInputs, remove: removeInputs, savePresupuesto } = useProyeccionInputs(active?.id);
   const [aporteAnual, setAporteAnual] = useState(DEFAULTS.aporteAnual);
   const [tasaAnual, setTasaAnual] = useState(DEFAULTS.tasaAnual);
   const [anios, setAnios] = useState(DEFAULTS.anios);
@@ -41,7 +42,7 @@ export function ProyeccionesPage() {
     if (savedLoading || !active || seededFor.current === active.id) return;
     seededFor.current = active.id;
     setSaveMsg(null);
-    const i = saved ?? DEFAULTS;
+    const i = { ...DEFAULTS, ...saved };   // `saved` puede traer solo el presupuesto (ver useProyeccionInputs)
     setAporteAnual(i.aporteAnual); setTasaAnual(i.tasaAnual); setAnios(i.anios); setEdadInicial(i.edadInicial);
   }, [saved, savedLoading, active]);
 
@@ -97,6 +98,11 @@ export function ProyeccionesPage() {
         </div>
         {saveMsg && <p className={`px-4 pb-3 text-[11px] ${saveMsg.err ? 'text-neg' : 'text-ink-600'}`}>{saveMsg.text}</p>}
       </Card>
+
+      <PresupuestoVsReal portfolioId={active.id} valorActual={valorActual}
+        supuestos={{ aporteAnual, tasaAnual, anios, edadInicial }}
+        presupuesto={saved?.presupuesto ?? null}
+        onFijar={savePresupuesto} onBorrar={() => savePresupuesto(null)} />
 
       <Card>
         <CardHeader title="Crecimiento proyectado" />
