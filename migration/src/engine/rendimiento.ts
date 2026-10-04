@@ -24,7 +24,7 @@ export interface Flujo { fecha: string; monto: number }                   // fir
 // diminuto. Caso real: Herencia 2026 — Dietz −10,6% vs −1,5% del capital (P&L −US$604 sobre US$40.000).
 // `dias`: largo del período con el que se calculó el % (desde la apertura o el primer flujo hasta el cierre) — sirve para
 // comparar el % con un retorno objetivo prorrateado (engine/presupuesto.retornoObjetivo).
-export interface RendAnio { anio: number; rendimiento: number | null; aportadoNeto: number | null; pnl: number | null; concentrado?: boolean; pnlSobreCapital?: number | null; dias?: number }
+export interface RendAnio { anio: number; rendimiento: number | null; aportadoNeto: number | null; pnl: number | null; concentrado?: boolean; pnlSobreCapital?: number | null; dias?: number; valorFin?: number }
 
 // Umbral de `concentrado`: capital ponderado ÷ capital aportado por debajo de este cociente.
 export const RATIO_MIN_DIETZ = 1 / 3;
@@ -105,8 +105,8 @@ export function rendimientoPorAnio(puntos: Punto[], inceptionYear: number, hoy: 
       // ESTA fila, en vez de una segunda fuente que puede contradecirlo.
       const pnlAnio = fin.valor - vIni - sumF;
       out.push(concentrado
-        ? { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, concentrado: true, pnlSobreCapital: pnlAnio / capital, dias: dias(desde, fin.fecha) }
-        : { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, dias: dias(desde, fin.fecha) });
+        ? { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, concentrado: true, pnlSobreCapital: pnlAnio / capital, dias: dias(desde, fin.fecha), valorFin: fin.valor }
+        : { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, dias: dias(desde, fin.fecha), valorFin: fin.valor });
       continue;
     }
 
