@@ -12,7 +12,7 @@ import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 import { useFlujo } from '../hooks/useFlujo';
 import { useCobros } from '../hooks/useCobros';
 import { useProyeccionInputs } from '../hooks/useProyeccionInputs';
-import { calcularForecast, type Presupuesto, type ResumenForecast } from '../engine/presupuesto';
+import { calcularForecast, retornoObjetivo, type Presupuesto, type ResumenForecast } from '../engine/presupuesto';
 import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { useBrokers } from '../hooks/useBrokers';
 import { usePosicionBrokers } from '../hooks/usePosicionBrokers';
@@ -40,6 +40,7 @@ import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
+import { RendimientoLinea, AportesLinea } from '../components/ForecastLineas';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
 import type { Posicion, AssetType, SeccionKey, DashboardWidget, Aporte } from '../types/domain';
@@ -165,7 +166,7 @@ export function DashboardPage() {
     // Rendimiento por año + Aportes unificados en una sola tarjeta (antes 2 separadas) — el usuario
     // elige qué mostrar (selector en el header, persistido por portfolio); por default solo
     // Rendimiento, para no duplicar de entrada lo que ya se ve completo en /aportes.
-    rendimiento_por_anio: <CapitalResumen porAnio={porAnio} anioActual={anioActual} hayDatosRendimiento={hayDatos} aportes={aportes} personalizando={personalizando} />,
+    rendimiento_por_anio: <CapitalResumen porAnio={porAnio} anioActual={anioActual} hayDatosRendimiento={hayDatos} aportes={aportes} personalizando={personalizando} tasaPresupuesto={presupuesto?.tasaAnual ?? null} />,
     distribucion: <Distribucion alloc={alloc} total={patrimonio} isLoading={qPos.isLoading}
       objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct}
       setObjetivoFijaPct={objetivoDistribucion.setObjetivoPct} setToleranciaDistribucionPct={objetivoDistribucion.setToleranciaPct}
@@ -352,9 +353,10 @@ function useModoCapital(portfolioId: string | undefined) {
   return { modo, setModo };
 }
 
-function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, personalizando }: {
-  porAnio: { anio: number; rendimiento: number | null; concentrado?: boolean; pnlSobreCapital?: number | null }[]; anioActual: number; hayDatosRendimiento: boolean;
+function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, personalizando, tasaPresupuesto }: {
+  porAnio: { anio: number; rendimiento: number | null; concentrado?: boolean; pnlSobreCapital?: number | null; dias?: number }[]; anioActual: number; hayDatosRendimiento: boolean;
   aportes: Aporte[]; personalizando: boolean;
+  tasaPresupuesto?: number | null;   // retorno anual del presupuesto (Forecast): referencia para el año en curso
 }) {
   const { active } = usePortfolios();
   const { modo, setModo } = useModoCapital(active?.id);
@@ -421,6 +423,17 @@ function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, per
               `visiblesAnio` desaparecería la explicación exactamente cuando hace falta. */}
           {/* Año con casi todo el capital recién ingresado: Modified Dietz exagera el % (denominador diminuto);
               se aclara con el valor sobre el capital aportado, que coincide con el P&L del Forecast. */}
+          {/* Conexión con el Forecast: el año en curso contra el retorno presupuestado, prorrateado por los días del período. */}
+          {(() => {
+            const ac = porAnio.find(r => r.anio === anioActual);
+            if (tasaPresupuesto == null || !ac || ac.rendimiento == null || ac.concentrado || !(ac.dias && ac.dias > 0)) return null;
+            const obj = retornoObjetivo(tasaPresupuesto, ac.dias);
+            return (
+              <p className="px-4 pb-2 text-[11px] text-ink-500" title="Retorno anual del presupuesto (Forecast) prorrateado a los días del período del año en curso.">
+                {anioActual} a la fecha: <span className={`tnum font-semibold ${ac.rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}>{fmtPctSigno(ac.rendimiento, 1)}</span> vs objetivo del Forecast <span className="tnum font-semibold text-ink-700">{fmtPctSigno(obj, 1)}</span> ({fmtPct(tasaPresupuesto, 1)}/año prorrateado)
+              </p>
+            );
+          })()}
           {porAnio.filter(r => r.concentrado && r.pnlSobreCapital != null).map(r => (
             <p key={r.anio} className="px-4 pb-2 text-[11px] text-warn">
               * {r.anio}: casi todo el capital entró hace pocos días y el % ponderado por tiempo exagera. Sobre el capital aportado: {fmtPctSigno(r.pnlSobreCapital, 1)}.
@@ -1011,6 +1024,10 @@ function MetaForecast({ presupuesto, resumen }: { presupuesto: Presupuesto; resu
         ? <>la alcanzás en <span className="tnum font-semibold">{txt}</span>{!dentro && ` — fuera del horizonte de ${presupuesto.anios} años`}</>
         : 'no la alcanzás con estos supuestos'}
       {resumen.llegadaForecast && ppto && ppto !== txt && <> (presupuesto: {ppto})</>}
+      {/* Fuera del horizonte: cuánto aporte haría falta (el comprometido puede ser obligatorio y quedar corto). */}
+      {!dentro && m.aporteNecesario != null && m.aporteNecesario > presupuesto.aporteAnual && (
+        <> — para llegar en {presupuesto.anios} años hacen falta <span className="tnum font-semibold">{fmtUsd(Math.ceil(m.aporteNecesario / 12), 0)}/mes</span> (comprometido {fmtUsd(presupuesto.aporteAnual / 12, 0)})</>
+      )}
     </p>
   );
 }
@@ -1060,6 +1077,13 @@ function ForecastResumen({ presupuesto, resumen, personalizando }: { presupuesto
           </div>
         ))}
       </div>
+      {/* Conexión con la tarjeta de rendimiento: el % del período y el cumplimiento del aporte comprometido. */}
+      {(resumen.rendimiento?.real != null || resumen.aportes) && (
+        <div className="px-4 pb-2.5 border-t border-line pt-2.5 space-y-1">
+          <RendimientoLinea resumen={resumen} />
+          <AportesLinea resumen={resumen} />
+        </div>
+      )}
       {r && (
         <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
           title={`Forecast actualizado ${fmtUsd(r.valorHorizonte, 0)} · presupuesto ${fmtUsd(r.valorHorizontePpto, 0)}`}>

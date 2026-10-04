@@ -6,6 +6,7 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { flujosFirmados } from '../engine/aportes';
 import { calcularForecast, sumarMeses, finDeMes, type Presupuesto, type ModoAportes } from '../engine/presupuesto';
 import { Card, CardHeader, Button, Stat, Badge, Field, inputCls, fmtUsd, fmtUsdCompact, fmtPct, fmtPctSigno } from './ui';
+import { RendimientoLinea, AportesLinea } from './ForecastLineas';
 
 interface Supuestos { aporteAnual: number; tasaAnual: number; anios: number; edadInicial: number }
 interface Props {
@@ -196,10 +197,15 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
               delta={repro && repro.valorHorizontePpto ? repro.difHorizonte / repro.valorHorizontePpto : undefined} />
           </div>
 
+          {/* Conexión con "Rendimiento por año": mismo % (Modified Dietz) y cumplimiento del aporte comprometido. */}
+          <div className="px-4 pb-2 space-y-1">
+            <RendimientoLinea resumen={calc} />
+            <AportesLinea resumen={calc} />
+          </div>
           <div className="px-4 pb-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-600">
             <span>Forecast: los meses que faltan aportan</span>
             <div role="radiogroup" aria-label="Aportes del forecast" className="flex items-center gap-1">
-              {([['presupuesto', 'lo presupuestado'], ['ritmo', 'mi ritmo real']] as const).map(([m, label]) => (
+              {([['presupuesto', 'lo presupuestado'], ['ritmo', 'mi ritmo real (mín. el comprometido)']] as const).map(([m, label]) => (
                 <button key={m} type="button" role="radio" aria-checked={modo === m} onClick={() => setModo(m)}
                   className={`px-2.5 py-1 rounded-full font-semibold ${modo === m ? 'bg-celeste-500 text-white' : 'bg-canvas text-ink-600'}`}>{label}</button>
               ))}

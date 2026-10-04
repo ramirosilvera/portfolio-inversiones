@@ -22,7 +22,9 @@ export interface Flujo { fecha: string; monto: number }                   // fir
 // días (capital ponderado por tiempo < 1/3 del capital aportado). El número no cambia (Dietz sigue siendo el método
 // validado); se marca y se da `pnlSobreCapital` (P&L ÷ capital aportado) para leerlo sin el efecto del denominador
 // diminuto. Caso real: Herencia 2026 — Dietz −10,6% vs −1,5% del capital (P&L −US$604 sobre US$40.000).
-export interface RendAnio { anio: number; rendimiento: number | null; aportadoNeto: number | null; pnl: number | null; concentrado?: boolean; pnlSobreCapital?: number | null }
+// `dias`: largo del período con el que se calculó el % (desde la apertura o el primer flujo hasta el cierre) — sirve para
+// comparar el % con un retorno objetivo prorrateado (engine/presupuesto.retornoObjetivo).
+export interface RendAnio { anio: number; rendimiento: number | null; aportadoNeto: number | null; pnl: number | null; concentrado?: boolean; pnlSobreCapital?: number | null; dias?: number }
 
 // Umbral de `concentrado`: capital ponderado ÷ capital aportado por debajo de este cociente.
 export const RATIO_MIN_DIETZ = 1 / 3;
@@ -38,7 +40,9 @@ const dias = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / DIA;
 // los flujos fechados — más preciso que el delta de `aportado` entre snapshots (ver el llamador),
 // así el caller puede armar aportadoNeto/pnl con el mismo dato que usó para el %, sin inventar un
 // segundo cálculo que podría no coincidir.
-function dietz(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta: string): { rendimiento: number | null; sumF: number; base: number } {
+// Exportada: el Forecast calcula el rendimiento de su período con ESTA función, no con una copia — así el % de la
+// tarjeta de rendimiento y el del Forecast salen de la misma fórmula.
+export function dietzPeriodo(vIni: number, vFin: number, flujos: Flujo[], desde: string, hasta: string): { rendimiento: number | null; sumF: number; base: number } {
   const T = dias(desde, hasta);
   let sumF = 0, sumPond = 0;
   for (const f of flujos) {
@@ -89,7 +93,7 @@ export function rendimientoPorAnio(puntos: Punto[], inceptionYear: number, hoy: 
     if (delAnio.length) {
       // Año de creación: desde el primer flujo real. Si no, desde el snapshot de apertura.
       const desde = y === inceptionYear ? delAnio.map(f => f.fecha).sort()[0] : prior!.fecha;
-      const { rendimiento: r, sumF, base } = dietz(vIni, fin.valor, delAnio.filter(f => f.fecha >= desde), desde, fin.fecha);
+      const { rendimiento: r, sumF, base } = dietzPeriodo(vIni, fin.valor, delAnio.filter(f => f.fecha >= desde), desde, fin.fecha);
       const capital = vIni + sumF;   // capital aportado del período (apertura + flujos)
       const concentrado = r != null && capital > 1e-9 && base > 1e-9 && base / capital < RATIO_MIN_DIETZ;
       // aportadoNeto/pnl acá SALEN DE `sumF` (los flujos fechados que ya usó Dietz para el %), NO del
@@ -101,8 +105,8 @@ export function rendimientoPorAnio(puntos: Punto[], inceptionYear: number, hoy: 
       // ESTA fila, en vez de una segunda fuente que puede contradecirlo.
       const pnlAnio = fin.valor - vIni - sumF;
       out.push(concentrado
-        ? { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, concentrado: true, pnlSobreCapital: pnlAnio / capital }
-        : { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio });
+        ? { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, concentrado: true, pnlSobreCapital: pnlAnio / capital, dias: dias(desde, fin.fecha) }
+        : { anio: y, rendimiento: r, aportadoNeto: sumF, pnl: pnlAnio, dias: dias(desde, fin.fecha) });
       continue;
     }
 

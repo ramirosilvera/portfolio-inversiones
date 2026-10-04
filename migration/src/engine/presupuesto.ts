@@ -15,6 +15,8 @@
 //    presupuestado con el aporte presupuestado ('presupuesto') o el ritmo real promedio ('ritmo').
 // =============================================================================
 
+import { dietzPeriodo, RATIO_MIN_DIETZ } from './rendimiento';
+
 export const MESES_PRESUPUESTO = 12;
 
 export interface Presupuesto {
@@ -168,7 +170,10 @@ export function reproyectar(
   // es confiable: se usa el presupuestado.
   const mesesTranscurridos = real.slice(0, ult + 1).reduce((s, r) => s + (r.parcial ? r.fraccion : 1), 0);
   const aporteRealAcum = real.slice(0, ult + 1).reduce((s, r) => s + (r.aporte ?? 0), 0);
-  const aporteMensual = modo === 'ritmo' && mesesTranscurridos >= 1 ? aporteRealAcum / mesesTranscurridos : b.aporteAnual / 12;
+  // El aporte presupuestado es un COMPROMISO (en Ahorros, US$200/mes obligatorios): el ritmo real puede superarlo
+  // (aportes extra) pero el forecast nunca asume menos que lo comprometido.
+  const comprometido = b.aporteAnual / 12;
+  const aporteMensual = modo === 'ritmo' && mesesTranscurridos >= 1 ? Math.max(aporteRealAcum / mesesTranscurridos, comprometido) : comprometido;
   const rm = tasaMensual(b.tasaAnual);
 
   const out: FilaForecast[] = [];
@@ -236,6 +241,7 @@ export interface EscenarioMeta {
 export interface AnalisisMeta {
   objetivo: number;
   yaAlcanzada: boolean;
+  aporteNecesario: number | null; // aporte ANUAL mínimo (US$) para llegar a la meta dentro del horizonte (0 si ya alcanza; null si no se puede calcular)
   presupuesto: EscenarioMeta;    // con los supuestos tal cual (delta 0)
   sensibilidad: EscenarioMeta[]; // −2 pp, base, +2 pp
 }
@@ -250,6 +256,21 @@ function escenarioMeta(b: SupuestosMeta, meta: number, delta: number): Escenario
   return { delta, tasa, llegada, valorHorizonte, dentroDelHorizonte: llegada.meses != null && llegada.meses <= b.anios * 12 };
 }
 
+// Aporte anual mínimo para que el valor al horizonte alcance la meta — búsqueda binaria (el valor es creciente en el aporte).
+// Redondeado hacia arriba al dólar. Sirve para decir "con tu aporte comprometido no alcanza; hacen falta US$X".
+export function aporteNecesarioParaMeta(b: SupuestosMeta, meta: number): number | null {
+  const valorCon = (A: number) => {
+    const filas = presupuestoMensual({ ...b, aporteAnual: A } as Presupuesto);
+    return valorAlHorizonte(filas[filas.length - 1].valor, A, b.tasaAnual, b.anios);
+  };
+  if (!(meta > 0) || !Number.isFinite(meta)) return null;
+  if (valorCon(0) >= meta) return 0;
+  let lo = 0, hi = Math.max(meta, 1);
+  while (valorCon(hi) < meta) { hi *= 2; if (hi > 1e12) return null; }
+  for (let i = 0; i < 80; i++) { const mid = (lo + hi) / 2; if (valorCon(mid) >= meta) hi = mid; else lo = mid; }
+  return Math.ceil(hi);
+}
+
 // Análisis de la meta a partir de unos supuestos (los del presupuesto fijado o, en la página, los de
 // pantalla). `valorActual` decide si la meta ya se alcanzó.
 export function analisisMeta(b: SupuestosMeta, meta: number, valorActual: number, delta = 0.02): AnalisisMeta | null {
@@ -257,9 +278,30 @@ export function analisisMeta(b: SupuestosMeta, meta: number, valorActual: number
   return {
     objetivo: meta,
     yaAlcanzada: valorActual >= meta,
+    aporteNecesario: aporteNecesarioParaMeta(b, meta),
     presupuesto: escenarioMeta(b, meta, 0),
     sensibilidad: [escenarioMeta(b, meta, -delta), escenarioMeta(b, meta, 0), escenarioMeta(b, meta, delta)],
   };
+}
+
+// ── resumen listo para mostrar (página Forecast y tarjeta del Inicio) ───────────────────────────
+// Una sola función arma todo: así la tarjeta del Inicio y la página muestran EXACTAMENTE los mismos
+// números (regla de oro #1: un solo cálculo, dos presentaciones).
+// ── conexión con la tarjeta de rendimiento ──────────────────────────────────────────────────────
+// Retorno que corresponde a una tasa anual en un período de `dias` (compuesto): es el "objetivo prorrateado" contra el
+// que se compara el % de rendimiento de un período más corto que un año.
+export const retornoObjetivo = (tasaAnual: number, dias: number): number => Math.pow(1 + tasaAnual, dias / 365) - 1;
+
+export interface RendimientoPeriodo {
+  real: number | null;       // Modified Dietz del período del presupuesto — la MISMA fórmula que "rendimiento por año"
+  presupuestado: number;     // retorno presupuestado equivalente al mismo número de días
+  dias: number;
+  concentrado: boolean;      // capital ponderado < 1/3 del aportado: el % no es representativo (ver rendimiento.ts)
+}
+
+export interface AportesAlDia {
+  faltante: number;          // US$ que faltan para el mínimo comprometido, solo con meses CERRADOS (acumulado)
+  extra: number;             // US$ aportados por encima del mínimo (acumulado, meses cerrados)
 }
 
 // ── resumen listo para mostrar (página Forecast y tarjeta del Inicio) ───────────────────────────
@@ -272,6 +314,8 @@ export interface ResumenForecast {
   repro: Reproyeccion | null;
   meta: AnalisisMeta | null;       // solo si se pasó una meta válida
   llegadaForecast: Llegada | null; // cuándo llega a la meta con el forecast ACTUALIZADO (null si no hay reproyección o meta)
+  rendimiento: RendimientoPeriodo | null; // % real vs presupuestado del período (null sin datos reales)
+  aportes: AportesAlDia | null;    // cumplimiento del aporte comprometido (null sin datos reales)
 }
 
 export function calcularForecast(
@@ -288,5 +332,32 @@ export function calcularForecast(
   const llegadaForecast = analisis && repro
     ? llegadaAMeta(b.inicio, repro.meses.map(m => m.valor), repro.aporteMensualUsado * 12, b.tasaAnual, analisis.objetivo)
     : null;
-  return { ppto, cruce, ultimo, repro, meta: analisis, llegadaForecast };
+
+  // Rendimiento del período [cierre del mes anterior → hoy], con Modified Dietz (la fórmula de la tarjeta de
+  // rendimiento), contra el retorno presupuestado equivalente — el Forecast habla en % igual que la otra tarjeta.
+  let rendimiento: RendimientoPeriodo | null = null;
+  if (ultimo && ultimo.valorReal != null) {
+    const desde = finDeMes(sumarMeses(b.inicio, -1));
+    const hasta = ultimo.parcial ? hoy : finDeMes(ultimo.periodo);
+    const dias = (Date.parse(hasta) - Date.parse(desde)) / 86_400_000;
+    if (dias > 0) {
+      const enPeriodo = flujos.filter(f => f.fecha > desde && f.fecha <= hasta);
+      const d = dietzPeriodo(b.valorInicial, ultimo.valorReal, enPeriodo, desde, hasta);
+      const capital = b.valorInicial + d.sumF;
+      rendimiento = {
+        real: d.rendimiento, presupuestado: retornoObjetivo(b.tasaAnual, dias), dias,
+        concentrado: d.rendimiento != null && capital > 1e-9 && d.base > 1e-9 && d.base / capital < RATIO_MIN_DIETZ,
+      };
+    }
+  }
+
+  // Aporte comprometido: acumulado de los meses CERRADOS (el mes en curso no cuenta: un aporte a fin de mes no es
+  // un incumplimiento a mitad de mes).
+  let aportes: AportesAlDia | null = null;
+  const cerrados = cruce.filter(f => f.valorReal != null && !f.parcial && f.aporteReal != null);
+  if (cerrados.length) {
+    const ppt = cerrados.reduce((s, f) => s + f.aportePpto, 0), rl = cerrados.reduce((s, f) => s + (f.aporteReal ?? 0), 0);
+    aportes = { faltante: Math.max(0, ppt - rl), extra: Math.max(0, rl - ppt) };
+  }
+  return { ppto, cruce, ultimo, repro, meta: analisis, llegadaForecast, rendimiento, aportes };
 }
