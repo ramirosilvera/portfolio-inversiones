@@ -18,7 +18,7 @@ const DEFAULTS: ProyeccionInputs = { aporteAnual: 3000, tasaAnual: 0.08, anios: 
 export function ForecastPage() {
   const { active } = usePortfolios();
   const chart = useChartTheme();
-  const { data: posiciones = [] } = usePosiciones(active?.id);
+  const { data: posiciones = [], isLoading: posLoading } = usePosiciones(active?.id);
   const equity = posiciones.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker);
   const bonds = posiciones.filter(p => p.tipo === 'bono').map(p => p.ticker);
   const arStocks = posiciones.filter(p => p.tipo === 'accion_ar').map(p => p.ticker);
@@ -28,7 +28,7 @@ export function ForecastPage() {
     () => posiciones.reduce((s, p) => s + (marketValueUSD(p, quotes[p.ticker] ?? null) ?? costUSD(p)), 0),
     [posiciones, quotes]);
 
-  const { data: saved, isLoading: savedLoading, save: saveInputs, remove: removeInputs, savePresupuesto } = useProyeccionInputs(active?.id);
+  const { data: saved, isLoading: savedLoading, isError: savedError, save: saveInputs, remove: removeInputs, savePresupuesto } = useProyeccionInputs(active?.id);
   const [aporteAnual, setAporteAnual] = useState(DEFAULTS.aporteAnual);
   const [tasaAnual, setTasaAnual] = useState(DEFAULTS.tasaAnual);
   const [anios, setAnios] = useState(DEFAULTS.anios);
@@ -99,7 +99,7 @@ export function ForecastPage() {
         {saveMsg && <p className={`px-4 pb-3 text-[11px] ${saveMsg.err ? 'text-neg' : 'text-ink-600'}`}>{saveMsg.text}</p>}
       </Card>
 
-      <PresupuestoVsReal portfolioId={active.id} valorActual={valorActual}
+      <PresupuestoVsReal portfolioId={active.id} valorActual={valorActual} cargando={savedLoading || posLoading} error={savedError}
         supuestos={{ aporteAnual, tasaAnual, anios, edadInicial }}
         presupuesto={saved?.presupuesto ?? null}
         onFijar={savePresupuesto} onBorrar={() => savePresupuesto(null)} />

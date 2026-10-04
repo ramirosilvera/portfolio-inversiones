@@ -296,6 +296,13 @@ export const fmtNum = (n: number | null | undefined, dp = 2): string =>
 export const fmtPct = (n: number | null | undefined, dp = 1): string =>
   n == null || !Number.isFinite(n) ? '—' : `${(n * 100).toFixed(dp)}%`;
 
+// Con signo explícito (+/−) calculado sobre el valor REDONDEADO: −0,0003 con 1 decimal es "0.0%", no "−0.0%".
+export const fmtPctSigno = (n: number | null | undefined, dp = 1): string => {
+  if (n == null || !Number.isFinite(n)) return '—';
+  const r = +(n * 100).toFixed(dp);
+  return r === 0 ? fmtPct(0, dp) : `${r > 0 ? '+' : '−'}${fmtPct(Math.abs(n), dp)}`;
+};
+
 // Pesos argentinos → prefijo "$" (sin decimales, miles con punto es-AR).
 export const fmtArs = (n: number | null | undefined): string =>
   n == null || !Number.isFinite(n) ? '—' : `$${Math.round(n).toLocaleString('es-AR')}`;

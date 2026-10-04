@@ -30,7 +30,7 @@ export function useProyeccionInputs(portfolioId: string | undefined) {
     },
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['proyeccion_inputs', portfolioId ?? ''] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['proyeccion_inputs', portfolioId ?? ''] });   // se espera (await): la pantalla no muestra el estado viejo tras guardar
 
   // Lectura fresca de la base (no del cache de react-query): la mezcla tiene que partir de lo que
   // hay guardado AHORA, no de lo que esta pestaña vio hace un rato.
@@ -44,12 +44,14 @@ export function useProyeccionInputs(portfolioId: string | undefined) {
     const { error } = vacio
       ? await supabase.from('proyeccion_inputs').delete().eq('portfolio_id', portfolioId)
       : await supabase.from('proyeccion_inputs').upsert({ portfolio_id: portfolioId, inputs, updated_at: new Date().toISOString() });
-    if (error) throw error; invalidate();
+    if (error) throw error;
+    await invalidate();
   };
 
   return {
     data: q.data ?? null,
     isLoading: q.isLoading,
+    isError: q.isError,
     save: async (inputs: ProyeccionInputs) => {
       if (!portfolioId) return;
       const actual = await leer();

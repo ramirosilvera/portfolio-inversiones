@@ -58,7 +58,9 @@ export const BACKUP_TABLAS: TablaBackup[] = [
   // Legacy (hoy sin uso en la UI), per-portfolio: se respalda por completitud.
   { table: 'dcf_analisis', label: 'DCF por portfolio', onConflict: 'portfolio_id,ticker', userScoped: false, restaurable: true, desde: 11 },
   // Análisis macro con portfolio_id NULL = cache del server legible por todos: no es personal.
-  { table: 'analisis_ia', label: 'análisis IA', onConflict: 'id', userScoped: false, restaurable: true, desde: 1, soloPersonal: true },
+  // SOLO exportable: la RLS (0022, policy ia_select) le deja al cliente solo SELECT — los escribe el
+  // server con service-role—, así que restaurarla fallaba en cada lote y se reintentaba fila por fila.
+  { table: 'analisis_ia', label: 'análisis IA', onConflict: null, userScoped: false, restaurable: false, desde: 1, soloPersonal: true },
   { table: 'cik_map', label: 'CIK', onConflict: 'user_id,ticker', userScoped: true, restaurable: true, desde: 1 },
   { table: 'flujo_items', label: 'flujo', onConflict: 'id', userScoped: true, restaurable: true, desde: 1 },
   { table: 'dcf_inputs', label: 'DCF', onConflict: 'user_id,ticker', userScoped: true, restaurable: true, desde: 1 },

@@ -188,11 +188,12 @@ function RestoreSection() {
   const qc = useQueryClient();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [confirmDistinto, setConfirmDistinto] = useState(false);   // 2º check si el archivo no coincide con su checksum
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ text: string; ok?: boolean; err?: boolean } | null>(null);
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    setResult(null); setConfirm(false);
+    setResult(null); setConfirm(false); setConfirmDistinto(false);
     const input = e.target;
     const file = input.files?.[0];
     if (!file) { setPreview(null); return; }
@@ -209,13 +210,15 @@ function RestoreSection() {
       await qc.invalidateQueries();
       const detalle = [
         r.errores.length ? `Errores: ${r.errores.join('; ')}` : '',
-        r.fallidas.length ? `No entraron: ${r.fallidas.slice(0, 8).map(f => `${f.table} ${f.fila}`).join(', ')}${r.fallidas.length > 8 ? '…' : ''}` : '',
+        r.fallidasTotal > 0 ? `No entraron ${r.fallidasTotal} fila(s): ${r.fallidas.slice(0, 8).map(f => `${f.table} ${f.fila}`).join(', ')}${r.fallidas.length > 8 || r.fallidasTotal > r.fallidas.length ? '…' : ''}` : '',
         r.faltantes.length ? `Verificación: ${r.faltantes.map(f => `${TABLA_LABEL[f.table] ?? f.table} ${f.enBase}/${f.esperado}`).join(', ')}` : '',
       ].filter(Boolean).join(' · ');
       setResult(detalle
         ? { text: `Restauración PARCIAL — ${r.total} registros. ${detalle}`, err: true }
-        : { text: `Restaurado y verificado ✓ — ${r.total} registros, todas las tablas coinciden con el backup. Si algo no aparece, recargá la app.`, ok: true });
-      setPreview(null); setConfirm(false);
+        : r.verificacionCompleta
+          ? { text: `Restaurado ✓ — ${r.total} registros; los conteos de cada tabla coinciden con el backup. Si algo no aparece, recargá la app.`, ok: true }
+          : { text: `Restaurado — ${r.total} registros, pero no se pudieron contar todas las tablas para verificarlo. Revisá los datos y recargá la app.` });
+      setPreview(null); setConfirm(false); setConfirmDistinto(false);
     } catch (e) {
       setResult({ text: `Falló la restauración: ${e instanceof Error ? e.message : 'error'}`, err: true });
     } finally { setBusy(false); }
@@ -255,13 +258,19 @@ function RestoreSection() {
                   : 'No se pudo verificar la integridad en este navegador.'}
               </p>
             )}
-            {distintoUsuario && <p className="text-[11px] text-warn">El backup es de otra cuenta ({preview.fromEmail}); se restaurará bajo la tuya ({session?.user.email}).</p>}
+            {distintoUsuario && <p className="text-[11px] text-warn">El backup es de otra cuenta ({preview.fromEmail}); se restaurará bajo la tuya ({session?.user.email}). Si esa cuenta sigue existiendo en esta base, sus filas serán rechazadas.</p>}
             {preview.avisos.map((a, i) => <p key={i} className="text-[11px] text-warn">{a}</p>)}
             <label className="flex items-center gap-2 text-xs text-ink-700 pt-1">
               <input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} className="w-4 h-4 accent-celeste-500" />
               Entiendo que se agregan/sobrescriben mis datos con los del backup.
             </label>
-            <Button onClick={restaurar} disabled={!confirm || busy}><Upload className="w-4 h-4" /> {busy ? 'Restaurando…' : 'Restaurar ahora'}</Button>
+            {preview.integridad === 'distinto' && (
+              <label className="flex items-center gap-2 text-xs text-neg">
+                <input type="checkbox" checked={confirmDistinto} onChange={e => setConfirmDistinto(e.target.checked)} className="w-4 h-4 accent-celeste-500" />
+                El archivo no coincide con su checksum (truncado o editado). Restaurar de todos modos.
+              </label>
+            )}
+            <Button onClick={restaurar} disabled={!confirm || busy || (preview.integridad === 'distinto' && !confirmDistinto)}><Upload className="w-4 h-4" /> {busy ? 'Restaurando…' : 'Restaurar ahora'}</Button>
           </div>
         )}
 
