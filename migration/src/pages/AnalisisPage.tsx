@@ -365,7 +365,7 @@ export function AnalisisPage() {
           <Metric l="P/B" v={fmtNum(ratios.pb, 1)} />
           <Metric l="ROIC" v={`${fmtPct(ratios.roic)}${ratios.roic != null && ratios.wacc != null && ratios.roic > ratios.wacc ? ' ✓' : ''}`} tone={ratios.roic != null && ratios.wacc != null && ratios.roic > ratios.wacc ? 'pos' : 'warn'} />
           <Metric l="Ke (CAPM)" v={fmtPct(ratios.costOfEquity)}
-            hint="Ke = tasa libre de riesgo (FRED) + beta × 5% (prima de riesgo, supuesto fijo). El beta es de mercado salvo que lo edites vos." />
+            hint="Ke = tasa libre de riesgo real (FRED) + beta × 5% (prima de riesgo, supuesto fijo). El beta es de mercado salvo que lo edites vos." />
           <Metric l="WACC" v={fmtPct(ratios.wacc)}
             hint="Mezcla Ke con el costo de deuda después de impuestos (de EDGAR). La parte de mercado (beta, prima de riesgo) es siempre un supuesto." />
           <Metric l="EG5Y (real)" v={fmtPct(ratios.eg5y)} />

@@ -962,7 +962,7 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizand
       {proximoCapital && (
         <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
           title="Devolución de capital de los próximos 12 meses — NO es renta. Sin cronograma cargado, se estima todo al vencimiento.">
-          Próximo capital <span className="italic">proyectado</span> (amortización o rescate, no es renta):<span className="tnum font-semibold text-ink-700">{fmtUsdCompact(proximoCapital.total)}</span> en {MESES_CORTOS[proximoCapital.month - 1]} {proximoCapital.year}
+          Próximo capital <span className="italic">proyectado</span> (amortización o rescate, no es renta): <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(proximoCapital.total)}</span> en {MESES_CORTOS[proximoCapital.month - 1]} {proximoCapital.year}
           {personalizando ? ' — detalle en Cupones' : <> — <Link to="/cupones" className="text-celeste-600 hover:underline">detalle en Cupones →</Link></>}
         </p>
       )}
