@@ -1,5 +1,8 @@
 import type { ResumenForecast } from '../engine/presupuesto';
+import { useMemo } from 'react';
 import { fmtPctSigno, fmtUsd } from './ui';
+import { useSp500 } from '../hooks/useSp500';
+import { retornoSp } from '../engine/sp500';
 
 // Líneas que conectan el Forecast con el resto de la app (tarjeta de rendimiento y Aportes). Compartidas por la tarjeta del
 // Inicio y la página Forecast para que digan EXACTAMENTE lo mismo; los números salen de engine/presupuesto.calcularForecast.
@@ -32,4 +35,25 @@ export function AportesLinea({ resumen, className = '' }: { resumen: ResumenFore
     return <p className={`text-[11px] text-ink-500 ${className}`} title="Acumulado de los meses cerrados: aportes reales − aporte presupuestado.">Aportes por encima del mínimo comprometido: <span className="tnum font-semibold text-pos">+{fmtUsd(a.extra, 0)}</span>.</p>;
   }
   return null;
+}
+
+// Mismo período que RendimientoLinea (los `dias` del presupuesto, hacia atrás desde hoy) contra el S&P 500 con dividendos
+// reinvertidos. Informativo: no mueve el presupuesto (8%). Si la serie no carga o no cubre el período, no muestra nada.
+export function Sp500Linea({ resumen, hoy, className = '' }: { resumen: ResumenForecast; hoy: string; className?: string }) {
+  const { data } = useSp500();
+  const r = resumen.rendimiento;
+  const sp = useMemo(() => {
+    if (!r || r.real == null || !data?.puntos?.length) return null;
+    const desde = new Date(Date.parse(hoy) - r.dias * 86_400_000).toISOString().slice(0, 10);
+    return retornoSp(data.puntos, desde, hoy);
+  }, [r, data, hoy]);
+  if (!r || r.real == null || sp == null) return null;
+  const dif = (r.real - sp) * 100;
+  return (
+    <p className={`text-[11px] text-ink-500 ${className}`}
+      title={`S&P 500 con dividendos reinvertidos (SPY) sobre los mismos ${r.dias} días. Es solo una referencia: el presupuesto sigue en ${fmtPctSigno(r.presupuestado, 1)} prorrateado.`}>
+      Vs S&amp;P 500 ({r.dias} d): <span className="tnum font-semibold text-ink-700">{fmtPctSigno(sp, 1)}</span>
+      {' '}· vos <span className={`tnum font-semibold ${tono(dif)}`}>{dif >= 0 ? '+' : ''}{dif.toFixed(1)} pp</span>
+    </p>
+  );
 }
