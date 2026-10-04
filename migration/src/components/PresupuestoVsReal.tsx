@@ -5,7 +5,7 @@ import { useAportes } from '../hooks/useAportes';
 import { useChartTheme } from '../hooks/usePrefs';
 import { flujosFirmados } from '../engine/aportes';
 import { calcularForecast, sumarMeses, finDeMes, type Presupuesto, type ModoAportes } from '../engine/presupuesto';
-import { Card, CardHeader, Button, Stat, Badge, Field, inputCls, fmtUsd, fmtUsdCompact, fmtPct } from './ui';
+import { Card, CardHeader, Button, Stat, Badge, Field, inputCls, fmtUsd, fmtUsdCompact, fmtPct, fmtPctSigno } from './ui';
 
 interface Supuestos { aporteAnual: number; tasaAnual: number; anios: number; edadInicial: number }
 interface Props {
@@ -13,22 +13,28 @@ interface Props {
   valorActual: number;
   supuestos: Supuestos;
   presupuesto: Presupuesto | null;
+  cargando?: boolean;   // supuestos/posiciones todavía cargando: no mostrar la invitación ni cifras con patrimonio 0
+  error?: boolean;      // falló la lectura del presupuesto guardado: no ofrecer fijar uno (pisaría el existente)
   onFijar: (p: Presupuesto) => Promise<void>;
   onBorrar: () => Promise<void>;
 }
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const etiqueta = (ym: string) => `${MESES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
-const signo = (n: number, dp = 0) => `${n >= 0 ? '+' : '−'}${fmtUsd(Math.abs(n), dp)}`;
+// El signo sale del valor REDONDEADO: −0,3 mostraba "−US$0" y +0,4 "+US$0" (hallazgo F8).
+const signo = (n: number, dp = 0) => {
+  const r = +n.toFixed(dp);
+  return r === 0 ? fmtUsd(0, dp) : `${r > 0 ? '+' : '−'}${fmtUsd(Math.abs(r), dp)}`;
+};
 // Para las tarjetas angostas (2 por fila en móvil): US$1.1K en vez de US$1,120.
-const signoK = (n: number) => `${n >= 0 ? '+' : '−'}${fmtUsdCompact(Math.abs(n), { k: true })}`;
+const signoK = (n: number) => Math.round(n) === 0 ? fmtUsdCompact(0, { k: true }) : `${n > 0 ? '+' : '−'}${fmtUsdCompact(Math.abs(n), { k: true })}`;
 const tono = (n: number | null) => n == null ? 'text-ink-600' : n >= 0 ? 'text-pos' : 'text-neg';
 
 const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 // Presupuesto vs real vs forecast actualizado, mes a mes. Todos los números salen de
 // engine/presupuesto.ts (puro y testeado); acá solo se arman los insumos y se muestran.
-export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupuesto, onFijar, onBorrar }: Props) {
+export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupuesto, cargando = false, error = false, onFijar, onBorrar }: Props) {
   const chart = useChartTheme();
   const { data: snaps = [] } = useSnapshots(portfolioId);
   const { data: aportes = [] } = useAportes(portfolioId);
@@ -48,12 +54,22 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
     const previos = snaps.filter(s => s.fecha <= corte);
     return Math.round(previos.length ? previos[previos.length - 1].valor : valorActual);
   };
-  const abrirForm = () => { setMesInicio(hoy.slice(0, 7)); setValorInicial(String(sugerido(hoy.slice(0, 7)))); setEditando(true); setMsg(null); };
+  // "Rehacer" parte de lo ya fijado (antes volvía al mes actual y perdía el inicio y el valor cargados).
+  const abrirForm = () => {
+    if (presupuesto) { setMesInicio(presupuesto.inicio); setValorInicial(String(presupuesto.valorInicial)); }
+    else { setMesInicio(hoy.slice(0, 7)); setValorInicial(String(sugerido(hoy.slice(0, 7)))); }
+    setEditando(true); setMsg(null);
+  };
 
   const fijar = async () => {
     const v = Number(valorInicial);
     if (!/^\d{4}-\d{2}$/.test(mesInicio)) { setMsg({ text: 'Elegí el mes de inicio.', err: true }); return; }
     if (!Number.isFinite(v) || v < 0) { setMsg({ text: 'El valor inicial debe ser un número ≥ 0.', err: true }); return; }
+    // Los supuestos de pantalla se congelan tal cual: validarlos acá (retorno ≤ −100% daba NaN en toda la
+    // tabla, 0 años no tiene horizonte).
+    if (!(supuestos.anios >= 1) || !(supuestos.tasaAnual > -1) || !Number.isFinite(supuestos.aporteAnual) || !Number.isFinite(supuestos.tasaAnual)) {
+      setMsg({ text: 'Revisá los supuestos de arriba: años ≥ 1, retorno > −100% y aporte numérico.', err: true }); return;
+    }
     setBusy(true); setMsg(null);
     try {
       await onFijar({ inicio: mesInicio, valorInicial: v, ...supuestos, fijadoEn: hoy });
@@ -80,6 +96,21 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
   const supuestosCambiaron = presupuesto && (
     presupuesto.aporteAnual !== supuestos.aporteAnual || presupuesto.tasaAnual !== supuestos.tasaAnual
     || presupuesto.anios !== supuestos.anios || presupuesto.edadInicial !== supuestos.edadInicial);
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader title="Presupuesto vs real" sub="No se pudo leer el presupuesto guardado. Recargá la página; no fijes uno nuevo hasta entonces (pisaría el existente)." />
+      </Card>
+    );
+  }
+  if (cargando && !editando) {
+    return (
+      <Card>
+        <CardHeader title="Presupuesto vs real" sub="Cargando…" />
+      </Card>
+    );
+  }
 
   // ── sin presupuesto: invitación ──
   if (!presupuesto && !editando) {
@@ -122,10 +153,12 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
   }
 
   if (!presupuesto || !calc) return null;   // (ya cubierto arriba; deja el tipo estrecho)
-  const { cruce, repro, ultimo } = calc;
+  const { cruce, repro, ultimo, ppto } = calc;
   const chartData = cruce.map((f, i) => ({
     mes: etiqueta(f.periodo),
-    Presupuesto: Math.round(f.valorPpto),
+    // La línea usa el presupuesto del FIN de cada mes (la tabla, en el mes en curso, muestra el prorrateado a
+    // hoy): si no, la curva bajaría en el último punto.
+    Presupuesto: Math.round(ppto[i].valor),
     Real: f.valorReal != null ? Math.round(f.valorReal) : null,
     // El forecast se dibuja desde el último dato real (para que la línea "salga" de lo real).
     Forecast: repro && f.k >= repro.ultimoRealK ? Math.round(repro.meses[i].valor) : null,
@@ -213,7 +246,7 @@ export function PresupuestoVsReal({ portfolioId, valorActual, supuestos, presupu
                       {f.valorReal != null ? `${fmtUsd(f.valorReal, 0)}${f.valorEstimado ? '*' : ''}` : '—'}
                     </td>
                     <td className={`text-right px-2 tnum font-semibold ${tono(f.desvio)}`}>
-                      {f.desvio != null ? `${signo(f.desvio)} (${f.desvioPct != null ? `${f.desvioPct >= 0 ? '+' : '−'}${fmtPct(Math.abs(f.desvioPct), 1)}` : '—'})` : '—'}
+                      {f.desvio != null ? `${signo(f.desvio)} (${fmtPctSigno(f.desvioPct, 1)})` : '—'}
                     </td>
                     <td className={`text-right px-2 tnum ${tono(f.desvioAportes)}`}>{f.desvioAportes != null ? signo(f.desvioAportes) : '—'}</td>
                     <td className={`text-right px-4 tnum ${tono(f.desvioMercado)}`}>{f.desvioMercado != null ? signo(f.desvioMercado) : '—'}</td>

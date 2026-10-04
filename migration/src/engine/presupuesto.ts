@@ -75,6 +75,7 @@ export interface FilaReal {
   aporte: number | null;    // null si es futuro
   valor: number | null;     // null si es futuro o no hay ningún snapshot hasta esa fecha
   valorEstimado: boolean;   // el snapshot usado es de un mes anterior (no hubo registro en el mes)
+  fraccion: number;         // parte del mes transcurrida: 1 en meses completos, (0,1) en el mes en curso, 0 si es futuro
 }
 
 export function realMensual(
@@ -85,7 +86,7 @@ export function realMensual(
   for (let k = 1; k <= n; k++) {
     const periodo = sumarMeses(b.inicio, k - 1);
     const desde = inicioDeMes(periodo), finMes = finDeMes(periodo);
-    if (desde > hoy) { rows.push({ k, periodo, futuro: true, parcial: false, aporte: null, valor: null, valorEstimado: false }); continue; }
+    if (desde > hoy) { rows.push({ k, periodo, futuro: true, parcial: false, aporte: null, valor: null, valorEstimado: false, fraccion: 0 }); continue; }
     const hasta = finMes < hoy ? finMes : hoy;
     let ultimo: PuntoValor | null = null;
     for (const p of ordenados) { if (p.fecha <= hasta) ultimo = p; else break; }
@@ -93,6 +94,7 @@ export function realMensual(
     rows.push({
       k, periodo, futuro: false, parcial: finMes > hoy,
       aporte, valor: ultimo ? ultimo.valor : null, valorEstimado: !!ultimo && ultimo.fecha < desde,
+      fraccion: finMes > hoy ? Number(hoy.slice(8, 10)) / Number(finMes.slice(8, 10)) : 1,
     });
   }
   return rows;
@@ -109,21 +111,30 @@ export interface FilaCruce {
   desvioMercado: number | null;   // desvio − desvioAportes (= Σ rend. real − Σ rend. ppto)
 }
 
-export function cruzar(ppto: FilaPresupuesto[], real: FilaReal[]): FilaCruce[] {
+// El mes en curso es PARCIAL: su valor real es el de hoy, no el del fin de mes. Compararlo contra el
+// presupuesto del fin de mes completo daba un desvío artificialmente negativo a principios de cada
+// mes (aportes −1/12 del anual el día 4). Por eso, en ese mes, el presupuesto (valor y aporte) se
+// PRORRATEA linealmente por la fracción transcurrida del mes: `valorInicial` es el punto de partida
+// del mes 1 (sin él no se puede prorratear el primer mes y se compara contra el mes completo).
+export function cruzar(ppto: FilaPresupuesto[], real: FilaReal[], valorInicial?: number): FilaCruce[] {
   let acumAporteReal = 0, acumAportePpto = 0;
   return ppto.map((p, i) => {
     const r = real[i];
-    acumAportePpto += p.aporte;
+    const f = r?.parcial && r.fraccion > 0 && r.fraccion < 1 ? r.fraccion : 1;
+    const previo = i > 0 ? ppto[i - 1].valor : valorInicial;
+    const valorPptoMes = f < 1 && previo != null ? previo + (p.valor - previo) * f : p.valor;
+    const aportePptoMes = f < 1 && previo != null ? p.aporte * f : p.aporte;
+    acumAportePpto += aportePptoMes;
     if (r && r.aporte != null) acumAporteReal += r.aporte;
     const tieneValor = !!r && r.valor != null;
-    const desvio = tieneValor ? r.valor! - p.valor : null;
+    const desvio = tieneValor ? r.valor! - valorPptoMes : null;
     const desvioAportes = tieneValor ? acumAporteReal - acumAportePpto : null;
     return {
       k: p.k, periodo: p.periodo, parcial: !!r?.parcial, valorEstimado: !!r?.valorEstimado,
-      aportePpto: p.aporte, aporteReal: r?.aporte ?? null,
-      valorPpto: p.valor, valorReal: tieneValor ? r.valor! : null,
+      aportePpto: aportePptoMes, aporteReal: r?.aporte ?? null,
+      valorPpto: valorPptoMes, valorReal: tieneValor ? r.valor! : null,
       desvio,
-      desvioPct: desvio != null && p.valor !== 0 ? desvio / p.valor : null,
+      desvioPct: desvio != null && valorPptoMes !== 0 ? desvio / valorPptoMes : null,
       desvioAportes,
       desvioMercado: desvio != null && desvioAportes != null ? desvio - desvioAportes : null,
     };
@@ -151,15 +162,27 @@ export function reproyectar(
   real.forEach((r, i) => { if (r.valor != null) ult = i; });
   if (ult < 0) return null;
   const n = ppto.length;
-  const meses = ult + 1;                                        // meses transcurridos con dato
-  const aporteRealAcum = real.slice(0, meses).reduce((s, r) => s + (r.aporte ?? 0), 0);
-  const aporteMensual = modo === 'ritmo' ? aporteRealAcum / meses : b.aporteAnual / 12;
+  // Meses efectivamente transcurridos: los completos + la FRACCIÓN del mes en curso (antes el mes
+  // parcial contaba como entero y el ritmo se subestimaba: 1000 en 4 días de octubre daba 1000/mes,
+  // y 0 aportes en lo que va del mes diluía el promedio). Con menos de 1 mes de historia el ritmo no
+  // es confiable: se usa el presupuestado.
+  const mesesTranscurridos = real.slice(0, ult + 1).reduce((s, r) => s + (r.parcial ? r.fraccion : 1), 0);
+  const aporteRealAcum = real.slice(0, ult + 1).reduce((s, r) => s + (r.aporte ?? 0), 0);
+  const aporteMensual = modo === 'ritmo' && mesesTranscurridos >= 1 ? aporteRealAcum / mesesTranscurridos : b.aporteAnual / 12;
   const rm = tasaMensual(b.tasaAnual);
 
   const out: FilaForecast[] = [];
   let valor = real[ult].valor!;
   for (let i = 0; i < n; i++) {
-    if (i <= ult) { out.push({ k: i + 1, periodo: ppto[i].periodo, valor: real[i].valor ?? b.valorInicial, proyectado: false }); continue; }
+    if (i < ult || (i === ult && !real[ult].parcial)) { out.push({ k: i + 1, periodo: ppto[i].periodo, valor: real[i].valor ?? b.valorInicial, proyectado: false }); continue; }
+    if (i === ult) {
+      // Mes en curso: el valor real es el de HOY; el cierre del mes se proyecta con lo que falta del mes
+      // (si no, el forecast perdía el resto del retorno y del aporte de este mes).
+      const resto = 1 - real[ult].fraccion;
+      valor = valor * Math.pow(1 + rm, resto) + aporteMensual * resto;
+      out.push({ k: i + 1, periodo: ppto[i].periodo, valor, proyectado: true });
+      continue;
+    }
     valor = valor * (1 + rm) + aporteMensual;
     out.push({ k: i + 1, periodo: ppto[i].periodo, valor, proyectado: true });
   }
@@ -187,7 +210,7 @@ export function calcularForecast(
 ): ResumenForecast {
   const ppto = presupuestoMensual(b);
   const real = realMensual(b, puntos, flujos, hoy);
-  const cruce = cruzar(ppto, real);
+  const cruce = cruzar(ppto, real, b.valorInicial);
   const ultimo = [...cruce].reverse().find(f => f.valorReal != null) ?? null;
   return { ppto, cruce, ultimo, repro: reproyectar(b, ppto, real, modo) };
 }

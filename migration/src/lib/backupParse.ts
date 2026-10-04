@@ -116,7 +116,10 @@ export function parseBackup(text: string): Preview {
     const n = Array.isArray(data.tables[table]) ? data.tables[table].length : 0;
     counts[table] = n; total += n;
   }
-  const huerfanos = referenciasHuerfanas(data.tables);
+  // Si el backup se generó incompleto, las tablas que fallaron quedan vacías y TODOS sus hijos parecerían
+  // huérfanos: ya está avisado como "incompleto", no se repite como ruido.
+  const fallaron = new Set((data.errores ?? []).map(e => e.split(':')[0]));
+  const huerfanos = referenciasHuerfanas(data.tables).filter(h => !fallaron.has(h.padre));
   for (const h of huerfanos) {
     avisos.push(`${h.n} registro(s) de ${h.tabla} apuntan a ${h.padre} (${h.campo}) que no está en el archivo: fallarán al restaurar salvo que ya existan en tu cuenta.`);
   }

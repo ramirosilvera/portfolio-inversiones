@@ -20,11 +20,16 @@ export interface BackupResult {
 
 // Trae TODAS las filas de una tabla paginando de a 1000 (el default de PostgREST), con orden estable
 // por la clave de la tabla (sin order, dos páginas pueden repetir o saltear filas si algo cambia).
-async function fetchAll(table: string, soloPersonal: boolean): Promise<unknown[]> {
+async function fetchAll(table: string, soloPersonal: boolean, orden: string[]): Promise<unknown[]> {
   const rows: unknown[] = [];
   const size = 1000;
   for (let from = 0; ; from += size) {
-    let q = supabase.from(table).select('*').range(from, from + size - 1);
+    let q = supabase.from(table).select('*');
+    // Orden por la clave única de la tabla: sin él, si algo cambia entre dos páginas Postgres puede
+    // devolver filas repetidas o saltear alguna — y el checksum se calcularía sobre lo ya leído, o sea
+    // que el backup saldría "verificado" con filas de menos.
+    for (const col of orden) q = q.order(col, { ascending: true });
+    q = q.range(from, from + size - 1);
     if (soloPersonal) q = q.not('portfolio_id', 'is', null);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
@@ -44,7 +49,7 @@ export async function buildBackup(email: string | null): Promise<BackupResult> {
   // faltando (un hijo leído después del padre sí podía quedar huérfano en el archivo).
   for (const t of [...BACKUP_TABLAS].reverse()) {
     try {
-      const rows = await fetchAll(t.table, !!t.soloPersonal);
+      const rows = await fetchAll(t.table, !!t.soloPersonal, (t.onConflict ?? 'id').split(','));
       tables[t.table] = rows;
       counts[t.table] = rows.length;
     } catch (e) {

@@ -149,3 +149,45 @@ describe('calcularForecast', () => {
   });
 });
 
+describe('mes en curso parcial (hallazgos F1/F2 de la auditoría)', () => {
+  it('si el real va exactamente al ritmo presupuestado a mitad de mes, el desvío es 0 (no −1/12 del anual)', () => {
+    const hoy = '2026-01-16';                       // 16/31 del mes
+    const f = 16 / 31;
+    const ppto = presupuestoMensual(B);
+    const valorEsperadoHoy = B.valorInicial + (ppto[0].valor - B.valorInicial) * f;
+    const c = calcularForecast(B, [{ fecha: hoy, valor: valorEsperadoHoy }], [{ fecha: '2026-01-10', monto: (B.aporteAnual / 12) * f }], hoy);
+    const u = c.ultimo!;
+    expect(u.parcial).toBe(true);
+    expect(u.valorPpto).toBeCloseTo(valorEsperadoHoy, 9);
+    expect(u.desvio).toBeCloseTo(0, 9);
+    expect(u.desvioAportes).toBeCloseTo(0, 9);
+    // sin el prorrateo, el desvío habría sido −(valor del fin de mes − valor de hoy), claramente negativo
+    expect(ppto[0].valor - valorEsperadoHoy).toBeGreaterThan(40);
+  });
+
+  it("modo ritmo: el mes parcial pesa su fracción (900 en 3 meses + 4/30 de abril sin aportes ≈ 290/mes, no 225)", () => {
+    const hoy = '2026-04-04';
+    const flujos = [{ fecha: '2026-01-10', monto: 300 }, { fecha: '2026-02-10', monto: 300 }, { fecha: '2026-03-10', monto: 300 }];
+    const puntos = [{ fecha: '2026-01-31', valor: 10_300 }, { fecha: '2026-02-28', valor: 10_600 }, { fecha: '2026-03-31', valor: 10_900 }, { fecha: hoy, valor: 10_950 }];
+    const r = calcularForecast(B, puntos, flujos, hoy, 'ritmo').repro!;
+    expect(r.aporteMensualUsado).toBeCloseTo(900 / (3 + 4 / 30), 9);
+    expect(r.aporteMensualUsado).toBeGreaterThan(285);
+  });
+
+  it('modo ritmo con menos de 1 mes de historia: no extrapola, usa lo presupuestado', () => {
+    const hoy = '2026-01-04';
+    const r = calcularForecast(B, [{ fecha: hoy, valor: 10_020 }], [{ fecha: '2026-01-02', monto: 1_000 }], hoy, 'ritmo').repro!;
+    expect(r.aporteMensualUsado).toBeCloseTo(B.aporteAnual / 12, 9);
+  });
+
+  it('reproyección en mes parcial: el cierre del mes proyecta solo lo que falta del mes', () => {
+    const hoy = '2026-01-16';
+    const f = 16 / 31, rm = tasaMensual(B.tasaAnual);
+    const r = calcularForecast(B, [{ fecha: hoy, valor: 10_200 }], [], hoy, 'presupuesto').repro!;
+    const finDeEneroEsperado = 10_200 * Math.pow(1 + rm, 1 - f) + (B.aporteAnual / 12) * (1 - f);
+    expect(r.meses[0].proyectado).toBe(true);
+    expect(r.meses[0].valor).toBeCloseTo(finDeEneroEsperado, 9);
+    expect(r.meses[1].valor).toBeCloseTo(finDeEneroEsperado * (1 + rm) + B.aporteAnual / 12, 9);
+  });
+});
+

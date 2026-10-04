@@ -34,6 +34,10 @@ describe('registro de tablas del backup', () => {
     expect(RESTORE_ORDER.every(t => !!t.onConflict)).toBe(true);
   });
 
+  it('las tablas solo exportables son las que el cliente no puede escribir por RLS/RPC', () => {
+    expect(BACKUP_TABLAS.filter(t => !t.restaurable).map(t => t.table).sort()).toEqual(['analisis_ia', 'transferencias']);
+  });
+
   it('las tablas con user_id se re-mapean al usuario actual al restaurar (userScoped) y las de portfolio no', () => {
     const scoped = BACKUP_TABLAS.filter(t => t.userScoped).map(t => t.table).sort();
     expect(scoped).toEqual(['bonos_destacados', 'brokers', 'cik_map', 'dashboard_layout', 'dcf_inputs', 'flujo_items', 'portfolios', 'profiles', 'watchlist']);
