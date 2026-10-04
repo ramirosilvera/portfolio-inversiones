@@ -46,6 +46,12 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
   plazo o la meta misma, no el retorno.
 - **Ahorros: aporte obligatorio de US$200/mes (US$2.400/año)** = el aporte presupuestado. Lo aportado por encima es extra
   voluntario; el forecast nunca asume menos que lo comprometido.
+- **8% de presupuesto ≠ retorno esperado por posición (margen de seguridad, Graham).** El 8% es la vara conservadora de
+  planificación; al armar el portfolio el usuario apunta algo más alto (`tir_esperada` por posición, "TIR objetivo" de la
+  estrategia) para tener margen de error, y luego compara el resultado real contra el 8%. No es una incoherencia: no
+  "alinear" los `tir_esperada` al 8% ni el 8% a ellos.
+- **Horizonte de Ahorros: 43 años** (2026-01 a 2068-12), el mínimo redondeado para que la meta de US$1.000.000 caiga dentro
+  del horizonte con US$200/mes y 8% (llega en 2068). Herencia: 30 años (meta US$300.000, llega en 2053).
 - El presupuesto de cada portfolio debe tener el mismo período que "Rendimiento por año" (año calendario) para que los %
   coincidan: Ahorros desde 2026-01 con el valor de cierre de 2025.
 
