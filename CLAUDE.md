@@ -37,6 +37,18 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
    de solo-lectura del producto, es un workflow externo de operación manual/supervisada.
 5. Priorizar corrección de cálculos sobre features vistosos.
 
+## Decisiones del usuario (vigentes — no cambiar sin pedido explícito)
+
+- **Retorno presupuestado: 8% anual en TODOS los portfolios, mandatorio.** Es una estimación conservadora del S&P 500 y
+  una meta deliberadamente conservadora: el usuario no quiere fijarse una meta que supere al índice porque eso lo empuja a
+  tomar riesgos de inversión que luego lamentaría. No subirlo (ni en el presupuesto ni en los supuestos de Forecast) aunque
+  el rendimiento histórico o los `tir_esperada` por posición sean mayores; la palanca para llegar a una meta es el aporte, el
+  plazo o la meta misma, no el retorno.
+- **Ahorros: aporte obligatorio de US$200/mes (US$2.400/año)** = el aporte presupuestado. Lo aportado por encima es extra
+  voluntario; el forecast nunca asume menos que lo comprometido.
+- El presupuesto de cada portfolio debe tener el mismo período que "Rendimiento por año" (año calendario) para que los %
+  coincidan: Ahorros desde 2026-01 con el valor de cierre de 2025.
+
 ## Archivos clave
 
 | Archivo | Descripción |
