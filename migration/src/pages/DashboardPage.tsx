@@ -40,7 +40,7 @@ import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
-import { RendimientoLinea, AportesLinea } from '../components/ForecastLineas';
+import { RendimientoLinea, AportesLinea, Sp500Linea } from '../components/ForecastLineas';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
 import type { Posicion, AssetType, SeccionKey, DashboardWidget, Aporte } from '../types/domain';
@@ -178,7 +178,7 @@ export function DashboardPage() {
     cobros: (cobros.length > 0 || proximoCapital) ? <CobrosResumen resumen={resumenCobrado} pendientesCount={pendientesCount} proximoCapital={proximoCapital} personalizando={personalizando} /> : null,
     // Mientras cargan los supuestos o las posiciones no se muestra nada: con patrimonio 0 la tarjeta decía
     // "todavía sin datos reales" (engañoso) aunque el presupuesto y los snapshots existieran.
-    forecast: (forecastLoading || qPos.isLoading) ? null : <ForecastResumen presupuesto={presupuesto} resumen={forecast} personalizando={personalizando} />,
+    forecast: (forecastLoading || qPos.isLoading) ? null : <ForecastResumen presupuesto={presupuesto} resumen={forecast} personalizando={personalizando} hoy={hoy} />,
     liquidez_fci: flujo.length > 0 ? <FinanzasResumen resumen={flujoR} personalizando={personalizando} /> : null,
     macro: <MacroResumen resumen={resumen} personalizando={personalizando} />,
   };
@@ -1032,7 +1032,7 @@ function MetaForecast({ presupuesto, resumen }: { presupuesto: Presupuesto; resu
   );
 }
 
-function ForecastResumen({ presupuesto, resumen, personalizando }: { presupuesto: Presupuesto | null; resumen: ResumenForecast | null; personalizando: boolean }) {
+function ForecastResumen({ presupuesto, resumen, personalizando, hoy }: { presupuesto: Presupuesto | null; resumen: ResumenForecast | null; personalizando: boolean; hoy: string }) {
   const link = (txt: string) => personalizando
     ? <span className="text-[11px] text-celeste-600">{txt}</span>
     : <Link to="/forecast" className="text-[11px] text-celeste-600 hover:underline">{txt}</Link>;
@@ -1081,6 +1081,7 @@ function ForecastResumen({ presupuesto, resumen, personalizando }: { presupuesto
       {(resumen.rendimiento?.real != null || resumen.aportes) && (
         <div className="px-4 pb-2.5 border-t border-line pt-2.5 space-y-1">
           <RendimientoLinea resumen={resumen} />
+          <Sp500Linea resumen={resumen} hoy={hoy} />
           <AportesLinea resumen={resumen} />
         </div>
       )}
