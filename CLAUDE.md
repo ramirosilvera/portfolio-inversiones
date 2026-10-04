@@ -50,8 +50,8 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
   planificación; al armar el portfolio el usuario apunta algo más alto (`tir_esperada` por posición, "TIR objetivo" de la
   estrategia) para tener margen de error, y luego compara el resultado real contra el 8%. No es una incoherencia: no
   "alinear" los `tir_esperada` al 8% ni el 8% a ellos.
-- **Horizonte de Ahorros: 43 años** (2026-01 a 2068-12), el mínimo redondeado para que la meta de US$1.000.000 caiga dentro
-  del horizonte con US$200/mes y 8% (llega en 2068). Herencia: 30 años (meta US$300.000, llega en 2053).
+- **Horizonte de Ahorros: 45 años** (2026-01 a 2070-12), decisión del usuario: la meta de US$1.000.000 llega en 2068 con
+  US$200/mes y 8% (mínimo 43 años), y los 2 años extra son margen. Herencia: 30 años (meta US$300.000, llega en 2053).
 - El presupuesto de cada portfolio debe tener el mismo período que "Rendimiento por año" (año calendario) para que los %
   coincidan: Ahorros desde 2026-01 con el valor de cierre de 2025.
 
