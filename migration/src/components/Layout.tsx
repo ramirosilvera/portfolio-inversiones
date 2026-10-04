@@ -30,7 +30,7 @@ const NAV_MORE: NavItem[] = [
   { to: '/analisis', label: 'Análisis', icon: Sparkles },
   { to: '/tasas', label: 'Tasas', icon: Percent },
   { to: '/aportes', label: 'Aportes', icon: Wallet },
-  { to: '/proyeccion', label: 'Proyección', icon: TrendingUp },
+  { to: '/forecast', label: 'Forecast', icon: TrendingUp },
   { to: '/consolidado', label: 'Consolidado', icon: Layers },
   { to: '/brokers', label: 'Brokers', icon: Building2 },
   { to: '/cedears', label: 'CEDEARs', icon: PieChart },

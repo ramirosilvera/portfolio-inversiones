@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  presupuestoMensual, realMensual, cruzar, reproyectar, valorAlHorizonte, tasaMensual, sumarMeses, finDeMes,
+  presupuestoMensual, realMensual, cruzar, reproyectar, valorAlHorizonte, tasaMensual, sumarMeses, finDeMes, calcularForecast,
   type Presupuesto,
 } from './presupuesto';
 
@@ -128,3 +128,24 @@ describe('reproyectar', () => {
     expect(valorAlHorizonte(5_000, 1_200, 0.1, 2)).toBeCloseTo(5_000 * 1.1 + 1_200, 9);
   });
 });
+
+describe('calcularForecast', () => {
+  it('arma presupuesto, cruce, último mes con dato y reproyección con los mismos números que las piezas por separado', () => {
+    const puntos = [{ fecha: '2026-01-31', valor: 10_500 }, { fecha: '2026-02-28', valor: 10_700 }];
+    const flujos = [{ fecha: '2026-01-10', monto: 300 }];
+    const f = calcularForecast(B, puntos, flujos, '2026-02-28');
+    expect(f.ppto).toHaveLength(12);
+    expect(f.ultimo?.periodo).toBe('2026-02');
+    expect(f.ultimo?.valorReal).toBe(10_700);
+    const ppto = presupuestoMensual(B);
+    const real = realMensual(B, puntos, flujos, '2026-02-28');
+    expect(f.cruce).toEqual(cruzar(ppto, real));
+    expect(f.repro).toEqual(reproyectar(B, ppto, real, 'presupuesto'));
+  });
+  it('sin datos reales: ultimo y repro son null (la tarjeta muestra el estado vacío)', () => {
+    const f = calcularForecast(B, [], [], '2026-02-28');
+    expect(f.ultimo).toBeNull();
+    expect(f.repro).toBeNull();
+  });
+});
+

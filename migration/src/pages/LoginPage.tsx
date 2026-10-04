@@ -51,7 +51,7 @@ export function LoginPage() {
             Tu portfolio, claro y al día.
           </h1>
           <p className="text-white/85 text-lg leading-relaxed">
-            Valuación por Owner Earnings, fundamentos de la SEC, contexto macro y proyecciones a largo plazo. En un solo lugar.
+            Valuación por Owner Earnings, fundamentos de la SEC, contexto macro y forecast a largo plazo. En un solo lugar.
           </p>
           <ul className="space-y-2.5 text-white/90 text-sm">
             <Feat icon={LineChart}>DCF y ratios calculados por el código, sin alucinaciones</Feat>

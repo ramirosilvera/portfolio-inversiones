@@ -41,7 +41,7 @@ export function Field({ label, hint, children, className = '' }: { label: string
 // onChange={e => setN(Number(e.target.value))}) sufre un bug clásico — cada tecla coacciona con
 // Number() y re-renderiza con un valor normalizado, lo que le pisa el cursor al usuario y hace
 // carísimo borrar/reemplazar justo el primer carácter (hay que seleccionar todo el campo o borrar
-// de atrás para adelante). Mismo patrón ya probado en ProyeccionesPage.tsx#Num (ahí documentado con
+// de atrás para adelante). Mismo patrón ya probado en ForecastPage.tsx#Num (ahí documentado con
 // el caso concreto: escribir "8." para un decimal se volvía "8" en cada tecla, borrando el punto) —
 // esto lo generaliza para reusarlo en cualquier campo numérico de la app.
 //

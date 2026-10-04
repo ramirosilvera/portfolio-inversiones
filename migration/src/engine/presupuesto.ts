@@ -1,7 +1,7 @@
 // =============================================================================
 // Presupuesto vs real vs forecast actualizado, período a período (mensual). Puro y determinista.
 //
-//  - PRESUPUESTO: los supuestos de la Proyección CONGELADOS en una fecha (valor inicial, aporte anual,
+//  - PRESUPUESTO: los supuestos del Forecast CONGELADOS en una fecha (valor inicial, aporte anual,
 //    retorno, horizonte). Camino mensual: aporte = aporteAnual/12 al cierre de cada mes y retorno
 //    mensual equivalente (1+r)^(1/12)−1. Ojo: como los aportes mensuales rinden dentro del año, el
 //    cierre del mes 12 es levemente MAYOR que el del año 1 de la tabla anual de engine/projection.ts
@@ -170,4 +170,24 @@ export function reproyectar(
     ultimoRealK: ult + 1, aporteMensualUsado: aporteMensual, meses: out, valorMes12,
     valorHorizonte, valorHorizontePpto, difHorizonte: valorHorizonte - valorHorizontePpto,
   };
+}
+
+// ── resumen listo para mostrar (página Forecast y tarjeta del Inicio) ───────────────────────────
+// Una sola función arma todo: así la tarjeta del Inicio y la página muestran EXACTAMENTE los mismos
+// números (regla de oro #1: un solo cálculo, dos presentaciones).
+export interface ResumenForecast {
+  ppto: FilaPresupuesto[];
+  cruce: FilaCruce[];
+  ultimo: FilaCruce | null;        // último mes con dato real (base de los indicadores)
+  repro: Reproyeccion | null;
+}
+
+export function calcularForecast(
+  b: Presupuesto, puntos: PuntoValor[], flujos: FlujoFirmado[], hoy: string, modo: ModoAportes = 'presupuesto',
+): ResumenForecast {
+  const ppto = presupuestoMensual(b);
+  const real = realMensual(b, puntos, flujos, hoy);
+  const cruce = cruzar(ppto, real);
+  const ultimo = [...cruce].reverse().find(f => f.valorReal != null) ?? null;
+  return { ppto, cruce, ultimo, repro: reproyectar(b, ppto, real, modo) };
 }

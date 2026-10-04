@@ -15,7 +15,7 @@ const anioActual = new Date().getFullYear();
 
 const DEFAULTS: ProyeccionInputs = { aporteAnual: 3000, tasaAnual: 0.08, anios: 40, edadInicial: 35 };
 
-export function ProyeccionesPage() {
+export function ForecastPage() {
   const { active } = usePortfolios();
   const chart = useChartTheme();
   const { data: posiciones = [] } = usePosiciones(active?.id);
@@ -75,7 +75,7 @@ export function ProyeccionesPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-ink-900 font-display">Proyección · {active.nombre}</h1>
+      <h1 className="text-2xl font-bold text-ink-900 font-display">Forecast · {active.nombre}</h1>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Stat label="Hoy" value={fmtUsdCompact(valorActual)} hint="patrimonio actual del portfolio" />
