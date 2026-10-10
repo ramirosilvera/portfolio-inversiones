@@ -161,7 +161,7 @@ export function DashboardPage() {
   // Elementos YA armados (no ejecutan sus hooks hasta que React los monte de verdad — JSX es
   // perezoso) — una sección que el usuario sacó del layout simplemente nunca corre sus queries.
   const seccionNodes: Partial<Record<SeccionKey, ReactNode>> = {
-    objetivo_capital: <ObjetivoCapitalCard objetivo={objetivo} patrimonio={patrimonio} />,
+    objetivo_capital: <ObjetivoCapitalCard objetivo={objetivo} patrimonio={patrimonio} presupuesto={presupuesto} forecast={forecastLoading ? null : forecast} />,
     // Rendimiento por año + Aportes unificados en una sola tarjeta (antes 2 separadas) — el usuario
     // elige qué mostrar (selector en el header, persistido por portfolio); por default solo
     // Rendimiento, para no duplicar de entrada lo que ya se ve completo en /aportes.
@@ -294,7 +294,29 @@ function AlertasResumen({ alloc, patrimonio, objetivoFijaPct, toleranciaDistribu
 // cualquier otra sección del Dashboard personalizable (ver seccionNodes en DashboardPage). Mismo
 // criterio que el resto de las secciones: se auto-oculta (null) cuando no aplica, en vez de
 // necesitar un `if` externo antes de renderizarse.
-function ObjetivoCapitalCard({ objetivo, patrimonio }: { objetivo: number | null; patrimonio: number }) {
+// Cuándo se alcanza la meta (año), con el forecast actualizado y el retorno presupuestado; la sensibilidad ±2 pp de retorno
+// queda en el tooltip y el análisis completo (aporte necesario, etc.) en la página Forecast. Los años salen de
+// engine/presupuesto (analisisMeta); acá solo se formatea.
+const textoLlegada = (l: { meses: number | null; anio: number | null } | null | undefined) =>
+  l?.anio != null && l.meses != null ? String(l.anio) : null;
+function LlegadaMeta({ presupuesto, forecast }: { presupuesto: Presupuesto | null; forecast: ResumenForecast | null }) {
+  const m = forecast?.meta;
+  if (!presupuesto || !forecast || !m || m.yaAlcanzada) return null;
+  const llegada = forecast.llegadaForecast ?? m.presupuesto.llegada;
+  const txt = textoLlegada(llegada);
+  const dentro = llegada.meses != null && llegada.meses <= presupuesto.anios * 12;
+  const sens = m.sensibilidad.filter(e => e.delta !== 0)
+    .map(e => `${e.delta < 0 ? '−' : '+'}${Math.abs(e.delta * 100).toFixed(0)} pp de retorno: ${textoLlegada(e.llegada) ?? 'no llega'}`).join(' · ');
+  return (
+    <p className={`text-[11px] mt-0.5 ${dentro ? 'text-ink-600' : 'text-warn'}`}
+      title={`Con el retorno presupuestado (${fmtPct(presupuesto.tasaAnual, 0)}). Sensibilidad — ${sens}`}>
+      {txt
+        ? <>Al ritmo del forecast la alcanzás en <span className="tnum font-semibold">{txt}</span>{!dentro && ` — fuera del horizonte de ${presupuesto.anios} años`}</>
+        : 'No la alcanzás con estos supuestos'}
+    </p>
+  );
+}
+function ObjetivoCapitalCard({ objetivo, patrimonio, presupuesto, forecast }: { objetivo: number | null; patrimonio: number; presupuesto: Presupuesto | null; forecast: ResumenForecast | null }) {
   if (objetivo == null || objetivo <= 0) return null;
   return (
     <Card>
@@ -310,6 +332,7 @@ function ObjetivoCapitalCard({ objetivo, patrimonio }: { objetivo: number | null
           {fmtPct(patrimonio / objetivo, 0)} alcanzado
           {patrimonio < objetivo && <> · faltan {fmtUsdCompact(objetivo - patrimonio)}</>}
         </p>
+        <LlegadaMeta presupuesto={presupuesto} forecast={forecast} />
       </div>
     </Card>
   );
