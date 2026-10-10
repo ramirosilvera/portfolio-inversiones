@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { reajustarObjetivosTrasCierre } from '../lib/objetivos';
 
 export interface Transferencia {
   id: string;
@@ -39,11 +40,18 @@ export function useTransferencias() {
 export function useTransferirPosicion() {
   const qc = useQueryClient();
   return async (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string, valorMercado?: number | null): Promise<void> => {
+    // Origen antes de transferir: si se mueve TODO, la fila queda en 0 con su objetivo y hay que sacarla del plan.
+    const { data: origen } = await supabase.from('posiciones').select('portfolio_id, cantidad').eq('id', posicionId).maybeSingle();
     const { error } = await supabase.rpc('transferir_posicion', {
       p_posicion_id: posicionId, p_portfolio_destino: portfolioDestino, p_cantidad: cantidad, p_nota: nota || null,
       p_valor_mercado: valorMercado != null && valorMercado > 0 ? valorMercado : null,
     });
     if (error) throw error;
+    let avisoObjetivos: string | null = null;
+    if (origen && cantidad >= Number(origen.cantidad) - 1e-9) {
+      try { await reajustarObjetivosTrasCierre(origen.portfolio_id, posicionId); }
+      catch (e) { avisoObjetivos = e instanceof Error ? e.message : String(e); }
+    }
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['posiciones'] }),
       qc.invalidateQueries({ queryKey: ['transferencias'] }),
@@ -51,5 +59,6 @@ export function useTransferirPosicion() {
       qc.invalidateQueries({ queryKey: ['aportes'] }),
       qc.invalidateQueries({ queryKey: ['posicion_brokers'] }),
     ]);
+    if (avisoObjetivos) throw new Error(`Transferencia hecha, pero no se pudieron reajustar los objetivos del portfolio de origen: ${avisoObjetivos}`);
   };
 }
