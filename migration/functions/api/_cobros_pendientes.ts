@@ -16,6 +16,7 @@ export interface PosicionParaCobro {
   cupon_frecuencia: number | null;
   cupon_mes: number | null;
   vencimiento: string | null;
+  fecha_compra?: string | null;
 }
 
 export interface CobroPendienteSugerido {
@@ -170,6 +171,45 @@ export function sugerirCuponesHistoricos(pos: PosicionParaCobro, desde: string, 
       }
     }
     mes++; if (mes > 12) { mes = 1; anio++; }
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Cupones con FECHA EXACTA, desde el cronograma de la emisión (bonos_referencia.cronograma). A diferencia del cálculo
+// sintético de arriba (mes de pago → día 1), acá cada cupón cae en su día real de pago: no aparece como "pendiente" semanas
+// antes de cobrarse. `interes` del cronograma es la fracción del nominal ORIGINAL de ese período (ya escalada por el saldo
+// vigente), así que monto = nominales × interes. El cronograma NO modela amortización parcial a nivel cobro: eso va por
+// registrar_amortizacion. Devuelve una sugerencia por cada flujo con fecha dentro de [desde, hasta].
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+export interface FlujoCronograma { fecha: string; interes: number; amortizacion?: number }
+
+const soloFecha = (f: string) => String(f).slice(0, 10);
+
+// ¿El cronograma sirve para sugerir? Con flujos válidos Y alguno hoy o a futuro. Un catálogo viejo (todos los flujos ya
+// pasaron) no debe tapar el cálculo sintético: sin esto, un bono con catálogo sin refrescar dejaría de sugerir cupones.
+export function cronogramaVigente(crono: FlujoCronograma[] | null | undefined, hoy: string): crono is FlujoCronograma[] {
+  return Array.isArray(crono) && crono.length > 0
+    && crono.every(f => f && typeof f.fecha === 'string' && !Number.isNaN(Date.parse(f.fecha)) && Number.isFinite(f.interes))
+    && crono.some(f => soloFecha(f.fecha) >= hoy);
+}
+
+export function sugerirCuponesDeCronograma(
+  pos: PosicionParaCobro, crono: FlujoCronograma[], desde: string, hasta: string,
+): CobroPendienteSugerido[] {
+  if (pos.tipo !== 'bono' || !(pos.cantidad > 0)) return [];
+  const out: CobroPendienteSugerido[] = [];
+  for (const f of crono) {
+    const fecha = soloFecha(f.fecha);
+    if (fecha < desde || fecha > hasta || !(f.interes > 0)) continue;
+    if (pos.fecha_compra && fecha < pos.fecha_compra) continue;   // cupón anterior a la compra: no es tuyo
+    if (pos.vencimiento && fecha > pos.vencimiento) continue;
+    const monto = +(pos.cantidad * f.interes).toFixed(2);
+    if (!(monto > 0)) continue;
+    out.push({
+      portfolio_id: pos.portfolio_id, posicion_id: pos.id, ticker: pos.ticker, tipo: 'interes', fecha, monto,
+      nota: `Sugerido por el cron — cupón del cronograma de la emisión, fecha exacta de pago (${pos.cantidad} nominales × ${(f.interes * 100).toFixed(4)}%).`,
+    });
   }
   return out;
 }

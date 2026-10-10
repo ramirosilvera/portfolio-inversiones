@@ -1,6 +1,9 @@
 import { type Env, json, preflight, guard, sbSelect, sbRpc, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
-import { sugerirDividendoPendiente, sugerirCuponPendiente, type PosicionParaCobro } from '../_cobros_pendientes';
+import {
+  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente,
+  type PosicionParaCobro, type FlujoCronograma, type CobroPendienteSugerido,
+} from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
 
 // GET /api/cron/refresh-all
@@ -35,7 +38,7 @@ export const onRequestGet = guard(async ({ request, env }) => {
   // refrescar cotizaciones, estos mismos campos alimentan la sugerencia de cobros pendientes
   // (paso 4) — una sola consulta para ambos usos.
   const pos = await sbSelect<PosicionParaCobro>(env, 'posiciones',
-    'select=id,portfolio_id,ticker,tipo,cantidad,ratio_cedear,cupon_tasa,cupon_frecuencia,cupon_mes,vencimiento');
+    'select=id,portfolio_id,ticker,tipo,cantidad,ratio_cedear,cupon_tasa,cupon_frecuencia,cupon_mes,vencimiento,fecha_compra');
   const uniq = (a: string[]) => [...new Set(a.map(s => s.toUpperCase()).filter(Boolean))];
   // Solo posiciones ABIERTAS: las cerradas (cantidad 0) no necesitan cotización ni fundamentals, y
   // cada una gastaba subrequests del techo de 50 por invocación de Cloudflare.
@@ -126,11 +129,42 @@ export const onRequestGet = guard(async ({ request, env }) => {
     return existentes.some(e => e.posicion_id === posicionId && e.tipo === tipo && Math.abs(Date.parse(e.fecha) - t) <= DIEZ_DIAS_MS);
   };
 
+  // Cupones de bonos con FECHA EXACTA: cronograma de la emisión (bonos_referencia) cuando está vigente; si el bono no está en
+  // el catálogo o su cronograma ya venció, cae al cálculo sintético por mes (día 1) de siempre.
+  const bonosTickers = [...new Set(pos.filter(p => p.tipo === 'bono' && p.cantidad > 0).map(p => p.ticker.toUpperCase()))];
+  const cronoPorTicker = new Map<string, FlujoCronograma[]>();
+  if (bonosTickers.length) {
+    try {
+      const filas = await sbSelect<{ ticker: string; cronograma: FlujoCronograma[] | null }>(env, 'bonos_referencia',
+        `select=ticker,cronograma&ticker=in.(${bonosTickers.join(',')})`);
+      for (const f of filas) if (cronogramaVigente(f.cronograma, hoy)) cronoPorTicker.set(f.ticker.toUpperCase(), f.cronograma);
+    } catch { /* sin catálogo: todos los bonos van por el cálculo sintético */ }
+  }
+  // Ventana de 35 días hacia atrás: si el cron no corrió un día no se pierde un cupón, y `fecha_compra` descarta los anteriores
+  // a la compra. Los cupones de un bono son semestrales/trimestrales: con una fila ya cargada en el MISMO MES (p. ej. la que el
+  // cálculo por mes dejó el día 1) no se suma otra — el guard de ±10 días solo no alcanza entre el 1 y el 14 o el 24.
+  const desdeCupon = new Date(Date.parse(hoy) - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const yaCubiertoMes = (posicionId: string, tipo: string, fecha: string) =>
+    existentes.some(e => e.posicion_id === posicionId && e.tipo === tipo && e.fecha.slice(0, 7) === fecha.slice(0, 7));
+
+  const sugerencias: CobroPendienteSugerido[] = [];
   for (const p of pos) {
-    const sug = p.tipo === 'bono'
-      ? sugerirCuponPendiente(p, hoy)
-      : sugerirDividendoPendiente(p, divPorTicker[p.ticker.toUpperCase()] ?? null, hoy);
-    if (!sug || yaCubierto(sug.posicion_id, sug.tipo, sug.fecha)) continue;
+    if (p.tipo === 'bono') {
+      const crono = cronoPorTicker.get(p.ticker.toUpperCase());
+      if (crono) {
+        for (const s of sugerirCuponesDeCronograma(p, crono, desdeCupon, hoy)) {
+          if (!yaCubierto(s.posicion_id, s.tipo, s.fecha) && !yaCubiertoMes(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
+        }
+        continue;
+      }
+      const s = sugerirCuponPendiente(p, hoy);
+      if (s && !yaCubierto(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
+      continue;
+    }
+    const s = sugerirDividendoPendiente(p, divPorTicker[p.ticker.toUpperCase()] ?? null, hoy);
+    if (s && !yaCubierto(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
+  }
+  for (const sug of sugerencias) {
     try {
       await sbRpc(env, 'insertar_cobro_pendiente_cron', {
         p_portfolio_id: sug.portfolio_id, p_posicion_id: sug.posicion_id, p_ticker: sug.ticker,

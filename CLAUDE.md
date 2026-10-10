@@ -55,6 +55,15 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
 - El presupuesto de cada portfolio debe tener el mismo período que "Rendimiento por año" (año calendario) para que los %
   coincidan: Ahorros desde 2026-01 con el valor de cierre de 2025.
 
+## Notas de datos (catálogo de renta fija)
+
+- `bonos_referencia` se alimenta de IOL y **no es fuente primaria**: el 2026-10-10 se encontraron 3 cronogramas equivocados
+  (TLCUD era otra emisión; MIC3D y CS51D con cupón/frecuencia errados). Se corrigieron a mano con el aviso de resultados /
+  suplemento y quedaron marcados en `fuente` ("IOL | corregido …"). **La actualización mensual no debe pisar filas cuya
+  `fuente` empiece con "IOL | corregido"**, y todo bono nuevo de la cartera conviene verificarlo contra el aviso de la emisión.
+- El cron (`refresh-all`) sugiere los cupones con la **fecha exacta del cronograma** cuando está vigente; si no hay cronograma,
+  cae al cálculo por mes (día 1) con los campos cargados en la posición.
+
 ## Archivos clave
 
 | Archivo | Descripción |
