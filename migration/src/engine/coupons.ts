@@ -339,6 +339,102 @@ export function ytmFromCronograma(precio: number, cronograma: CronogramaItem[] |
   return xirr(flows);
 }
 
+// ── Valor técnico y paridad ───────────────────────────────────────────────────
+// PARIDAD = precio sucio ÷ VALOR TÉCNICO, donde valor técnico = saldo residual vigente + interés corrido, todo por 100 de
+// nominal ORIGINAL (así lo calcula IOL: DNC7D 108,95 ÷ 104,60 = 104,16 %; PNDCD con residual 40 y corrido 1,648 → 44,16 ÷
+// 41,648 = 106,03 %). Antes la app mostraba precio × 100 sin descontar el corrido ni el saldo ya amortizado: DNC7D salía 107,4 %
+// y un bono amortizado quedaba comparado contra 100. El precio de mercado (data912) ya es el precio SUCIO (ver ytm()).
+// Interés corrido en 30/360 (convención de estas ON/bonos; coincide con IOL al centavo) hasta la liquidación T+1.
+
+export interface ValorTecnico {
+  saldo: number;         // fracción 0..1 del nominal original vigente HOY
+  corrido: number;       // interés corrido, fracción del nominal original
+  valorTecnico: number;  // saldo + corrido
+  aproximado: boolean;   // true si el período de cupón se SUPUSO (cronograma con un solo flujo futuro)
+}
+
+const aMs = (iso: string) => Date.parse(iso + 'T00:00:00Z');
+
+// 30/360 (US): días entre dos fechas ISO.
+export function dias360(desde: string, hasta: string): number {
+  const a = new Date(aMs(desde)), b = new Date(aMs(hasta));
+  let d1 = a.getUTCDate(), d2 = b.getUTCDate();
+  if (d1 === 31) d1 = 30;
+  if (d2 === 31 && d1 === 30) d2 = 30;
+  return 360 * (b.getUTCFullYear() - a.getUTCFullYear()) + 30 * (b.getUTCMonth() - a.getUTCMonth()) + (d2 - d1);
+}
+
+// Suma `meses` a una fecha ISO conservando el día (si el mes destino es más corto, queda en su último día).
+export function sumarMesesISO(fecha: string, meses: number): string {
+  const f = new Date(aMs(fecha));
+  const dia = f.getUTCDate();
+  const t = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() + meses, 1));
+  const ultimo = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(dia, ultimo));
+  return t.toISOString().slice(0, 10);
+}
+
+// Liquidación T+1: el día hábil siguiente (sin feriados: sábados y domingos se saltean). Con un feriado de por medio, IOL
+// liquida un día después que esta aproximación → diferencia de ~1/180 de cupón en el corrido (centésimas de punto de paridad).
+export function liquidacionT1(hoy: string): string {
+  const d = new Date(aMs(hoy));
+  do { d.setUTCDate(d.getUTCDate() + 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}
+
+function corridoEntre(prev: string, prox: string, liquidacion: string, cuponPeriodo: number): number {
+  const total = dias360(prev, prox);
+  if (!(total > 0)) return 0;
+  const frac = Math.min(1, Math.max(0, dias360(prev, liquidacion) / total));
+  return cuponPeriodo * frac;
+}
+
+const MESES_PERIODO = [1, 3, 6, 12];
+const mesesEntre = (a: string, b: string) => {
+  const x = new Date(aMs(a)), y = new Date(aMs(b));
+  return (y.getUTCFullYear() - x.getUTCFullYear()) * 12 + (y.getUTCMonth() - x.getUTCMonth());
+};
+const periodoMasCercano = (meses: number) => MESES_PERIODO.reduce((m, c) => (Math.abs(c - meses) < Math.abs(m - meses) ? c : m));
+
+// Desde el cronograma de bonos_referencia. El saldo vigente es el que quedaba ANTES del primer flujo futuro (saldo después +
+// amortización). El cupón del período es el `interes` de ese primer flujo (ya escalado por el saldo). El inicio del período
+// se infiere con la distancia entre los dos primeros flujos futuros; con un SOLO flujo futuro se supone semestral (o el plazo
+// desde la emisión si es menor) y el resultado queda marcado `aproximado`.
+export function valorTecnicoFromCronograma(
+  cronograma: CronogramaItem[] | null | undefined, hoy: string, emision?: string | null,
+): ValorTecnico | null {
+  if (!cronogramaValido(cronograma)) return null;
+  const futuros = cronograma.filter(f => f.fecha > hoy && (f.interes + f.amortizacion) > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  if (!futuros.length) return null;
+  const f1 = futuros[0];
+  const saldo = f1.saldo_residual + f1.amortizacion;
+  let meses: number, aproximado = false;
+  if (futuros.length >= 2) {
+    meses = periodoMasCercano(mesesEntre(f1.fecha, futuros[1].fecha));
+  } else {
+    aproximado = true;
+    const desdeEmision = emision && !Number.isNaN(Date.parse(emision)) ? mesesEntre(emision, f1.fecha) : 6;
+    meses = desdeEmision > 0 && desdeEmision < 6 ? periodoMasCercano(desdeEmision) : 6;
+  }
+  const prev = sumarMesesISO(f1.fecha, -meses);
+  const corrido = corridoEntre(prev, f1.fecha, liquidacionT1(hoy), f1.interes);
+  return { saldo, corrido, valorTecnico: saldo + corrido, aproximado };
+}
+
+// Desde los campos cargados en una posición (tasa, frecuencia, vencimiento, valor residual). Las fechas de cupón se generan hacia
+// atrás desde el vencimiento (igual que ytm()). El cupón del período = tasa ÷ frecuencia × saldo vigente.
+export function valorTecnicoBono(p: {
+  tasaAnual: number; frecuencia: number; vencimiento: string; hoy: string; valorResidual?: number;
+}): ValorTecnico | null {
+  const fechas = fechasCupon(p.vencimiento, p.frecuencia, p.hoy);
+  if (!fechas?.length) return null;
+  const saldo = p.valorResidual ?? 1;
+  const prox = fechas[0];
+  const prev = sumarMesesISO(prox, -(12 / clampFreq(p.frecuencia)));
+  const corrido = corridoEntre(prev, prox, liquidacionT1(p.hoy), (p.tasaAnual / clampFreq(p.frecuencia)) * saldo);
+  return { saldo, corrido, valorTecnico: saldo + corrido, aproximado: false };
+}
+
 // Rendimiento corriente (current yield) para bonos_referencia: mismo concepto que
 // rendimientoCorriente() (cupón anual / precio, ignora pull-to-par), pero sin una `tasaAnual` fija
 // como parámetro — se anualiza el interés del PRÓXIMO período usando la misma frecuencia inferida

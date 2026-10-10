@@ -6,7 +6,7 @@
 // el universo de seguimiento (Radar) en vez de la cartera.
 // =============================================================================
 
-import { ytmFromCronograma, bondDurationFromCronograma, rendimientoCorrienteFromCronograma, type CronogramaItem } from './coupons';
+import { ytmFromCronograma, bondDurationFromCronograma, rendimientoCorrienteFromCronograma, valorTecnicoFromCronograma, type CronogramaItem } from './coupons';
 import { clasificarRating, type GradoCredito, type EscalaRating } from './rating';
 import { volumenStatsFromRef, type VolumenStats } from './volumenRentaFija';
 
@@ -82,7 +82,10 @@ export const LEY_TONE: Record<'local' | 'extranjera', 'accent' | 'sol'> = { loca
 export interface BonoReferenciaCalc {
   ref: BonoReferencia;
   px: number | null;        // precio por nominal, USD (data912/api.bonos())
-  paridad: number | null;   // px * 100
+  // Precio sucio ÷ valor técnico (saldo residual + interés corrido), en % — ver valorTecnicoFromCronograma(). Si no se puede calcular
+  // el valor técnico (cronograma inválido), cae a px × 100.
+  paridad: number | null;
+  paridadAprox: boolean;    // true si el período de cupón se supuso (cronograma con un solo flujo futuro)
   tir: number | null;
   duracion: { macaulay: number; modified: number } | null;
   // Cupón anualizado / precio (ignora pull-to-par, a diferencia de la TIR) — ver
@@ -102,13 +105,14 @@ export interface BonoReferenciaCalc {
 // devolver el mapa). El cronograma también está en la moneda de emisión del bono (USD para los
 // soberanos/ONs hard-dollar de este catálogo), así que ambos son consistentes sin conversión extra.
 export function calcularBonoReferencia(ref: BonoReferencia, px: number | null, hoy: string): BonoReferenciaCalc {
-  const paridad = px != null ? px * 100 : null;
+  const vt = px != null ? valorTecnicoFromCronograma(ref.cronograma, hoy, ref.emision) : null;
+  const paridad = px != null ? (vt ? (px / vt.valorTecnico) * 100 : px * 100) : null;
   const tir = px != null ? ytmFromCronograma(px, ref.cronograma, hoy) : null;
   const duracion = tir != null ? bondDurationFromCronograma(ref.cronograma, tir, hoy) : null;
   const rendCorriente = px != null ? rendimientoCorrienteFromCronograma(px, ref.cronograma, hoy) : null;
   const clasif = clasificarRating(ref.calificadora, ref.calificacion);
   const volumen = volumenStatsFromRef(ref);
-  return { ref, px, paridad, tir, duracion, rendCorriente, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null, volumen };
+  return { ref, px, paridad, paridadAprox: vt?.aproximado ?? false, tir, duracion, rendCorriente, grado: clasif?.grado ?? null, escalaGrado: clasif?.escala ?? null, volumen };
 }
 
 export interface Comparable extends BonoReferenciaCalc {

@@ -6,7 +6,7 @@
 // para el resto de la app).
 // =============================================================================
 
-import { ytm, bondDuration, rendimientoCorriente } from './coupons';
+import { ytm, bondDuration, rendimientoCorriente, valorTecnicoBono } from './coupons';
 import { clasificarRating, type GradoCredito, type EscalaRating } from './rating';
 import type { Alerta } from './alertas';
 import type { Posicion } from '../types/domain';
@@ -19,7 +19,7 @@ export const ESPECULATIVO_ALERTA = 0.40;            // % del capital en bonos "e
 export interface BonoCalc {
   pos: Posicion;
   px: number | null;           // precio por nominal (data912/100)
-  paridad: number | null;      // en %
+  paridad: number | null;      // en %: precio sucio ÷ valor técnico (saldo residual + interés corrido), ver valorTecnicoBono()
   capital: number;             // costo (precio_compra × cantidad)
   mkt: number | null;          // valor de mercado (null si no hay cotización)
   res: number | null;          // resultado (mkt − capital)
@@ -34,18 +34,21 @@ export interface BonoCalc {
 }
 
 // Un solo bono: capital, mercado, TIR, duración, rendimiento corriente y clasificación de rating.
-// `mkt`/`paridad`/`capital` NUNCA se ajustan por valor residual: si hay cotización de mercado, el
-// precio ya refleja lo que vale el bono hoy (por definición) — ajustarlo de nuevo con un % cargado a
-// mano sería corregir dos veces (o mal) algo que el mercado ya resolvió. `valorResidual` solo corrige
-// TIR/duración/rendimiento corriente, donde SIEMPRE es correcto sin importar de dónde salió el precio
-// (ver el comentario de ytm() en engine/coupons.ts).
+// `mkt`/`capital` NUNCA se ajustan por valor residual: si hay cotización de mercado, el precio ya refleja lo que vale el
+// bono hoy (por definición) — ajustarlo de nuevo con un % cargado a mano sería corregir dos veces (o mal) algo que el mercado
+// ya resolvió. `valorResidual` corrige TIR/duración/rendimiento corriente (ver ytm() en engine/coupons.ts) y es parte del
+// DENOMINADOR de la paridad: paridad = precio sucio ÷ (saldo residual + interés corrido), no precio × 100.
 export function calcularBono(pos: Posicion, px: number | null, hoy: string): BonoCalc {
-  const paridad = px != null ? px * 100 : null;
   const capital = pos.precio_compra * pos.cantidad;
   const mkt = px != null ? px * pos.cantidad : null;
   const res = mkt != null ? mkt - capital : null;
   const cuponOk = pos.cupon_tasa != null && pos.cupon_frecuencia != null && pos.cupon_mes != null;
   const valorResidual = pos.amortizable && pos.valor_residual != null ? pos.valor_residual : 1;
+  // Paridad sobre valor técnico; si faltan cupón/frecuencia/vencimiento no hay forma de calcular el corrido → precio × 100 (antes).
+  const vt = px != null && pos.cupon_tasa != null && pos.cupon_frecuencia != null && pos.vencimiento
+    ? valorTecnicoBono({ tasaAnual: pos.cupon_tasa, frecuencia: pos.cupon_frecuencia, vencimiento: pos.vencimiento, hoy, valorResidual })
+    : null;
+  const paridad = px != null ? (vt ? (px / vt.valorTecnico) * 100 : px * 100) : null;
   // TIR al vencimiento sobre el precio de MERCADO (si no hay, sobre el costo).
   const precioNominal = px ?? (pos.precio_compra > 0 ? pos.precio_compra : null);
   const tir = precioNominal != null && pos.cupon_tasa != null && pos.cupon_frecuencia != null && pos.vencimiento

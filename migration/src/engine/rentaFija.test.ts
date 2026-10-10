@@ -41,9 +41,10 @@ describe('calcularBonoReferencia', () => {
     expect(r.duracion).toBeNull();
   });
 
-  it('con precio: paridad = px*100, tir y duración calculadas', () => {
+  it('con precio: paridad sobre valor técnico (≈ px*100 menos el corrido), tir y duración calculadas', () => {
     const r = calcularBonoReferencia(ref, 0.9, '2026-07-24');
-    expect(r.paridad).toBeCloseTo(90, 6);
+    expect(r.paridad!).toBeLessThan(90);
+    expect(r.paridad!).toBeGreaterThan(88);
     expect(r.tir).not.toBeNull();
     expect(r.tir!).toBeGreaterThan(0);
     expect(r.duracion).not.toBeNull();

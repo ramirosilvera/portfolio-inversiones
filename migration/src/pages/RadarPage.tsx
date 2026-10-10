@@ -762,7 +762,7 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado,
   calc: ReturnType<typeof calcularBonoReferencia>; hoy: string; onEditarRating: () => void;
   destacado: boolean; onToggleDestacado: () => Promise<void>; montoOperar: number;
 }) {
-  const { ref, paridad, tir, duracion, grado, escalaGrado, volumen } = calc;
+  const { ref, paridad, paridadAprox, tir, duracion, grado, escalaGrado, volumen } = calc;
   const operable = volumen ? evaluarOperabilidad(montoOperar, volumen) : null;
   const vencido = ref.vencimiento < hoy;
   const [busyDestacado, setBusyDestacado] = useState(false);
@@ -801,7 +801,7 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado,
           <RatingBadge calificadora={ref.calificadora} calificacion={ref.calificacion} grado={grado} escala={escalaGrado} />
         </button>
       </td>
-      <td className="text-right px-3 tnum">{paridad != null ? `${fmtNum(paridad, 1)}%` : '—'}</td>
+      <td className="text-right px-3 tnum" title={paridadAprox ? 'Aproximada: queda un solo cupón y el período se supone semestral' : 'Precio ÷ (saldo residual + interés corrido)'}>{paridad != null ? `${paridadAprox ? '≈' : ''}${fmtNum(paridad, 1)}%` : '—'}</td>
       <td className="text-right px-3 tnum">{tir != null ? fmtPct(tir) : '—'}</td>
       <td className="text-right px-3 tnum">{duracion ? `${fmtNum(duracion.macaulay, 1)}a` : '—'}</td>
       <td className="text-right px-3 tnum">{ref.vencimiento}</td>
