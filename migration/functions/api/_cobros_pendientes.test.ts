@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  sugerirDividendoPendiente, sugerirCuponPendiente,
+  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente,
   sugerirDividendosHistoricos, sugerirCuponesHistoricos,
   type PosicionParaCobro,
 } from './_cobros_pendientes';
@@ -205,5 +205,49 @@ describe('sugerirCuponesHistoricos (primera carga: recorre mes a mes en el rango
 
   it('posición cerrada (cantidad 0) → vacío', () => {
     expect(sugerirCuponesHistoricos(bono({ cantidad: 0 }), '2026-01-01', '2026-07-30')).toEqual([]);
+  });
+});
+
+describe('sugerirCuponesDeCronograma (fecha exacta de pago)', () => {
+  const bono = (over: Partial<PosicionParaCobro> = {}): PosicionParaCobro =>
+    pos({ tipo: 'bono', cantidad: 2400, cupon_tasa: 0.08, cupon_frecuencia: 2, cupon_mes: 10, ...over });
+  const crono = [
+    { fecha: '2026-10-14', interes: 0.04, amortizacion: 0 },
+    { fecha: '2027-04-14', interes: 0.04, amortizacion: 0 },
+    { fecha: '2027-10-14T00:00:00', interes: 0.04, amortizacion: 1 },
+  ];
+
+  it('sugiere el cupón en su día real (no el día 1) con monto = nominales × interés', () => {
+    const r = sugerirCuponesDeCronograma(bono(), crono, '2026-09-20', '2026-10-14');
+    expect(r).toHaveLength(1);
+    expect(r[0].fecha).toBe('2026-10-14');
+    expect(r[0].monto).toBe(96);
+  });
+  it('antes de la fecha de pago todavía no sugiere nada', () => {
+    expect(sugerirCuponesDeCronograma(bono(), crono, '2026-09-10', '2026-10-13')).toEqual([]);
+  });
+  it('acepta fechas del cronograma con timestamp', () => {
+    expect(sugerirCuponesDeCronograma(bono(), crono, '2027-10-01', '2027-10-20')[0].fecha).toBe('2027-10-14');
+  });
+  it('un cupón anterior a la compra no es tuyo', () => {
+    expect(sugerirCuponesDeCronograma(bono({ fecha_compra: '2026-10-20' }), crono, '2026-09-20', '2026-10-31')).toEqual([]);
+    expect(sugerirCuponesDeCronograma(bono({ fecha_compra: '2026-10-14' }), crono, '2026-09-20', '2026-10-31')).toHaveLength(1);
+  });
+  it('no sugiere después del vencimiento ni sin posición abierta ni para no-bonos', () => {
+    expect(sugerirCuponesDeCronograma(bono({ vencimiento: '2026-09-01' }), crono, '2026-09-20', '2026-10-31')).toEqual([]);
+    expect(sugerirCuponesDeCronograma(bono({ cantidad: 0 }), crono, '2026-09-20', '2026-10-31')).toEqual([]);
+    expect(sugerirCuponesDeCronograma(pos({ tipo: 'cedear' }), crono, '2026-09-20', '2026-10-31')).toEqual([]);
+  });
+});
+
+describe('cronogramaVigente', () => {
+  it('vigente si hay algún flujo hoy o a futuro', () => {
+    expect(cronogramaVigente([{ fecha: '2026-10-14', interes: 0.04 }], '2026-10-14')).toBe(true);
+  });
+  it('catálogo viejo (todos los flujos pasaron) o vacío o inválido → no sirve, se usa el cálculo sintético', () => {
+    expect(cronogramaVigente([{ fecha: '2026-01-14', interes: 0.04 }], '2026-10-14')).toBe(false);
+    expect(cronogramaVigente([], '2026-10-14')).toBe(false);
+    expect(cronogramaVigente(null, '2026-10-14')).toBe(false);
+    expect(cronogramaVigente([{ fecha: 'xx', interes: 0.04 }], '2026-10-14')).toBe(false);
   });
 });
