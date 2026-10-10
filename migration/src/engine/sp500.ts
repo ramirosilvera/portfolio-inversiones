@@ -4,8 +4,6 @@
 export interface PuntoSp { f: string; c: number }
 
 const DIA = 86_400_000;
-// Debajo de esto la diferencia contra el índice es ruido puro (unos pocos días de mercado): la línea del Inicio no se muestra.
-export const MIN_DIAS_COMPARABLE = 14;
 const MAX_GAP_DIAS = 7; // tolerancia: la serie tiene que cubrir el inicio del período con ≤ 1 semana de desfase
 
 // Último cierre con fecha ≤ `fecha`. null si la serie empieza más de MAX_GAP_DIAS después (no cubre el período).
