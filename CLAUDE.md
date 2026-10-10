@@ -61,13 +61,13 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
   (TLCUD era otra emisión; MIC3D y CS51D con cupón/frecuencia errados; 8 ON de 2026 —BF48D, RC5CD, TLCWD, OLC6D, SIC2D,
   NPCED, TTCED, IRCQD— con **cupón a la mitad: IOL calcula tasa/4 sobre fechas semestrales**). Se corrigieron a mano con el
   aviso de resultados / suplemento y quedaron marcados en `fuente` ("IOL | corregido …"). Sin corregir por falta de fuente:
-  YM40D, YM41D y TLCMD (flujos faltantes), TLCTD (nombre y datos no coinciden), MGC1D (el Eurobond Pampa 7,5% 2027 fue rescatado). Esas filas están **protegidas en dos niveles**:
+  YM40D, YM41D y TLCMD (flujos faltantes), TLCTD (nombre y datos no coinciden), MGC1D (el Eurobond Pampa 7,5% 2027 fue rescatado). TTCAD (Tecpetrol 7,625% 2033) quedó SIN cargar: IOL lo muestra amortizable (33/33/34% desde 2031) y las fuentes públicas lo describen bullet; verificar antes de cargarlo. Esas filas están **protegidas en dos niveles**:
   (1) el trigger `bonos_referencia_proteger_corregidos` (migración 0051) conserva cronograma/emisión/vencimiento/amortizable/
   valor_residual/fuente si alguien las actualiza sin cambiar la marca — para corregir de nuevo a propósito hay que escribir
   una `fuente` nueva que también empiece con "IOL | corregido"; (2) la Routine mensual ("Actualización mensual integral
   bonos_referencia") tiene las reglas R1–R4: saltea las filas corregidas, verifica cada emisión nueva contra el aviso de
   resultados/suplemento antes de cargarla y reporta anomalías de coherencia del catálogo.
-- **Altas al catálogo (3 caminos):** (1) Routine "Alta de tickers nuevos…" (día 8 de cada mes, máx. 15 por corrida, solo INSERT
+- **Altas al catálogo (3 caminos):** (1) Routine "Alta de tickers nuevos…" (trimestral: día 8 de ene/abr/jul/oct, máx. 15 por corrida; el 2026-10-10 se sondearon los 135 candidatos de mercado y solo 1 pasó los filtros de IOL, así que no hace falta más frecuencia; solo INSERT
   `on conflict do nothing`, verificada contra el aviso de resultados; prioriza bonos que algún portfolio tiene y no están en el
   catálogo); (2) la Routine "Actualización mensual integral…" (cada 4 semanas) **ya no agrega tickers**, solo mantiene los
   existentes; (3) **alta a demanda**: si se quiere un bono puntual (o IOL no tiene analytics, como COC4D/AEC3D), pedirlo en una
