@@ -84,7 +84,7 @@ export function AnalisisBonoPage() {
               sub={`${ref.emisor ?? 'Emisor no identificado'} · ${ref.moneda} · vence ${ref.vencimiento}${ref.emision ? ` · emitido ${ref.emision}` : ''} · fuente: ${ref.fuente}, actualizado ${ref.actualizado_en.slice(0, 10)}`} />
             <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Stat label="Precio" value={fmtUsd(calc.px)} />
-              <Stat label="Paridad" value={calc.paridad != null ? `${fmtNum(calc.paridad, 1)}%` : '—'} />
+              <Stat label="Paridad" value={calc.paridad != null ? `${calc.paridadAprox ? '≈' : ''}${fmtNum(calc.paridad, 1)}%` : '—'} hint="Precio sucio ÷ valor técnico (saldo residual + interés corrido, 30/360)" />
               <Stat label="TIR" value={calc.tir != null ? fmtPct(calc.tir) : '—'}
                 hint="Tasa efectiva anual (compone los pagos) — no es comparable con el cupón nominal simple." />
               <Stat label="Rendimiento corriente" value={calc.rendCorriente != null ? fmtPct(calc.rendCorriente) : '—'}

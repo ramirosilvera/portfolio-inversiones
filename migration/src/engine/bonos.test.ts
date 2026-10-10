@@ -22,7 +22,9 @@ describe('calcularBono', () => {
     const b = calcularBono(basePos, 0.6, HOY);
     expect(b.mkt).toBe(600);
     expect(b.capitalUsado).toBe(600);
-    expect(b.paridad).toBe(60);
+    // paridad = precio sucio ÷ (saldo + interés corrido): 60 de precio contra ~100,08 de valor técnico
+    expect(b.paridad!).toBeLessThan(60);
+    expect(b.paridad!).toBeGreaterThan(59.5);
   });
 
   it('calcula TIR, duración y rendimiento corriente cuando hay cupón + vencimiento', () => {
@@ -70,12 +72,13 @@ describe('calcularBono', () => {
       expect(amort.rendCorriente).toBeCloseTo(bullet.rendCorriente! * 0.5, 6);
     });
 
-    it('valor_residual NUNCA ajusta paridad/mkt/capital — el precio de mercado ya refleja el valor real', () => {
+    it('valor_residual NUNCA ajusta mkt/capital (el precio de mercado ya refleja el valor real), pero SÍ la paridad: el saldo amortizado sale del valor técnico', () => {
       const bullet = calcularBono({ ...basePos, amortizable: false, valor_residual: null }, 0.6, HOY);
       const amort = calcularBono({ ...basePos, amortizable: true, valor_residual: 0.5 }, 0.6, HOY);
-      expect(amort.paridad).toBe(bullet.paridad);
       expect(amort.mkt).toBe(bullet.mkt);
       expect(amort.capital).toBe(bullet.capital);
+      // mismo precio contra la mitad de saldo ⇒ paridad ~el doble
+      expect(amort.paridad! / bullet.paridad!).toBeCloseTo(2, 1);
     });
   });
 });

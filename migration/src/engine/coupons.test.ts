@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
+import { couponEvents, couponCalendar, capitalEvents, capitalCalendar, agruparCuotasPorPosicion, ytm, bondDuration, rendimientoCorriente, ytmFromCronograma, bondDurationFromCronograma, inferirCuponDeCronograma, valorTecnicoFromCronograma, valorTecnicoBono, dias360, sumarMesesISO, liquidacionT1, type CouponBond, type CapitalBond, type CronogramaItem } from './coupons';
 import { xirr } from './irr';
 
 const semestral: CouponBond = { ticker: 'GD46', faceValue: 1000, tasaAnual: 0.08, frecuencia: 2, mesRef: 1 };
@@ -530,5 +530,102 @@ describe('agruparCuotasPorPosicion', () => {
   it('una posición sin cuotas no aparece en el mapa (el caller usa ?? [] para el default)', () => {
     const m = agruparCuotasPorPosicion([{ posicion_id: 'a', fecha: '2026-03-01', porcentaje: 0.2 }]);
     expect(m.get('otra-posicion')).toBeUndefined();
+  });
+});
+
+// ── Paridad = precio sucio ÷ valor técnico (saldo residual + interés corrido), 30/360, liquidación T+1 ─────────────────────
+// Los casos salen de get_fixed_income_analytics de IOL del 09/10/2026 (liquidación 13/10 por el feriado del 12/10; sin feriados
+// acá el T+1 cae el 12/10, un día antes → diferencias de centésimas).
+describe('valorTecnicoFromCronograma / paridad', () => {
+  const crono = (fl: [string, number, number, number][]) =>
+    fl.map(([fecha, interes, amortizacion, saldo_residual]) => ({ fecha, interes, amortizacion, saldo_residual }));
+
+  it('PNDCD (amortizable, residual 40): corrido y valor técnico exactos de IOL con liquidación 13/10', () => {
+    const c = crono([['2026-10-30', 0.0182, 0.2, 0.2], ['2027-04-30', 0.0091, 0.2, 0]]);
+    // hoy 12/10 ⇒ T+1 = 13/10 (martes), la misma fecha de liquidación que usó IOL
+    const vt = valorTecnicoFromCronograma(c, '2026-10-12')!;
+    expect(vt.saldo).toBeCloseTo(0.4, 10);
+    expect(vt.corrido * 100).toBeCloseTo(1.648111, 5);
+    expect(vt.valorTecnico * 100).toBeCloseTo(41.648111, 5);
+    expect(vt.aproximado).toBe(false);
+    expect(0.4416 / vt.valorTecnico).toBeCloseTo(1.0603, 3);   // paridad de IOL: 1,0603
+  });
+
+  it('DNC7D (bullet por ahora, 4,9 por período): paridad ≈ 104,16 % a 108,95, no 108,95', () => {
+    const c = crono([['2026-10-24', 0.049, 0, 1], ['2027-04-24', 0.049, 0, 1]]);
+    const vt = valorTecnicoFromCronograma(c, '2026-10-09')!;    // viernes ⇒ T+1 = lunes 12/10
+    expect(vt.valorTecnico * 100).toBeCloseTo(104.57, 1);       // IOL (13/10): 104,60
+    expect(1.0895 / vt.valorTecnico * 100).toBeCloseTo(104.18, 1);   // IOL: 104,16
+  });
+
+  it('PM29D (residual 38,458 con cupones escalados): saldo = saldo después + amortización', () => {
+    const c = crono([['2027-03-19', 0.011056675, 0.07692, 0.30766], ['2027-09-19', 0.008845225, 0.07692, 0.23074]]);
+    const vt = valorTecnicoFromCronograma(c, '2026-10-12')!;
+    expect(vt.saldo).toBeCloseTo(0.38458, 6);
+    expect(vt.valorTecnico * 100).toBeCloseTo(38.6054, 2);       // IOL: 38,6054
+  });
+
+  it('CAC5D (residual 50): el saldo amortizado sale del denominador', () => {
+    const c = crono([['2027-02-25', 0.02325, 0.125, 0.375], ['2027-08-25', 0.0174375, 0.125, 0.25]]);
+    const vt = valorTecnicoFromCronograma(c, '2026-10-12')!;
+    expect(vt.saldo).toBeCloseTo(0.5, 10);
+    expect(vt.valorTecnico * 100).toBeCloseTo(50.62, 1);         // IOL: 50,62
+  });
+
+  it('BPA7D (cupón 2,5 con amortización 50 % en el medio): 100 + corrido ≈ 102,26', () => {
+    const c = crono([['2026-10-31', 0.025, 0, 1], ['2027-04-30', 0.025, 0.5, 0.5], ['2027-10-31', 0.0125, 0.5, 0]]);
+    const vt = valorTecnicoFromCronograma(c, '2026-10-12')!;
+    expect(vt.valorTecnico * 100).toBeCloseTo(102.264, 2);       // IOL: 102,2639
+  });
+
+  it('un solo flujo futuro: período supuesto, queda marcado aproximado', () => {
+    const vt = valorTecnicoFromCronograma(crono([['2026-11-11', 0.02125, 1, 0]]), '2026-10-12', '2025-11-11')!;
+    expect(vt.aproximado).toBe(true);
+    expect(vt.saldo).toBe(1);
+    expect(vt.corrido).toBeGreaterThan(0);
+    expect(vt.corrido).toBeLessThanOrEqual(0.02125);
+  });
+
+  it('sin flujos futuros o cronograma inválido → null', () => {
+    expect(valorTecnicoFromCronograma(crono([['2020-01-01', 0.04, 1, 0]]), '2026-10-12')).toBeNull();
+    expect(valorTecnicoFromCronograma(null, '2026-10-12')).toBeNull();
+  });
+
+  it('el corrido nunca pasa del cupón completo (liquidación en o después del próximo cupón)', () => {
+    const vt = valorTecnicoFromCronograma(crono([['2026-10-13', 0.04, 0, 1], ['2027-04-13', 0.04, 1, 0]]), '2026-10-12')!;
+    expect(vt.corrido).toBeLessThanOrEqual(0.04 + 1e-12);
+  });
+});
+
+describe('valorTecnicoBono (campos de la posición)', () => {
+  it('bullet 8 % semestral con vencimiento 2030-04-14: corrido proporcional al período en curso', () => {
+    const vt = valorTecnicoBono({ tasaAnual: 0.08, frecuencia: 2, vencimiento: '2030-04-14', hoy: '2026-10-09' })!;
+    expect(vt.saldo).toBe(1);
+    // período 14/04→14/10: liquidación 12/10 ⇒ 178/180 de 4 puntos
+    expect(vt.corrido * 100).toBeCloseTo(4 * 178 / 180, 3);
+  });
+  it('con valor residual 0,5 el cupón del período y el saldo se escalan', () => {
+    const vt = valorTecnicoBono({ tasaAnual: 0.08, frecuencia: 2, vencimiento: '2030-04-14', hoy: '2026-10-09', valorResidual: 0.5 })!;
+    expect(vt.saldo).toBe(0.5);
+    expect(vt.corrido * 100).toBeCloseTo(2 * 178 / 180, 3);
+  });
+  it('bono vencido → null', () => {
+    expect(valorTecnicoBono({ tasaAnual: 0.08, frecuencia: 2, vencimiento: '2020-04-14', hoy: '2026-10-09' })).toBeNull();
+  });
+});
+
+describe('helpers de fecha del valor técnico', () => {
+  it('dias360 sigue la convención US', () => {
+    expect(dias360('2026-04-24', '2026-10-13')).toBe(169);
+    expect(dias360('2026-04-30', '2026-10-13')).toBe(163);
+    expect(dias360('2026-01-31', '2026-03-31')).toBe(60);
+  });
+  it('sumarMesesISO conserva el día y recorta a fin de mes', () => {
+    expect(sumarMesesISO('2026-10-24', -6)).toBe('2026-04-24');
+    expect(sumarMesesISO('2026-08-31', -6)).toBe('2026-02-28');
+  });
+  it('liquidacionT1 salta fines de semana', () => {
+    expect(liquidacionT1('2026-10-09')).toBe('2026-10-12');   // viernes → lunes
+    expect(liquidacionT1('2026-10-12')).toBe('2026-10-13');
   });
 });
