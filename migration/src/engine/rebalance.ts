@@ -132,3 +132,23 @@ export function aplicarObjetivo(
     return { id: i.id, peso_objetivo: restante * base };
   });
 }
+
+// Tolerancia para decir que el plan "está completo" (suma 100 %): medio punto, para absorber redondeos de carga.
+const TOLERANCIA_SUMA_PLAN = 0.005;
+
+// Qué objetivos hay que escribir cuando una posición SALE del portfolio (se borró, se vendió entera o se transfirió entera).
+//  · Plan completo (los objetivos sumaban 100 %): la posición pierde su objetivo y el resto se reescala proporcional para
+//    volver a sumar 100 % — el lugar que dejó se reparte, no queda huérfano.
+//  · Plan parcial (el usuario eligió no asignar todo): solo se limpia el objetivo de la que salió; reescalar al resto
+//    inventaría objetivos que nadie pidió.
+// Devuelve solo las filas que cambian. Una posición sin objetivo no dispara nada.
+export function objetivosTrasCierre(targeted: ObjetivoItem[], cerradoId: string): ObjetivoItem[] {
+  const conObjetivo = targeted.filter(i => i.peso_objetivo != null);
+  if (!conObjetivo.some(i => i.id === cerradoId)) return [];
+  const suma = conObjetivo.reduce((s, i) => s + (i.peso_objetivo ?? 0), 0);
+  if (Math.abs(suma - 1) > TOLERANCIA_SUMA_PLAN) return [{ id: cerradoId, peso_objetivo: null }];
+  return aplicarObjetivo(conObjetivo, cerradoId, null).filter(o => {
+    const antes = conObjetivo.find(i => i.id === o.id)?.peso_objetivo ?? null;
+    return o.peso_objetivo == null ? antes != null : antes == null || Math.abs(o.peso_objetivo - antes) > 1e-9;
+  });
+}

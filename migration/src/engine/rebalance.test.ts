@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   montoParaObjetivo, pesoResultante, cantidadPorMonto, aplicarObjetivo, redondearPct,
-  resolverObjetivosSimultaneos, pesoResultanteConjunto,
+  resolverObjetivosSimultaneos, pesoResultanteConjunto, objetivosTrasCierre,
 } from './rebalance';
 
 describe('montoParaObjetivo — cuánto comprar para llegar al objetivo', () => {
@@ -161,5 +161,34 @@ describe('redondearPct — el % mostrado siempre suma 100', () => {
   });
   it('lista vacía → mapa vacío sin romper', () => {
     expect(redondearPct([]).size).toBe(0);
+  });
+});
+
+describe('objetivosTrasCierre', () => {
+  const plan = [{ id: 'a', peso_objetivo: 0.5 }, { id: 'b', peso_objetivo: 0.3 }, { id: 'c', peso_objetivo: 0.2 }];
+  const suma = (l: { peso_objetivo: number | null }[]) => l.reduce((s, i) => s + (i.peso_objetivo ?? 0), 0);
+
+  it('plan completo: la que sale pierde el objetivo y el resto se reescala a 100 %', () => {
+    const cambios = objetivosTrasCierre(plan, 'c');
+    expect(cambios.find(c => c.id === 'c')!.peso_objetivo).toBeNull();
+    expect(cambios.find(c => c.id === 'a')!.peso_objetivo).toBeCloseTo(0.5 / 0.8, 10);
+    expect(cambios.find(c => c.id === 'b')!.peso_objetivo).toBeCloseTo(0.3 / 0.8, 10);
+    expect(suma(cambios)).toBeCloseTo(1, 10);
+  });
+  it('plan parcial: solo se limpia la que sale, el resto no se toca', () => {
+    const parcial = [{ id: 'a', peso_objetivo: 0.4 }, { id: 'b', peso_objetivo: 0.2 }];
+    expect(objetivosTrasCierre(parcial, 'b')).toEqual([{ id: 'b', peso_objetivo: null }]);
+  });
+  it('una posición sin objetivo no dispara nada', () => {
+    expect(objetivosTrasCierre(plan, 'zzz')).toEqual([]);
+    expect(objetivosTrasCierre([...plan, { id: 'd', peso_objetivo: null }], 'd')).toEqual([]);
+  });
+  it('tolera redondeos de carga (99,8 % cuenta como completo)', () => {
+    const c = objetivosTrasCierre([{ id: 'a', peso_objetivo: 0.6 }, { id: 'b', peso_objetivo: 0.398 }], 'b');
+    expect(c.find(x => x.id === 'b')!.peso_objetivo).toBeNull();
+    expect(c.find(x => x.id === 'a')!.peso_objetivo).toBeCloseTo(1, 10);
+  });
+  it('la última que queda sale del plan sin dividir por cero', () => {
+    expect(objetivosTrasCierre([{ id: 'a', peso_objetivo: 1 }], 'a')).toEqual([{ id: 'a', peso_objetivo: null }]);
   });
 });

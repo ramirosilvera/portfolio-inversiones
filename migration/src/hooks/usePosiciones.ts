@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useAuth } from './useAuth';
 import { consolidarCompra, reconstruirTenencia, movimientoConciliacion } from '../engine/tenencia';
 import type { DividendoInfo } from '../engine/dividendProjection';
+import { leerObjetivos, reajustarObjetivosTrasCierre } from '../lib/objetivos';
 import type { Posicion, Movimiento } from '../types/domain';
 
 // Historial de movimientos de un portfolio (opcionalmente filtrado por ticker).
@@ -253,6 +254,12 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
       });
       invalidate();
       if (error) throw new Error(`No se pudo registrar la venta: ${error.message}`);
+      // Vendió todo: la posición sale del plan de objetivos y el resto se reescala a 100 %.
+      if (portfolioId && qty >= Number(pos.cantidad) - 1e-9) {
+        try { await reajustarObjetivosTrasCierre(portfolioId, pos.id); }
+        catch (e) { throw new Error(`Venta registrada, pero no se pudieron reajustar los objetivos: ${e instanceof Error ? e.message : e}`); }
+        finally { invalidate(); }
+      }
     },
     update: async (id: string, patch: Partial<Posicion>) => {
       // Solo el ticker puede colisionar con otra fila (cantidad/precio/etc. no tienen ese riesgo).
@@ -308,8 +315,16 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
       finally { invalidate(); qc.invalidateQueries({ queryKey: ['cobros'] }); }
     },
     remove: async (id: string) => {
+      // Foto de los objetivos ANTES de borrar: después la fila no existe y no se sabría cuánto pesaba.
+      const antes = portfolioId ? await leerObjetivos(portfolioId).catch(() => null) : null;
       const { error } = await supabase.from('posiciones').delete().eq('id', id);
-      if (error) throw error; invalidate();
+      if (error) throw error;
+      // Su objetivo sale del plan y el resto se reescala a 100 % (la fila ya no existe: solo se tocan las demás).
+      if (portfolioId && antes) {
+        try { await reajustarObjetivosTrasCierre(portfolioId, id, antes); }
+        catch (e) { throw new Error(`Posición borrada, pero no se pudieron reajustar los objetivos: ${e instanceof Error ? e.message : e}`); }
+        finally { invalidate(); }
+      } else invalidate();
     },
   };
 }
