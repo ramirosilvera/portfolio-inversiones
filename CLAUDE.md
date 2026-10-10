@@ -67,6 +67,13 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
   una `fuente` nueva que también empiece con "IOL | corregido"; (2) la Routine mensual ("Actualización mensual integral
   bonos_referencia") tiene las reglas R1–R4: saltea las filas corregidas, verifica cada emisión nueva contra el aviso de
   resultados/suplemento antes de cargarla y reporta anomalías de coherencia del catálogo.
+- **Altas al catálogo (3 caminos):** (1) Routine "Alta de tickers nuevos…" (día 8 de cada mes, máx. 15 por corrida, solo INSERT
+  `on conflict do nothing`, verificada contra el aviso de resultados; prioriza bonos que algún portfolio tiene y no están en el
+  catálogo); (2) la Routine "Actualización mensual integral…" (cada 4 semanas) **ya no agrega tickers**, solo mantiene los
+  existentes; (3) **alta a demanda**: si se quiere un bono puntual (o IOL no tiene analytics, como COC4D/AEC3D), pedirlo en una
+  sesión → buscar el aviso de resultados/suplemento, generar el cronograma por script (cupón = tasa ÷ frecuencia) y cargarlo con
+  `fuente` = "IOL | corregido AAAA-MM-DD: …" para que quede protegido. Un bono que se compra y no está en el catálogo debería
+  cargarse en el momento.
 - El cron (`refresh-all`) sugiere los cupones con la **fecha exacta del cronograma** cuando está vigente; si no hay cronograma,
   cae al cálculo por mes (día 1) con los campos cargados en la posición.
 
