@@ -40,7 +40,6 @@ import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
-import { RendimientoLinea, AportesLinea, Sp500Linea } from '../components/ForecastLineas';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
 import type { Posicion, AssetType, SeccionKey, DashboardWidget, Aporte } from '../types/domain';
@@ -178,7 +177,7 @@ export function DashboardPage() {
     cobros: (cobros.length > 0 || proximoCapital) ? <CobrosResumen resumen={resumenCobrado} pendientesCount={pendientesCount} proximoCapital={proximoCapital} personalizando={personalizando} /> : null,
     // Mientras cargan los supuestos o las posiciones no se muestra nada: con patrimonio 0 la tarjeta decía
     // "todavía sin datos reales" (engañoso) aunque el presupuesto y los snapshots existieran.
-    forecast: (forecastLoading || qPos.isLoading) ? null : <ForecastResumen presupuesto={presupuesto} resumen={forecast} personalizando={personalizando} hoy={hoy} />,
+    forecast: (forecastLoading || qPos.isLoading) ? null : <ForecastResumen presupuesto={presupuesto} resumen={forecast} personalizando={personalizando} />,
     liquidez_fci: flujo.length > 0 ? <FinanzasResumen resumen={flujoR} personalizando={personalizando} /> : null,
     macro: <MacroResumen resumen={resumen} personalizando={personalizando} />,
   };
@@ -576,14 +575,12 @@ function BonosResumen({ personalizando }: { personalizando: boolean }) {
     <Card>
       <CardHeader title="Bonos" sub={`${bonos.length} bono${bonos.length > 1 ? 's' : ''} en cartera · precio por nominal`}
         right={personalizando ? right : <Link to="/bonos" className="inline-flex items-center gap-1.5">{right}</Link>} />
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
         <Stat label="Capital" value={fmtUsdCompact(totalMkt)} />
         <Stat label="TIR promedio" value={tirPromedio != null
           ? <span className={tirPromedio >= 0 ? 'text-pos' : 'text-neg'}>{fmtPct(tirPromedio)}</span>
           : <span className="text-ink-500">—</span>}
           hint="TIR (YTM) promedio ponderada por capital" />
-        <Stat label="Duración prom." value={duracionPromedio != null ? `${fmtNum(duracionPromedio, 1)}a` : '—'}
-          hint="Duración de Macaulay ponderada por capital: sensibilidad a la tasa" />
         <Stat label="Grado inversión" value={fmtPct(distribucionGrado.gradoInversion, 0)}
           hint="% del capital en grado de inversión, según su escala (nacional o global, no se mezclan). El resto es especulativo, default o sin calificar" />
         <Stat label="Ley local" value={fmtPct(distribucionLey.local, 0)}
@@ -1001,38 +998,7 @@ function CobrosResumen({ resumen, pendientesCount, proximoCapital, personalizand
 // fijarlo (en las demás secciones el vacío oculta la tarjeta, pero esta no se descubre sola).
 const signoK = (n: number) => `${n >= 0 ? '+' : '−'}${fmtUsdCompact(Math.abs(n), { k: true })}`;
 const mesCorto = (ym: string) => `${MESES_CORTOS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
-// Cuándo se alcanza la meta de capital (si el portfolio tiene una): con el forecast actualizado, con la
-// sensibilidad ±2 pp de retorno en el tooltip. Todos los años salen de engine/presupuesto (analisisMeta);
-// acá solo se formatea. Si la meta no se alcanza dentro del horizonte del presupuesto se marca en warn.
-const textoLlegada = (l: { meses: number | null; anio: number | null } | null | undefined) =>
-  l?.anio != null && l.meses != null ? `${l.anio} (año ${Math.ceil(l.meses / 12)})` : null;
-function MetaForecast({ presupuesto, resumen }: { presupuesto: Presupuesto; resumen: ResumenForecast }) {
-  const m = resumen.meta;
-  if (!m) return null;
-  const meta = fmtUsdCompact(m.objetivo, { k: true });
-  if (m.yaAlcanzada) {
-    return <p className="px-4 pb-3 text-[11px] text-pos font-semibold border-t border-line pt-2.5">Meta de {meta} alcanzada ✓</p>;
-  }
-  const llegada = resumen.llegadaForecast ?? m.presupuesto.llegada;
-  const txt = textoLlegada(llegada);
-  const dentro = llegada.meses != null && llegada.meses <= presupuesto.anios * 12;
-  const ppto = textoLlegada(m.presupuesto.llegada);
-  const sens = m.sensibilidad.filter(e => e.delta !== 0).map(e => `${e.delta < 0 ? '−' : '+'}${Math.abs(e.delta * 100).toFixed(0)} pp de retorno: ${textoLlegada(e.llegada) ?? 'no llega'}`).join(' · ');
-  return (
-    <p className={`px-4 pb-3 text-[11px] border-t border-line pt-2.5 ${dentro ? 'text-ink-500' : 'text-warn'}`} title={sens}>
-      Meta {meta}: {txt
-        ? <>la alcanzás en <span className="tnum font-semibold">{txt}</span>{!dentro && ` — fuera del horizonte de ${presupuesto.anios} años`}</>
-        : 'no la alcanzás con estos supuestos'}
-      {resumen.llegadaForecast && ppto && ppto !== txt && <> (presupuesto: {ppto})</>}
-      {/* Fuera del horizonte: cuánto aporte haría falta (el comprometido puede ser obligatorio y quedar corto). */}
-      {!dentro && m.aporteNecesario != null && m.aporteNecesario > presupuesto.aporteAnual && (
-        <> — para llegar en {presupuesto.anios} años hacen falta <span className="tnum font-semibold">{fmtUsd(Math.ceil(m.aporteNecesario / 12), 0)}/mes</span> (comprometido {fmtUsd(presupuesto.aporteAnual / 12, 0)})</>
-      )}
-    </p>
-  );
-}
-
-function ForecastResumen({ presupuesto, resumen, personalizando, hoy }: { presupuesto: Presupuesto | null; resumen: ResumenForecast | null; personalizando: boolean; hoy: string }) {
+function ForecastResumen({ presupuesto, resumen, personalizando }: { presupuesto: Presupuesto | null; resumen: ResumenForecast | null; personalizando: boolean }) {
   const link = (txt: string) => personalizando
     ? <span className="text-[11px] text-celeste-600">{txt}</span>
     : <Link to="/forecast" className="text-[11px] text-celeste-600 hover:underline">{txt}</Link>;
@@ -1064,7 +1030,15 @@ function ForecastResumen({ presupuesto, resumen, personalizando, hoy }: { presup
       sub: fmtPctSigno(u.desvioPct, 1),
       title: `${desvio >= 0 ? '+' : '−'}${fmtUsd(Math.abs(desvio), 0)} vs presupuesto · aportes ${signoK(u.desvioAportes ?? 0)} · mercado ${signoK(u.desvioMercado ?? 0)}` },
   ];
-  const r = resumen.repro;
+  // Una sola línea: qué explica más el desvío, aportes o mercado (suman el desvío total, ver engine/presupuesto). Si el desvío es
+  // chico (< 0,5 % del presupuesto) no hay nada que explicar. El resto del detalle vive en la página Forecast.
+  const dAp = u.desvioAportes ?? 0, dMk = u.desvioMercado ?? 0;
+  const detalle = `Aportes ${signoK(dAp)} · mercado ${signoK(dMk)}`;
+  const motivo = Math.abs(u.desvioPct ?? 0) < 0.005
+    ? { texto: 'En línea con lo previsto.', title: 'Desvío menor al 0,5 % del presupuesto.' }
+    : Math.abs(dAp) >= Math.abs(dMk)
+      ? { texto: `Motivo principal: aportaste ${dAp >= 0 ? 'más' : 'menos'} de lo previsto (${signoK(dAp)}).`, title: detalle }
+      : { texto: `Motivo principal: el mercado rindió ${dMk >= 0 ? 'más' : 'menos'} de lo previsto (${signoK(dMk)}).`, title: detalle };
   return (
     <Card>
       <CardHeader title="Forecast" sub={`Presupuesto vs real · desde ${mesCorto(presupuesto.inicio)}.`} right={link('Ver detalle →')} />
@@ -1077,27 +1051,7 @@ function ForecastResumen({ presupuesto, resumen, personalizando, hoy }: { presup
           </div>
         ))}
       </div>
-      {/* Conexión con la tarjeta de rendimiento: el % del período y el cumplimiento del aporte comprometido. */}
-      {(resumen.rendimiento?.real != null || resumen.aportes) && (
-        <div className="px-4 pb-2.5 border-t border-line pt-2.5 space-y-1">
-          <RendimientoLinea resumen={resumen} />
-          <Sp500Linea resumen={resumen} hoy={hoy} />
-          <AportesLinea resumen={resumen} />
-        </div>
-      )}
-      {r && (() => {
-        // Sin aportes (Herencia: capital inicial único) el forecast es solo rendimiento: la diferencia contra el presupuesto no
-        // puede venir de aportes, es el desvío de mercado de hoy llevado al horizonte. La etiqueta lo dice explícito.
-        const sinAportes = presupuesto.aporteAnual === 0;
-        return (
-          <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5"
-            title={`Forecast actualizado ${fmtUsd(r.valorHorizonte, 0)} · presupuesto ${fmtUsd(r.valorHorizontePpto, 0)}${sinAportes ? ` · sin aportes nuevos: la diferencia es el desvío de mercado a hoy (${fmtPctSigno(u.desvioPct, 1)} vs presupuesto) capitalizado al ${fmtPct(presupuesto.tasaAnual, 0)} anual hasta el año ${presupuesto.anios}.` : ''}`}>
-            Forecast a {presupuesto.anios} años ({sinAportes ? 'sin aportes nuevos, solo rendimiento' : 'aportes presupuestados'}): <span className="tnum font-semibold text-ink-700">{fmtUsdCompact(r.valorHorizonte, { k: true })}</span>
-            {' '}(presupuesto {fmtUsdCompact(r.valorHorizontePpto, { k: true })}, <span className={`tnum font-semibold ${tono(r.difHorizonte)}`}>{signoK(r.difHorizonte)}</span>{sinAportes && ' por el rendimiento a hoy'})
-          </p>
-        );
-      })()}
-      <MetaForecast presupuesto={presupuesto} resumen={resumen} />
+      {motivo && <p className="px-4 pb-3 text-[11px] text-ink-500 border-t border-line pt-2.5" title={motivo.title}>{motivo.texto}</p>}
     </Card>
   );
 }
