@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente,
+  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente, cantidadAlCorte,
   sugerirDividendosHistoricos, sugerirCuponesHistoricos,
   type PosicionParaCobro,
 } from './_cobros_pendientes';
@@ -249,5 +249,51 @@ describe('cronogramaVigente', () => {
     expect(cronogramaVigente([], '2026-10-14')).toBe(false);
     expect(cronogramaVigente(null, '2026-10-14')).toBe(false);
     expect(cronogramaVigente([{ fecha: 'xx', interes: 0.04 }], '2026-10-14')).toBe(false);
+  });
+});
+
+describe('cantidadAlCorte (solo cobra quien tenía la acción antes del ex-dividendo)', () => {
+  const movs = [
+    { tipo: 'compra', cantidad: 38, fecha: '2026-09-28' },
+    { tipo: 'compra', cantidad: 2, fecha: '2026-10-05' },
+  ];
+  it('compras posteriores al ex-dividendo no cuentan', () => {
+    expect(cantidadAlCorte(40, movs, '2026-09-15')).toBe(0);
+  });
+  it('lo comprado ANTES del corte sí cuenta; lo posterior se resta de la cantidad actual', () => {
+    expect(cantidadAlCorte(172, [{ tipo: 'compra', cantidad: 9, fecha: '2026-10-12' }], '2026-10-09')).toBe(163);
+  });
+  it('la compra del mismo día del ex-dividendo no tiene derecho (liquida después)', () => {
+    expect(cantidadAlCorte(10, [{ tipo: 'compra', cantidad: 4, fecha: '2026-09-15' }], '2026-09-15')).toBe(6);
+  });
+  it('una venta posterior al corte devuelve las unidades que sí tenías', () => {
+    expect(cantidadAlCorte(5, [{ tipo: 'venta', cantidad: 5, fecha: '2026-10-01' }], '2026-09-15')).toBe(10);
+  });
+  it('robusto a historial parcial: solo se mira lo posterior al corte, no se suma desde cero', () => {
+    expect(cantidadAlCorte(148, [{ tipo: 'compra', cantidad: 100, fecha: '2026-08-14' }], '2026-10-09')).toBe(148);
+  });
+  it('sin corte (pago estimado) o sin movimientos → cantidad actual', () => {
+    expect(cantidadAlCorte(40, movs, null)).toBe(40);
+    expect(cantidadAlCorte(40, undefined, '2026-09-15')).toBe(40);
+  });
+});
+
+describe('sugerirDividendoPendiente con fecha de corte', () => {
+  const div = (over: Partial<DividendoInfo> = {}): DividendoInfo =>
+    ({ proximaFecha: '2026-10-07', montoPorAccion: 0.85, estado: 'declarado', frecuenciaAnual: 4, fechaCorte: '2026-09-15', ...over });
+  const cedear = pos({ tipo: 'cedear', ticker: 'MRK', cantidad: 40, ratio_cedear: 5 });
+
+  it('comprado después del ex-dividendo → no sugiere (caso real Herencia/MRK)', () => {
+    const movs = [{ tipo: 'compra', cantidad: 38, fecha: '2026-09-28' }, { tipo: 'compra', cantidad: 2, fecha: '2026-10-05' }];
+    expect(sugerirDividendoPendiente(cedear, div(), '2026-10-10', movs)).toBeNull();
+  });
+  it('parte comprada antes y parte después → solo cuenta la anterior, y la nota lo aclara', () => {
+    const movs = [{ tipo: 'compra', cantidad: 10, fecha: '2026-10-01' }];
+    const r = sugerirDividendoPendiente(cedear, div(), '2026-10-10', movs)!;
+    expect(r.monto).toBe(+(0.85 * 30 / 5).toFixed(2));
+    expect(r.nota).toContain('después del ex-dividendo');
+  });
+  it('sin movimientos conocidos se comporta como antes', () => {
+    expect(sugerirDividendoPendiente(cedear, div(), '2026-10-10')!.monto).toBe(+(0.85 * 40 / 5).toFixed(2));
   });
 });
