@@ -61,8 +61,12 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
   (TLCUD era otra emisión; MIC3D y CS51D con cupón/frecuencia errados; 8 ON de 2026 —BF48D, RC5CD, TLCWD, OLC6D, SIC2D,
   NPCED, TTCED, IRCQD— con **cupón a la mitad: IOL calcula tasa/4 sobre fechas semestrales**). Se corrigieron a mano con el
   aviso de resultados / suplemento y quedaron marcados en `fuente` ("IOL | corregido …"). Sin corregir por falta de fuente:
-  YM40D, YM41D y TLCMD (flujos faltantes), TLCTD (nombre y datos no coinciden), MGC1D (el Eurobond Pampa 7,5% 2027 fue rescatado). **La actualización mensual no debe pisar filas cuya
-  `fuente` empiece con "IOL | corregido"**, y todo bono nuevo de la cartera conviene verificarlo contra el aviso de la emisión.
+  YM40D, YM41D y TLCMD (flujos faltantes), TLCTD (nombre y datos no coinciden), MGC1D (el Eurobond Pampa 7,5% 2027 fue rescatado). Esas filas están **protegidas en dos niveles**:
+  (1) el trigger `bonos_referencia_proteger_corregidos` (migración 0051) conserva cronograma/emisión/vencimiento/amortizable/
+  valor_residual/fuente si alguien las actualiza sin cambiar la marca — para corregir de nuevo a propósito hay que escribir
+  una `fuente` nueva que también empiece con "IOL | corregido"; (2) la Routine mensual ("Actualización mensual integral
+  bonos_referencia") tiene las reglas R1–R4: saltea las filas corregidas, verifica cada emisión nueva contra el aviso de
+  resultados/suplemento antes de cargarla y reporta anomalías de coherencia del catálogo.
 - El cron (`refresh-all`) sugiere los cupones con la **fecha exacta del cronograma** cuando está vigente; si no hay cronograma,
   cae al cálculo por mes (día 1) con los campos cargados en la posición.
 
