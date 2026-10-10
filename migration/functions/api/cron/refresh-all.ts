@@ -2,7 +2,7 @@ import { type Env, json, preflight, guard, sbSelect, sbRpc, tokenInterno, requir
 import { DEFAULT_CIK } from '../_edgar';
 import {
   sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente,
-  type PosicionParaCobro, type FlujoCronograma, type CobroPendienteSugerido,
+  type PosicionParaCobro, type FlujoCronograma, type CobroPendienteSugerido, type MovCantidad,
 } from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
 
@@ -147,6 +147,19 @@ export const onRequestGet = guard(async ({ request, env }) => {
   const yaCubiertoMes = (posicionId: string, tipo: string, fecha: string) =>
     existentes.some(e => e.posicion_id === posicionId && e.tipo === tipo && e.fecha.slice(0, 7) === fecha.slice(0, 7));
 
+  // Movimientos recientes de las posiciones de renta variable: sirven para contar solo las unidades que se tenían al ex-dividendo
+  // (ver cantidadAlCorte). 150 días cubren el hueco ex-dividendo → pago de cualquier calendario trimestral.
+  const movsPorPos = new Map<string, MovCantidad[]>();
+  const eqIds = pos.filter(p => p.tipo !== 'bono' && p.tipo !== 'cash' && p.cantidad > 0).map(p => p.id);
+  if (eqIds.length) {
+    try {
+      const desdeMov = new Date(Date.parse(hoy) - 150 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const filas = await sbSelect<MovCantidad & { posicion_id: string }>(env, 'movimientos',
+        `select=posicion_id,tipo,cantidad,fecha&fecha=gte.${desdeMov}&posicion_id=in.(${eqIds.join(',')})`);
+      for (const f of filas) (movsPorPos.get(f.posicion_id) ?? movsPorPos.set(f.posicion_id, []).get(f.posicion_id)!).push(f);
+    } catch { /* sin movimientos: se usa la cantidad actual (comportamiento anterior) */ }
+  }
+
   const sugerencias: CobroPendienteSugerido[] = [];
   for (const p of pos) {
     if (p.tipo === 'bono') {
@@ -161,7 +174,7 @@ export const onRequestGet = guard(async ({ request, env }) => {
       if (s && !yaCubierto(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
       continue;
     }
-    const s = sugerirDividendoPendiente(p, divPorTicker[p.ticker.toUpperCase()] ?? null, hoy);
+    const s = sugerirDividendoPendiente(p, divPorTicker[p.ticker.toUpperCase()] ?? null, hoy, movsPorPos.get(p.id));
     if (s && !yaCubierto(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
   }
   for (const sug of sugerencias) {

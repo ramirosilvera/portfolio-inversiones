@@ -57,9 +57,11 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
 
 ## Notas de datos (catálogo de renta fija)
 
-- `bonos_referencia` se alimenta de IOL y **no es fuente primaria**: el 2026-10-10 se encontraron 3 cronogramas equivocados
-  (TLCUD era otra emisión; MIC3D y CS51D con cupón/frecuencia errados). Se corrigieron a mano con el aviso de resultados /
-  suplemento y quedaron marcados en `fuente` ("IOL | corregido …"). **La actualización mensual no debe pisar filas cuya
+- `bonos_referencia` se alimenta de IOL y **no es fuente primaria**: el 2026-10-10 se encontraron 11 cronogramas equivocados
+  (TLCUD era otra emisión; MIC3D y CS51D con cupón/frecuencia errados; 8 ON de 2026 —BF48D, RC5CD, TLCWD, OLC6D, SIC2D,
+  NPCED, TTCED, IRCQD— con **cupón a la mitad: IOL calcula tasa/4 sobre fechas semestrales**). Se corrigieron a mano con el
+  aviso de resultados / suplemento y quedaron marcados en `fuente` ("IOL | corregido …"). Sin corregir por falta de fuente:
+  YM40D, YM41D y TLCMD (flujos faltantes), TLCTD (nombre y datos no coinciden), MGC1D (el Eurobond Pampa 7,5% 2027 fue rescatado). **La actualización mensual no debe pisar filas cuya
   `fuente` empiece con "IOL | corregido"**, y todo bono nuevo de la cartera conviene verificarlo contra el aviso de la emisión.
 - El cron (`refresh-all`) sugiere los cupones con la **fecha exacta del cronograma** cuando está vigente; si no hay cronograma,
   cae al cálculo por mes (día 1) con los campos cargados en la posición.

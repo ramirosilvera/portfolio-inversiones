@@ -20,6 +20,9 @@ export interface DividendoInfo {
   montoPorAccion: number | null;   // USD por acción del SUBYACENTE, bruto (sin ratio CEDEAR ni retención)
   estado: 'declarado' | 'estimado' | 'sin-dato';
   frecuenciaAnual: number | null;  // pagos/año, inferido de los últimos ~370 días de historial
+  // Ex-dividend date del pago DECLARADO: quien no tenía la acción antes de esta fecha no cobra. null si el pago es estimado
+  // (no hay fecha de corte conocida todavía). La usa el cron para contar solo lo que se tenía al corte.
+  fechaCorte?: string | null;
 }
 
 // Puro y testeado: recibe `hoy` como parámetro (nunca Date.now() adentro) para poder testear
@@ -46,7 +49,7 @@ export function proyectarDividendo(historical: DividendEvent[], hoy: string): Di
   const margen = new Date(hoy); margen.setDate(margen.getDate() - 7);
   const margenStr = margen.toISOString().slice(0, 10);
   if (fechaRef && fechaRef >= margenStr) {
-    return { proximaFecha: fechaRef, montoPorAccion: montoUltimo, estado: 'declarado', frecuenciaAnual };
+    return { proximaFecha: fechaRef, montoPorAccion: montoUltimo, estado: 'declarado', frecuenciaAnual, fechaCorte: ultimo.date };
   }
 
   // Si no, ESTIMAMOS el próximo por la cadencia histórica (intervalo típico entre pagos), sumando

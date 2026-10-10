@@ -1,6 +1,6 @@
 import { type Env, json, preflight, guard, sbSelect, sbRpc, cacheFresh, cacheLast, sbUpsert, requireCronSecret } from '../_shared';
 import { fetchDividendos, type DividendEvent } from '../_dividendos';
-import { sugerirDividendosHistoricos, sugerirCuponesHistoricos, type PosicionParaCobro } from '../_cobros_pendientes';
+import { sugerirDividendosHistoricos, sugerirCuponesHistoricos, type PosicionParaCobro, type MovCantidad } from '../_cobros_pendientes';
 
 // GET /api/cron/backfill-cobros?desde=2026-01-01&hasta=2026-07-30
 // Carga HISTÓRICA (una sola vez / a demanda, no cada 30 min como refresh-all): recorre TODO el
@@ -83,9 +83,20 @@ export const onRequestGet = guard(async ({ request, env }) => {
     if (!historicoPorTicker[t]) sinHistorial++;
   }));
 
+  // Movimientos desde `desde`: para contar solo las unidades que se tenían al ex-dividendo de cada pago (ver cantidadAlCorte).
+  const movsPorPos = new Map<string, MovCantidad[]>();
+  const eqIds = equities.map(p => p.id);
+  if (eqIds.length) {
+    try {
+      const filas = await sbSelect<MovCantidad & { posicion_id: string }>(env, 'movimientos',
+        `select=posicion_id,tipo,cantidad,fecha&fecha=gte.${desde}&posicion_id=in.(${eqIds.join(',')})`);
+      for (const f of filas) (movsPorPos.get(f.posicion_id) ?? movsPorPos.set(f.posicion_id, []).get(f.posicion_id)!).push(f);
+    } catch { /* sin movimientos: cantidad actual (comportamiento anterior) */ }
+  }
+
   for (const p of equities) {
     const historical = historicoPorTicker[p.ticker.toUpperCase()] ?? null;
-    for (const sug of sugerirDividendosHistoricos(p, historical, desde, hasta)) {
+    for (const sug of sugerirDividendosHistoricos(p, historical, desde, hasta, movsPorPos.get(p.id))) {
       if (yaCubierto(sug.posicion_id, sug.tipo, sug.fecha)) continue;
       try {
         await sbRpc(env, 'insertar_cobro_pendiente_cron', {

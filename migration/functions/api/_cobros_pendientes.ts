@@ -19,6 +19,24 @@ export interface PosicionParaCobro {
   fecha_compra?: string | null;
 }
 
+// Movimiento mínimo para saber cuántas unidades se tenían en una fecha (compra +, venta −, ajuste con su signo).
+export interface MovCantidad { tipo: string; cantidad: number; fecha: string }
+
+// Unidades que se tenían ANTES de `corte` (el ex-dividendo): cantidad actual menos lo que entró desde esa fecha (más lo que
+// salió). Se retrocede desde la cantidad ACTUAL en vez de sumar desde cero a propósito: posiciones con historial parcial (carga
+// inicial sin movimiento de compra) siguen dando el número correcto. Sin fecha de corte o sin movimientos → cantidad actual.
+export function cantidadAlCorte(actual: number, movs: MovCantidad[] | undefined, corte: string | null | undefined): number {
+  if (!corte || !movs?.length) return actual;
+  let delta = 0;
+  for (const m of movs) {
+    if (m.fecha < corte) continue;
+    if (m.tipo === 'compra') delta += m.cantidad;
+    else if (m.tipo === 'venta') delta -= m.cantidad;
+    else if (m.tipo === 'ajuste') delta += m.cantidad;
+  }
+  return Math.max(0, actual - delta);
+}
+
 export interface CobroPendienteSugerido {
   portfolio_id: string;
   posicion_id: string;
@@ -33,7 +51,7 @@ export interface CobroPendienteSugerido {
 // monto que da el proveedor es del SUBYACENTE, bruto: para un CEDEAR hay que dividir por el ratio
 // de conversión (ej. 20:1) — es el error más grande posible acá (un orden de magnitud), mucho mayor
 // que la retención de impuestos, que queda a criterio del usuario al confirmar.
-export function sugerirDividendoPendiente(pos: PosicionParaCobro, div: DividendoInfo | null, hoy: string): CobroPendienteSugerido | null {
+export function sugerirDividendoPendiente(pos: PosicionParaCobro, div: DividendoInfo | null, hoy: string, movs?: MovCantidad[]): CobroPendienteSugerido | null {
   // accion_ar (BYMA, ej. GGAL local) es un instrumento DISTINTO del ADR/CEDEAR que pueda tener el
   // mismo ticker en otro portfolio — sin relación de conversión conocida ni fuente de datos para
   // acciones locales. Si no se excluye acá, un ticker compartido (ej. GGAL como 'accion' en un
@@ -53,12 +71,16 @@ export function sugerirDividendoPendiente(pos: PosicionParaCobro, div: Dividendo
   // chica) pasa el `>0` en crudo pero redondea a 0.00, y la tabla lo rechaza (`monto > 0` en la
   // constraint) — sin este orden, la RPC fallaba en silencio (atrapado por el catch del cron) por
   // una sugerencia que de entrada no valía la pena insertar.
-  const montoBruto = (div.montoPorAccion * pos.cantidad) / divisor;
+  // Solo cobra quien tenía la acción ANTES del ex-dividendo: las compras posteriores no cuentan para este pago.
+  const cantidad = cantidadAlCorte(pos.cantidad, movs, div.fechaCorte);
+  if (!(cantidad > 0)) return null;
+  const montoBruto = (div.montoPorAccion * cantidad) / divisor;
   const monto = +montoBruto.toFixed(2);
   if (!(monto > 0)) return null;
 
   const fuente = div.estado === 'declarado' ? 'declarado por el proveedor' : 'estimado por cadencia histórica (sin fecha confirmada por el proveedor)';
-  const calculo = `US$${div.montoPorAccion} por acción del subyacente × ${pos.cantidad}` + (pos.tipo === 'cedear' ? ` ÷ ratio ${pos.ratio_cedear}` : '');
+  const alCorte = cantidad !== pos.cantidad ? ` (las ${pos.cantidad - cantidad} restantes se compraron después del ex-dividendo ${div.fechaCorte})` : '';
+  const calculo = `US$${div.montoPorAccion} por acción del subyacente × ${cantidad}${alCorte}` + (pos.tipo === 'cedear' ? ` ÷ ratio ${pos.ratio_cedear}` : '');
   return {
     portfolio_id: pos.portfolio_id, posicion_id: pos.id, ticker: pos.ticker, tipo: 'dividendo',
     fecha: div.proximaFecha, monto,
@@ -115,7 +137,7 @@ export function sugerirCuponPendiente(pos: PosicionParaCobro, hoy: string): Cobr
 // declarado), acá cada evento es un pago DECLARADO real del historial del proveedor: no hay
 // estimación posible para una fecha que ya pasó.
 export function sugerirDividendosHistoricos(
-  pos: PosicionParaCobro, historical: DividendEvent[] | null, desde: string, hasta: string,
+  pos: PosicionParaCobro, historical: DividendEvent[] | null, desde: string, hasta: string, movs?: MovCantidad[],
 ): CobroPendienteSugerido[] {
   if (pos.tipo === 'bono' || pos.tipo === 'cash' || pos.tipo === 'accion_ar' || !(pos.cantidad > 0)) return [];
   if (!historical?.length) return [];
@@ -130,9 +152,12 @@ export function sugerirDividendosHistoricos(
     if (!fecha || fecha < desde || fecha > hasta) continue;
     const montoPorAccion = ev.adjDividend ?? ev.dividend ?? null;
     if (montoPorAccion == null) continue;
-    const monto = +((montoPorAccion * pos.cantidad) / divisor).toFixed(2);
+    // Unidades con derecho = las que se tenían antes del ex-dividendo de ESTE evento (no la cantidad de hoy).
+    const cantidad = cantidadAlCorte(pos.cantidad, movs, ev.date);
+    if (!(cantidad > 0)) continue;
+    const monto = +((montoPorAccion * cantidad) / divisor).toFixed(2);
     if (!(monto > 0)) continue;
-    const calculo = `US$${montoPorAccion} por acción del subyacente × ${pos.cantidad}` + (pos.tipo === 'cedear' ? ` ÷ ratio ${pos.ratio_cedear}` : '');
+    const calculo = `US$${montoPorAccion} por acción del subyacente × ${cantidad}` + (pos.tipo === 'cedear' ? ` ÷ ratio ${pos.ratio_cedear}` : '');
     out.push({
       portfolio_id: pos.portfolio_id, posicion_id: pos.id, ticker: pos.ticker, tipo: 'dividendo',
       fecha, monto,
