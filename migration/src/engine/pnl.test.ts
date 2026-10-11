@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { realizedPnl } from './pnl';
+import { realizedPnl, pnlTotal, rentaCobrada, cobrosSinAcreditar } from './pnl';
 import type { Movimiento } from '../types/domain';
 
 const mv = (o: Partial<Movimiento>): Movimiento => ({
@@ -56,5 +56,28 @@ describe('realizedPnl', () => {
       mv({ ticker: 'B', tipo: 'venta', cantidad: 1000, precio: 0.52, fecha: '2026-07-01' }),
     ]);
     expect(r.porTicker.B).toBe(20);   // sin el factor daría −480
+  });
+});
+
+describe('P&L total = no realizado + realizado + renta cobrada', () => {
+  const c = (tipo: string, estado: string, monto: number, liq?: string | null) => ({ tipo, estado, monto, liquidez_mov_id: liq ?? null });
+
+  it('suma dividendos e intereses CONFIRMADOS; la amortización (capital) no es renta', () => {
+    const r = pnlTotal(100, 50, [c('dividendo', 'disponible', 10), c('interes', 'reinvertido', 5), c('amortizacion', 'disponible', 400)]);
+    expect(r.renta).toBe(15);
+    expect(r.total).toBe(165);
+  });
+  it('pendientes y descartados no cuentan', () => {
+    expect(rentaCobrada([c('dividendo', 'pendiente', 10), c('interes', 'descartado', 7)])).toBe(0);
+  });
+  it('sin cobros, el total es no realizado + realizado', () => {
+    expect(pnlTotal(-20, 5, [])).toEqual({ noRealizado: -20, realizado: 5, renta: 0, total: -15 });
+  });
+  it('cobrosSinAcreditar: solo renta DISPONIBLE sin crédito en Liquidez (los reinvertidos ya son posiciones)', () => {
+    const r = cobrosSinAcreditar([
+      c('dividendo', 'disponible', 1.53), c('dividendo', 'disponible', 2.21, 'mov-1'),
+      c('interes', 'reinvertido', 27.72), c('amortizacion', 'disponible', 100), c('dividendo', 'pendiente', 9),
+    ]);
+    expect(r).toBe(1.53);
   });
 });

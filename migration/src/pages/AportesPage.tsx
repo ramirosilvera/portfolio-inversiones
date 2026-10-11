@@ -4,6 +4,8 @@ import { usePortfolios } from '../hooks/usePortfolios';
 import { useAportes, useAporteMutations } from '../hooks/useAportes';
 import { useMacro } from '../hooks/usePosiciones';
 import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
+import { useCobros } from '../hooks/useCobros';
+import { cobrosSinAcreditar } from '../engine/pnl';
 import { resumenAportes } from '../engine/aportes';
 import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtArs, fmtPct, fmtPctSigno } from '../components/ui';
 import type { Aporte, AporteTipo } from '../types/domain';
@@ -97,6 +99,8 @@ export function AportesPage() {
 
   // Detalle completo de rendimiento por año — MISMO hook que usa el resumen del Dashboard
   // (RendimientoPorAnioCard), nunca recalculado acá con su propia copia (regla de oro #1).
+  const { data: cobrosRend = [] } = useCobros(active?.id);
+  const sinAcreditar = useMemo(() => cobrosSinAcreditar(cobrosRend), [cobrosRend]);
   const { porAnio, anioActual, sinPrecio: sinPrecioRend, preciosPendientes, valuacionDeMercado, hayDatos, cargando } = useRendimientoAnual(active?.id);
   const [filtroAnio, setFiltroAnio] = useState<AnioFiltro>('todos');
   const [sortAnio, setSortAnio] = useState<{ key: AnioSortKey; dir: 'asc' | 'desc' }>({ key: 'anio', dir: 'desc' });
@@ -285,6 +289,12 @@ export function AportesPage() {
                     * {r.anio}: casi todo el capital entró hace pocos días y el % ponderado por tiempo exagera. Sobre el capital aportado: {fmtPctSigno(r.pnlSobreCapital, 1)} (P&L {fmtUsd(r.pnl, 0)}).
                   </p>
                 ))}
+                {sinAcreditar > 0.5 && (
+                  <p className="px-4 pt-3 text-[11px] text-warn"
+                    title="El rendimiento sale del patrimonio (posiciones + Liquidez). Un dividendo o cupón suma solo si su efectivo está en la Liquidez. Si lo cobraste y no figura ahí, acreditalo desde Cobros — salvo que ya esté en el saldo por una conciliación con el broker, para no contarlo dos veces.">
+                    Hay {fmtUsd(sinAcreditar, 2)} de dividendos/intereses confirmados sin acreditar en Liquidez: suman al rendimiento solo si ese efectivo ya está en tu saldo.
+                  </p>
+                )}
                 <p className="px-4 py-3 text-[11px] text-ink-500">Rendimiento pasado, no anualizado ni proyectado. Los años en "—" se completan con el valor diario que registra la app.</p>
               </>
             )}
