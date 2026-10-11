@@ -12,7 +12,8 @@ import { useAporteMutations } from '../hooks/useAportes';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { PortfolioReview } from '../components/PortfolioReview';
 import { Card, CardHeader, Button, Badge, Stat, Field, NumField, inputCls, Empty, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, fmtArs } from '../components/ui';
-import { realizedPnl } from '../engine/pnl';
+import { realizedPnl, pnlTotal } from '../engine/pnl';
+import { useCobros } from '../hooks/useCobros';
 import { cantidadPorMonto, aplicarObjetivo, redondearPct, resolverObjetivosSimultaneos, pesoResultanteConjunto, TOLERANCIA_OBJETIVO, type SimTarget } from '../engine/rebalance';
 import { UpdatedAt } from '../components/UpdatedAt';
 import { unitValueUSD } from '../lib/valuation';
@@ -63,6 +64,8 @@ export function PosicionesPage() {
   const tickersTenidos = useMemo(() => posiciones.filter(p => p.cantidad > 0 && p.tipo !== 'cash').map(p => p.ticker), [posiciones]);
   const { data: allMovs = [] } = useMovimientos(active?.id);
   const realized = useMemo(() => realizedPnl(allMovs), [allMovs]);
+  const { data: cobrosPnl = [] } = useCobros(active?.id);
+  const pnlDetalle = useMemo(() => pnlTotal(pnlNoReal, realized.total, cobrosPnl), [pnlNoReal, realized, cobrosPnl]);
 
   const [showForm, setShowForm] = useState(false);
   const [histTicker, setHistTicker] = useState<string | null>(null);
@@ -123,11 +126,13 @@ export function PosicionesPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         <Stat label="Valor de mercado" value={fmtUsdCompact(totalMkt)} />
         <Stat label="Costo" value={fmtUsdCompact(costoTotal)} />
         <Stat label="P&L no realizado" value={fmtUsdCompact(pnlNoReal)} delta={costoTotal > 0 ? pnlNoReal / costoTotal : undefined} hint="ganancia/pérdida de lo que tenés hoy" />
         <Stat label="P&L realizado" value={fmtUsdCompact(realized.total)} hint="resultado de las ventas (según historial)" />
+        <Stat label="Renta cobrada" value={fmtUsdCompact(pnlDetalle.renta)} hint="dividendos + intereses confirmados (la amortización es capital, no suma)" />
+        <Stat label="P&L total" value={<span className={pnlDetalle.total >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnlDetalle.total)}</span>} delta={costoTotal > 0 ? pnlDetalle.total / costoTotal : undefined} hint="no realizado + realizado + renta" />
       </div>
 
       <Card>

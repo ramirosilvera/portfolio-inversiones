@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, Flame, LayoutGrid, Plus, Check, Star } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { useMacro, useDrawdowns, useBonosPrecios } from '../hooks/usePosiciones';
+import { useMacro, useDrawdowns, useBonosPrecios, useMovimientos } from '../hooks/usePosiciones';
+import { pnlTotal, realizedPnl } from '../engine/pnl';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { useBonosDestacados } from '../hooks/useBonosDestacados';
 import { calcularBonoReferencia } from '../engine/rentaFija';
@@ -61,6 +62,9 @@ export function DashboardPage() {
   const { data: macro = {} } = useMacro();
   const { data: flujo = [] } = useFlujo();
   const { data: cobros = [] } = useCobros(active?.id);
+  // P&L total: lo no realizado (patrimonio − costo) + lo realizado en ventas + la renta cobrada (dividendos e intereses).
+  const { data: movsPnl = [] } = useMovimientos(active?.id);
+  const pnlDetalle = useMemo(() => pnlTotal(pnl, realizedPnl(movsPnl).total, cobros), [pnl, movsPnl, cobros]);
   const resumenCobrado = useMemo(() => resumenCobros(cobros), [cobros]);
   // Forecast: el presupuesto congelado vive en proyeccion_inputs (se fija en /forecast). El resumen sale
   // de engine/presupuesto.calcularForecast — la MISMA función que usa la página, así los números no
@@ -215,7 +219,8 @@ export function DashboardPage() {
         {/* Rendimiento total / del año en curso vivían acá antes — se sacaron por redundantes: esa
             misma info (más completa, por año) ya está en la tarjeta "Rendimiento por año" de abajo.
             Solo queda P&L, que no se repite en ningún otro lado. */}
-        <Stat label="P&L" value={<span className={pnl >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnl)}</span>} delta={costo > 0 ? pnl / costo : undefined} />
+        <Stat label="P&L total" value={<span className={pnlDetalle.total >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnlDetalle.total)}</span>} delta={costo > 0 ? pnlDetalle.total / costo : undefined}
+          hint={`No realizado ${fmtUsdCompact(pnlDetalle.noRealizado)} · realizado ${fmtUsdCompact(pnlDetalle.realizado)} · renta cobrada ${fmtUsdCompact(pnlDetalle.renta)}`} />
       </div>
 
       {/* Cuerpo personalizable: agregar/quitar/reordenar tarjetas — ver components/dashboard/. El
