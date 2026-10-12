@@ -10,7 +10,7 @@ import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { useChartTheme } from '../hooks/usePrefs';
 import { couponCalendar, capitalCalendar, agruparCuotasPorPosicion, type CouponBond, type CapitalBond } from '../engine/coupons';
 import { dividendCalendar, dividendoAnualEstimado, type DividendPosicion } from '../engine/dividendProjection';
-import { resumenCobros, saldoInvertible } from '../engine/cobros';
+import { resumenCobros, saldoInvertible, acreditadoEnLiquidez } from '../engine/cobros';
 import { Card, CardHeader, Button, Badge, Field, Stat, Empty, ViewToggle, inputCls, fmtUsd, fmtPct } from '../components/ui';
 import type { Cobro, CobroInversion, CobroTipo, Posicion } from '../types/domain';
 
@@ -40,9 +40,10 @@ export function CuponesPage() {
 function CobradoTab({ portfolioId }: { portfolioId: string }) {
   const { data: posiciones = [] } = usePosiciones(portfolioId);
   const { data: cobros, isLoading, registrar, registrarAmortizacion, registrarAmortizacionVR, marcarEstado, confirmarPendiente, descartarPendiente, remove } = useCobros(portfolioId);
-  const { data: inversiones, marcarInversion, remove: removeInversion } = useCobrosInversiones(portfolioId);
+  const { data: inversiones, marcarInversion, pasarALiquidez, remove: removeInversion } = useCobrosInversiones(portfolioId);
   const resumen = useMemo(() => resumenCobros(cobros), [cobros]);
-  const saldo = useMemo(() => saldoInvertible(resumen.disponible, inversiones), [resumen.disponible, inversiones]);
+  const acreditado = useMemo(() => acreditadoEnLiquidez(cobros), [cobros]);
+  const saldo = useMemo(() => saldoInvertible(resumen.disponible, inversiones, acreditado), [resumen.disponible, inversiones, acreditado]);
   // Los 'pendiente' (sugeridos por el cron) van en su propia bandeja, nunca en el historial normal
   // — ahí el toggle Disponible/Reinvertido no aplicaría y se prestaría a confusión. 'descartado'
   // no se muestra en ningún lado (quedó resuelto), pero la fila sigue en la base para que el cron
@@ -134,7 +135,7 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
         <PendientesCard pendientes={pendientes} acreditarDefault={tieneLiquidez} onConfirmar={confirmarPendiente} onDescartar={descartarPendiente} />
       )}
 
-      <SaldoInvertibleCard saldo={saldo} inversiones={inversiones} onMarcar={marcarInversion} onBorrar={removeInversion} />
+      <SaldoInvertibleCard saldo={saldo} inversiones={inversiones} onMarcar={marcarInversion} onPasar={pasarALiquidez} onBorrar={removeInversion} />
 
       <Card>
         <CardHeader title="Registrar un cobro" sub="Dividendo/interés no tocan la posición; amortización sí, según lo que muestre tu bróker." />
@@ -353,9 +354,10 @@ function PendienteRow({ p, acreditarDefault, onConfirmar, onDescartar }: {
 // confirmados); esto es lo que faltaba — decidir CUÁNTO de ese saldo ya se puso a trabajar, sin
 // tener que elegir a mano cuáles filas puntuales de cobros "son" esa plata (nunca coincide exacto,
 // porque junta varios dividendos chicos). Cada "marcar inversión" resta del saldo bruto.
-function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onBorrar }: {
+function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onPasar, onBorrar }: {
   saldo: ReturnType<typeof saldoInvertible>; inversiones: CobroInversion[];
   onMarcar: (input: { monto: number; fecha: string; nota?: string | null }) => Promise<void>;
+  onPasar: (input: { monto: number; fecha: string; nota?: string | null }) => Promise<void>;
   onBorrar: (id: string) => Promise<void>;
 }) {
   const [monto, setMonto] = useState('');
@@ -378,8 +380,24 @@ function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onBorrar }: {
     finally { setBusy(false); }
   };
 
+  // Pasar el saldo (o parte) a la posición LIQUIDEZ de la cartera: el efectivo pasa a figurar como posición y sale del saldo.
+  const [montoLiq, setMontoLiq] = useState('');
+  const [busyLiq, setBusyLiq] = useState(false);
+  const [errLiq, setErrLiq] = useState<string | null>(null);
+  const pasar = async () => {
+    setErrLiq(null);
+    const m = Number(montoLiq) || +saldo.pasable.toFixed(2);
+    if (!(m > 0)) { setErrLiq('No hay saldo para pasar a Liquidez.'); return; }
+    if (m - saldo.pasable > 0.005) { setErrLiq(`Ese monto supera el saldo disponible (${fmtUsd(saldo.pasable, 2)}).`); return; }
+    if (!window.confirm(`¿Pasar ${fmtUsd(m, 2)} a la posición Liquidez de la cartera?\n\nSi ese efectivo ya figura en tu Liquidez (por ejemplo, porque la conciliaste con el broker), NO lo pases: se contaría dos veces.`)) return;
+    setBusyLiq(true);
+    try { await onPasar({ monto: m, fecha, nota: 'Saldo de cobros pasado a Liquidez' }); setMontoLiq(''); }
+    catch (e) { setErrLiq(e instanceof Error ? e.message : 'No se pudo pasar a Liquidez'); }
+    finally { setBusyLiq(false); }
+  };
+
   const borrarInversion = async (i: CobroInversion) => {
-    if (!window.confirm('¿Deshacer esta inversión? El monto vuelve al saldo disponible.')) return;
+    if (!window.confirm(i.liquidez_mov_id ? '¿Deshacer este pase? El efectivo sale de la Liquidez y el monto vuelve al saldo disponible.' : '¿Deshacer esta inversión? El monto vuelve al saldo disponible.')) return;
     setDeletingId(i.id); setDeleteErr(null);
     try { await onBorrar(i.id); }
     catch (e) { setDeleteErr(e instanceof Error ? e.message : 'No se pudo deshacer'); }
@@ -392,7 +410,7 @@ function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onBorrar }: {
       <div className="p-4 space-y-3">
         <div className="flex items-baseline gap-3 flex-wrap">
           <span className="text-2xl font-bold text-ink-900 tnum">{fmtUsd(saldo.neto, 0)}</span>
-          <span className="text-xs text-ink-600">nuevo saldo · de {fmtUsd(saldo.disponibleBruto, 0)} cobrado ya invertiste {fmtUsd(saldo.invertido, 0)}</span>
+          <span className="text-xs text-ink-600">nuevo saldo · de {fmtUsd(saldo.disponibleBruto, 0)} cobrado{saldo.acreditado > 0 && <>, {fmtUsd(saldo.acreditado, 0)} ya acreditado en Liquidez</>} ya invertiste o pasaste {fmtUsd(saldo.invertido, 0)}</span>
           {saldo.neto > 0 && (
             <Link to="/posiciones?simular=1" className="ml-auto shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border border-line bg-surface text-ink-800 hover:bg-canvas hover:border-celeste-300 transition-all">
               Invertir este saldo →
@@ -409,6 +427,19 @@ function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onBorrar }: {
           <Button onClick={marcar} disabled={busy}><Plus className="w-4 h-4" /> {busy ? 'Guardando…' : 'Marcar inversión'}</Button>
         </div>
         {err && <p className="text-xs text-warn">{err}</p>}
+        {/* Pasar a Liquidez: alternativa a "marcar inversión" cuando todavía no invertiste — el saldo queda como efectivo de la cartera. */}
+        {saldo.pasable > 0.005 && (
+          <div className="rounded-xl border border-line bg-canvas px-3 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm items-end">
+            <p className="col-span-2 sm:col-span-4 text-xs text-ink-600">
+              <b className="text-ink-800">Pasar a Liquidez:</b> el saldo pasa a ser una posición de efectivo (LIQUIDEZ) en tu cartera, suma al patrimonio y sale de este saldo.
+              Después comprás con esa Liquidez desde Posiciones. Si ese efectivo ya está en tu Liquidez, no lo pases.
+            </p>
+            <Field label="Monto a pasar (USD)"><input type="number" value={montoLiq} onChange={e => setMontoLiq(e.target.value)} className={inputCls} placeholder={saldo.pasable.toFixed(2)} /></Field>
+            <div className="sm:col-span-2 text-[11px] text-ink-500 pb-2">Vacío = todo el saldo ({fmtUsd(saldo.pasable, 2)}). Fecha: la de arriba.</div>
+            <Button onClick={pasar} disabled={busyLiq}>{busyLiq ? 'Pasando…' : 'Pasar a Liquidez'}</Button>
+            {errLiq && <p className="col-span-2 sm:col-span-4 text-xs text-warn">{errLiq}</p>}
+          </div>
+        )}
         {deleteErr && <p className="text-xs text-warn">{deleteErr}</p>}
 
         {inversiones.length > 0 && (
@@ -422,6 +453,7 @@ function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onBorrar }: {
                   <div key={i.id} className="px-3 py-2 flex items-center justify-between gap-2 text-sm">
                     <div className="min-w-0">
                       <span className="text-ink-700">{i.fecha}</span>
+                      {i.liquidez_mov_id && <span className="ml-2 text-[10px] rounded-full bg-celeste-100 text-celeste-700 px-1.5 py-0.5 font-semibold">Liquidez</span>}
                       {i.nota && <span className="text-ink-500 ml-2 text-xs">{i.nota}</span>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

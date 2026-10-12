@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { borrarMovimiento } from './usePosiciones';
 import type { CobroInversion } from '../types/domain';
 
 // Ledger de "cuánto del saldo disponible ya se invirtió" — ver 0019_cobros_inversiones.sql y
@@ -8,6 +9,13 @@ import type { CobroInversion } from '../types/domain';
 export function useCobrosInversiones(portfolioId: string | null | undefined) {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ['cobros_inversiones', portfolioId] });
+  // Pasar a Liquidez mueve el efectivo de la cartera: hay que refrescar posiciones y movimientos también.
+  const invalidateLiquidez = () => {
+    invalidate();
+    qc.invalidateQueries({ queryKey: ['posiciones'] });
+    qc.invalidateQueries({ queryKey: ['movimientos'] });
+    qc.invalidateQueries({ queryKey: ['posicion_brokers'] });
+  };
 
   const q = useQuery({
     queryKey: ['cobros_inversiones', portfolioId],
@@ -33,11 +41,30 @@ export function useCobrosInversiones(portfolioId: string | null | undefined) {
       if (error) throw error; invalidate();
     },
 
+    // Pasa parte del saldo disponible a la posición LIQUIDEZ (efectivo de la cartera). Atómico en la base (0052): mueve la
+    // Liquidez, anota el pase en este mismo ledger y valida que el monto no supere el saldo pasable.
+    pasarALiquidez: async (input: { monto: number; fecha: string; nota?: string | null }) => {
+      if (!portfolioId) return;
+      if (!(input.monto > 0)) throw new Error('El monto debe ser mayor a 0.');
+      const { error } = await supabase.rpc('pasar_saldo_a_liquidez', {
+        p_portfolio: portfolioId, p_monto: input.monto, p_fecha: input.fecha, p_nota: input.nota || null,
+      });
+      invalidateLiquidez();
+      if (error) throw new Error(error.message);
+    },
+
     // No es un dato "real" con historial impositivo — es una anotación del usuario ("ya invertí
     // esto"), así que un borrado directo (sin descartado/soft-delete) alcanza para deshacerla.
+    // Si era un pase a Liquidez (liquidez_mov_id), deshacerlo también revierte ese crédito de efectivo: la plata deja
+    // de estar en la Liquidez y vuelve al saldo (mismo criterio que borrar un cobro acreditado, useCobros.remove).
     remove: async (id: string) => {
+      const { data: inv, error: selErr } = await supabase.from('cobros_inversiones').select('liquidez_mov_id').eq('id', id).maybeSingle();
+      if (selErr) throw selErr;
       const { error } = await supabase.from('cobros_inversiones').delete().eq('id', id);
-      if (error) throw error; invalidate();
+      if (error) throw error;
+      try { if (inv?.liquidez_mov_id) await borrarMovimiento(inv.liquidez_mov_id); }
+      catch (e) { throw new Error(`Pase deshecho, pero no se pudo revertir la Liquidez: ${e instanceof Error ? e.message : e}`); }
+      finally { invalidateLiquidez(); }
     },
   };
 }
