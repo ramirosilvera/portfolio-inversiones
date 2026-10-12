@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { CalendarClock, Wallet, Trash2, Plus, Sparkles, Check, X } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
@@ -12,7 +11,7 @@ import { couponCalendar, capitalCalendar, agruparCuotasPorPosicion, type CouponB
 import { dividendCalendar, dividendoAnualEstimado, type DividendPosicion } from '../engine/dividendProjection';
 import { resumenCobros, saldoInvertible, acreditadoEnLiquidez } from '../engine/cobros';
 import { Card, CardHeader, Button, Badge, Field, Stat, Empty, ViewToggle, inputCls, fmtUsd, fmtPct } from '../components/ui';
-import type { Cobro, CobroInversion, CobroTipo, Posicion } from '../types/domain';
+import type { Cobro, CobroTipo, Posicion } from '../types/domain';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -40,7 +39,7 @@ export function CuponesPage() {
 function CobradoTab({ portfolioId }: { portfolioId: string }) {
   const { data: posiciones = [] } = usePosiciones(portfolioId);
   const { data: cobros, isLoading, registrar, registrarAmortizacion, registrarAmortizacionVR, marcarEstado, confirmarPendiente, descartarPendiente, remove } = useCobros(portfolioId);
-  const { data: inversiones, marcarInversion, pasarALiquidez, remove: removeInversion } = useCobrosInversiones(portfolioId);
+  const { data: inversiones, pasarALiquidez, remove: removeInversion } = useCobrosInversiones(portfolioId);
   const resumen = useMemo(() => resumenCobros(cobros), [cobros]);
   const acreditado = useMemo(() => acreditadoEnLiquidez(cobros), [cobros]);
   const saldo = useMemo(() => saldoInvertible(resumen.disponible, inversiones, acreditado), [resumen.disponible, inversiones, acreditado]);
@@ -114,6 +113,35 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
     finally { setBusy(false); }
   };
 
+  // Pasar el saldo disponible a la posición LIQUIDEZ de la cartera (botón de la tarjeta Historial).
+  const [panelPase, setPanelPase] = useState(false);
+  const [montoPase, setMontoPase] = useState('');
+  const [busyPase, setBusyPase] = useState(false);
+  const [errPase, setErrPase] = useState<string | null>(null);
+  const pasar = async () => {
+    setErrPase(null);
+    const m = Number(montoPase) || +saldo.pasable.toFixed(2);
+    if (!(m > 0)) { setErrPase('No hay saldo para pasar a Liquidez.'); return; }
+    if (m - saldo.pasable > 0.005) { setErrPase(`Ese monto supera el saldo disponible (${fmtUsd(saldo.pasable, 2)}).`); return; }
+    if (!window.confirm(`¿Pasar ${fmtUsd(m, 2)} a la posición Liquidez de la cartera?\n\nSi ese efectivo ya figura en tu Liquidez (por ejemplo, porque la conciliaste con el broker), NO lo pases: se contaría dos veces.`)) return;
+    setBusyPase(true);
+    try { await pasarALiquidez({ monto: m, fecha: hoy(), nota: 'Saldo de cobros pasado a Liquidez' }); setMontoPase(''); setPanelPase(false); }
+    catch (e) { setErrPase(e instanceof Error ? e.message : 'No se pudo pasar a Liquidez'); }
+    finally { setBusyPase(false); }
+  };
+  const deshacerPase = async (id: string, esPase: boolean) => {
+    if (!window.confirm(esPase ? '¿Deshacer este pase? El efectivo sale de la Liquidez y el monto vuelve al saldo disponible.' : '¿Deshacer esta inversión marcada? El monto vuelve al saldo disponible.')) return;
+    setDeletingId(id); setDeleteErr(null);
+    try { await removeInversion(id); }
+    catch (e) { setDeleteErr(e instanceof Error ? e.message : 'No se pudo deshacer'); }
+    finally { setDeletingId(null); }
+  };
+  // Cobros confirmados + pases/inversiones del ledger en una sola lista, del más reciente al más viejo.
+  const filasHistorial = useMemo(() => [
+    ...confirmados.map(c => ({ kind: 'cobro' as const, id: c.id, fecha: c.fecha, c })),
+    ...inversiones.map(i => ({ kind: 'pase' as const, id: i.id, fecha: i.fecha, i })),
+  ].sort((a, b) => b.fecha.localeCompare(a.fecha)), [confirmados, inversiones]);
+
   const borrarCobro = async (c: Cobro) => {
     if (!window.confirm(`¿Borrar el registro de cobro de ${c.ticker}?`)) return;
     setDeletingId(c.id); setDeleteErr(null);
@@ -124,9 +152,8 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <Stat label="Cobrado total" value={fmtUsd(resumen.total, 0)} hint="dividendos + intereses + amortizaciones" />
-        <Stat label="Saldo p/ invertir" value={fmtUsd(saldo.neto, 0)} hint={`de ${fmtUsd(resumen.disponible, 0)} disponible, ya invertiste ${fmtUsd(saldo.invertido, 0)}`} />
         <Stat label="Reinvertido" value={fmtUsd(resumen.reinvertido, 0)} />
         <Stat label="Renta (div. + int.)" value={fmtUsd(resumen.porTipo.dividendo + resumen.porTipo.interes, 0)} hint="sin contar amortización (es capital, no renta)" />
       </div>
@@ -134,8 +161,6 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
       {pendientes.length > 0 && (
         <PendientesCard pendientes={pendientes} acreditarDefault={tieneLiquidez} onConfirmar={confirmarPendiente} onDescartar={descartarPendiente} />
       )}
-
-      <SaldoInvertibleCard saldo={saldo} inversiones={inversiones} onMarcar={marcarInversion} onPasar={pasarALiquidez} onBorrar={removeInversion} />
 
       <Card>
         <CardHeader title="Registrar un cobro" sub="Dividendo/interés no tocan la posición; amortización sí, según lo que muestre tu bróker." />
@@ -219,11 +244,32 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
       </Card>
 
       <Card>
-        <CardHeader title="Historial" sub="Marcá Reinvertido solo si sabés en qué activo lo pusiste; descuenta del saldo de arriba. No lo combines con esa tarjeta para la misma plata." />
+        <CardHeader title="Historial"
+          sub="Disponible = efectivo cobrado. Reinvertido = lo pusiste en un activo. Con Pasar a Liquidez, el disponible se convierte en efectivo de tu cartera."
+          right={saldo.pasable > 0.005 ? (
+            <Button variant="ghost" onClick={() => { setPanelPase(v => !v); setErrPase(null); }}>
+              <Wallet className="w-4 h-4" /> Pasar a Liquidez · {fmtUsd(saldo.pasable, 0)}
+            </Button>
+          ) : undefined} />
+        {panelPase && saldo.pasable > 0.005 && (
+          <div className="mx-4 mt-3 rounded-xl border border-line bg-canvas px-3 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm items-end">
+            <p className="col-span-2 sm:col-span-4 text-xs text-ink-600">
+              El saldo pasa a ser la posición <b className="text-ink-800">LIQUIDEZ</b> de tu cartera: suma al patrimonio y después comprás con ella desde Posiciones.
+              Si ese efectivo <b>ya figura</b> en tu Liquidez (p. ej. porque la conciliaste con el broker), no lo pases: se contaría dos veces.
+            </p>
+            <Field label="Monto a pasar (USD)"><input type="number" value={montoPase} onChange={e => setMontoPase(e.target.value)} className={inputCls} placeholder={saldo.pasable.toFixed(2)} /></Field>
+            <p className="sm:col-span-2 text-[11px] text-ink-500 pb-2">Vacío = todo el saldo ({fmtUsd(saldo.pasable, 2)}). Se registra con la fecha de hoy.</p>
+            <Button onClick={pasar} disabled={busyPase}>{busyPase ? 'Pasando…' : 'Pasar'}</Button>
+            {errPase && <p className="col-span-2 sm:col-span-4 text-xs text-warn">{errPase}</p>}
+          </div>
+        )}
+        {saldo.sobregirado && (
+          <p className="px-4 pt-2 text-xs text-warn">Hay más pases/inversiones registrados que saldo disponible (¿se editó o borró un cobro?). Revisá la lista.</p>
+        )}
         {deleteErr && <p className="px-4 pt-2 text-xs text-warn">{deleteErr}</p>}
         {isLoading ? (
           <p className="p-4 text-sm text-ink-600">Cargando…</p>
-        ) : confirmados.length === 0 ? (
+        ) : filasHistorial.length === 0 ? (
           <Empty icon={Wallet} title="Sin cobros registrados">Registrá el primero arriba.</Empty>
         ) : (
           <div className="overflow-x-auto">
@@ -239,21 +285,35 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {confirmados.map(c => (
-                  <tr key={c.id} className="hover:bg-canvas">
-                    <td className="px-4 py-2 text-ink-700">{c.fecha}</td>
-                    <td className="px-3 font-semibold text-ink-900">{c.ticker}</td>
-                    <td className="px-3"><Badge tone={c.tipo === 'amortizacion' ? 'warn' : 'accent'}>{COBRO_TIPO_LABEL[c.tipo]}</Badge></td>
-                    <td className="text-right px-3 tnum font-semibold text-ink-900">{fmtUsd(c.monto, 0)}</td>
+                {filasHistorial.map(f => f.kind === 'cobro' ? (
+                  <tr key={f.id} className="hover:bg-canvas">
+                    <td className="px-4 py-2 text-ink-700">{f.c.fecha}</td>
+                    <td className="px-3 font-semibold text-ink-900">{f.c.ticker}</td>
+                    <td className="px-3"><Badge tone={f.c.tipo === 'amortizacion' ? 'warn' : 'accent'}>{COBRO_TIPO_LABEL[f.c.tipo]}</Badge></td>
+                    <td className="text-right px-3 tnum font-semibold text-ink-900">{fmtUsd(f.c.monto, 0)}</td>
                     <td className="text-center px-3">
-                      <button onClick={() => marcarEstado(c.id, c.estado === 'disponible' ? 'reinvertido' : 'disponible')}
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${c.estado === 'reinvertido' ? 'bg-celeste-100 text-celeste-700 dark:bg-celeste-500/20 dark:text-celeste-300' : 'bg-warn/10 text-warn'}`}>
-                        {c.estado === 'reinvertido' ? 'Reinvertido' : 'Disponible'}
+                      <button onClick={() => marcarEstado(f.c.id, f.c.estado === 'disponible' ? 'reinvertido' : 'disponible')}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${f.c.estado === 'reinvertido' ? 'bg-celeste-100 text-celeste-700 dark:bg-celeste-500/20 dark:text-celeste-300' : 'bg-warn/10 text-warn'}`}>
+                        {f.c.estado === 'reinvertido' ? 'Reinvertido' : 'Disponible'}
                       </button>
                     </td>
                     <td className="px-2 text-right">
-                      <button onClick={() => borrarCobro(c)} disabled={deletingId === c.id}
+                      <button onClick={() => borrarCobro(f.c)} disabled={deletingId === f.c.id}
                         className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9 disabled:opacity-50" title="Borrar" aria-label="Borrar">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={f.id} className="hover:bg-canvas bg-celeste-50/40 dark:bg-celeste-500/5">
+                    <td className="px-4 py-2 text-ink-700">{f.i.fecha}</td>
+                    <td className="px-3 font-semibold text-ink-900">{f.i.liquidez_mov_id ? 'LIQUIDEZ' : '—'}</td>
+                    <td className="px-3"><Badge tone="accent">{f.i.liquidez_mov_id ? 'Pase' : 'Inversión'}</Badge></td>
+                    <td className="text-right px-3 tnum font-semibold text-ink-900">{fmtUsd(f.i.monto, 0)}</td>
+                    <td className="text-center px-3 text-[10px] font-bold text-celeste-700 dark:text-celeste-300">{f.i.liquidez_mov_id ? 'En Liquidez' : 'Invertido'}</td>
+                    <td className="px-2 text-right">
+                      <button onClick={() => deshacerPase(f.i.id, !!f.i.liquidez_mov_id)} disabled={deletingId === f.i.id}
+                        className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9 disabled:opacity-50" title="Deshacer" aria-label="Deshacer">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
@@ -347,130 +407,6 @@ function PendienteRow({ p, acreditarDefault, onConfirmar, onDescartar }: {
         </button>
       </div>
     </div>
-  );
-}
-
-// ── Saldo p/ invertir: el dinero cobrado se va acumulando solo (dividendos/intereses/amortizaciones
-// confirmados); esto es lo que faltaba — decidir CUÁNTO de ese saldo ya se puso a trabajar, sin
-// tener que elegir a mano cuáles filas puntuales de cobros "son" esa plata (nunca coincide exacto,
-// porque junta varios dividendos chicos). Cada "marcar inversión" resta del saldo bruto.
-function SaldoInvertibleCard({ saldo, inversiones, onMarcar, onPasar, onBorrar }: {
-  saldo: ReturnType<typeof saldoInvertible>; inversiones: CobroInversion[];
-  onMarcar: (input: { monto: number; fecha: string; nota?: string | null }) => Promise<void>;
-  onPasar: (input: { monto: number; fecha: string; nota?: string | null }) => Promise<void>;
-  onBorrar: (id: string) => Promise<void>;
-}) {
-  const [monto, setMonto] = useState('');
-  const [fecha, setFecha] = useState(hoy());
-  const [nota, setNota] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [verHistorial, setVerHistorial] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteErr, setDeleteErr] = useState<string | null>(null);
-
-  const marcar = async () => {
-    setErr(null);
-    const m = Number(monto) || 0;
-    if (!(m > 0)) { setErr('Ingresá un monto mayor a 0.'); return; }
-    if (m - saldo.neto > 0.005) { setErr(`Ese monto supera el saldo disponible (${fmtUsd(saldo.neto, 0)}).`); return; }
-    setBusy(true);
-    try { await onMarcar({ monto: m, fecha, nota: nota || null }); setMonto(''); setNota(''); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo registrar'); }
-    finally { setBusy(false); }
-  };
-
-  // Pasar el saldo (o parte) a la posición LIQUIDEZ de la cartera: el efectivo pasa a figurar como posición y sale del saldo.
-  const [montoLiq, setMontoLiq] = useState('');
-  const [busyLiq, setBusyLiq] = useState(false);
-  const [errLiq, setErrLiq] = useState<string | null>(null);
-  const pasar = async () => {
-    setErrLiq(null);
-    const m = Number(montoLiq) || +saldo.pasable.toFixed(2);
-    if (!(m > 0)) { setErrLiq('No hay saldo para pasar a Liquidez.'); return; }
-    if (m - saldo.pasable > 0.005) { setErrLiq(`Ese monto supera el saldo disponible (${fmtUsd(saldo.pasable, 2)}).`); return; }
-    if (!window.confirm(`¿Pasar ${fmtUsd(m, 2)} a la posición Liquidez de la cartera?\n\nSi ese efectivo ya figura en tu Liquidez (por ejemplo, porque la conciliaste con el broker), NO lo pases: se contaría dos veces.`)) return;
-    setBusyLiq(true);
-    try { await onPasar({ monto: m, fecha, nota: 'Saldo de cobros pasado a Liquidez' }); setMontoLiq(''); }
-    catch (e) { setErrLiq(e instanceof Error ? e.message : 'No se pudo pasar a Liquidez'); }
-    finally { setBusyLiq(false); }
-  };
-
-  const borrarInversion = async (i: CobroInversion) => {
-    if (!window.confirm(i.liquidez_mov_id ? '¿Deshacer este pase? El efectivo sale de la Liquidez y el monto vuelve al saldo disponible.' : '¿Deshacer esta inversión? El monto vuelve al saldo disponible.')) return;
-    setDeletingId(i.id); setDeleteErr(null);
-    try { await onBorrar(i.id); }
-    catch (e) { setDeleteErr(e instanceof Error ? e.message : 'No se pudo deshacer'); }
-    finally { setDeletingId(null); }
-  };
-
-  return (
-    <Card className={saldo.sobregirado ? 'ring-1 ring-inset ring-warn/40' : undefined}>
-      <CardHeader title="Saldo disponible para invertir" sub="Los cobros confirmados se acumulan solos; marcá cuánto ya invertiste (sin tocar Reinvertido del Historial)." />
-      <div className="p-4 space-y-3">
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <span className="text-2xl font-bold text-ink-900 tnum">{fmtUsd(saldo.neto, 0)}</span>
-          <span className="text-xs text-ink-600">nuevo saldo · de {fmtUsd(saldo.disponibleBruto, 0)} cobrado{saldo.acreditado > 0 && <>, {fmtUsd(saldo.acreditado, 0)} ya acreditado en Liquidez</>} ya invertiste o pasaste {fmtUsd(saldo.invertido, 0)}</span>
-          {saldo.neto > 0 && (
-            <Link to="/posiciones?simular=1" className="ml-auto shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border border-line bg-surface text-ink-800 hover:bg-canvas hover:border-celeste-300 transition-all">
-              Invertir este saldo →
-            </Link>
-          )}
-        </div>
-        {saldo.sobregirado && (
-          <p className="text-xs text-warn">Marcaste más inversión que saldo disponible (¿se editó o borró un cobro?). Revisá el historial.</p>
-        )}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm items-end">
-          <Field label="Monto a invertir (USD)"><input type="number" value={monto} onChange={e => setMonto(e.target.value)} className={inputCls} placeholder="USD" /></Field>
-          <Field label="Fecha"><input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={inputCls} /></Field>
-          <Field label="Nota (opcional)" className="col-span-2 sm:col-span-1"><input value={nota} onChange={e => setNota(e.target.value)} className={inputCls} placeholder="ej. MSFT +2" /></Field>
-          <Button onClick={marcar} disabled={busy}><Plus className="w-4 h-4" /> {busy ? 'Guardando…' : 'Marcar inversión'}</Button>
-        </div>
-        {err && <p className="text-xs text-warn">{err}</p>}
-        {/* Pasar a Liquidez: alternativa a "marcar inversión" cuando todavía no invertiste — el saldo queda como efectivo de la cartera. */}
-        {saldo.pasable > 0.005 && (
-          <div className="rounded-xl border border-line bg-canvas px-3 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm items-end">
-            <p className="col-span-2 sm:col-span-4 text-xs text-ink-600">
-              <b className="text-ink-800">Pasar a Liquidez:</b> el saldo pasa a ser una posición de efectivo (LIQUIDEZ) en tu cartera, suma al patrimonio y sale de este saldo.
-              Después comprás con esa Liquidez desde Posiciones. Si ese efectivo ya está en tu Liquidez, no lo pases.
-            </p>
-            <Field label="Monto a pasar (USD)"><input type="number" value={montoLiq} onChange={e => setMontoLiq(e.target.value)} className={inputCls} placeholder={saldo.pasable.toFixed(2)} /></Field>
-            <div className="sm:col-span-2 text-[11px] text-ink-500 pb-2">Vacío = todo el saldo ({fmtUsd(saldo.pasable, 2)}). Fecha: la de arriba.</div>
-            <Button onClick={pasar} disabled={busyLiq}>{busyLiq ? 'Pasando…' : 'Pasar a Liquidez'}</Button>
-            {errLiq && <p className="col-span-2 sm:col-span-4 text-xs text-warn">{errLiq}</p>}
-          </div>
-        )}
-        {deleteErr && <p className="text-xs text-warn">{deleteErr}</p>}
-
-        {inversiones.length > 0 && (
-          <div className="pt-1">
-            <button onClick={() => setVerHistorial(v => !v)} className="text-xs text-celeste-600 hover:underline">
-              {verHistorial ? 'Ocultar' : 'Ver'} historial ({inversiones.length})
-            </button>
-            {verHistorial && (
-              <div className="mt-2 divide-y divide-line border border-line rounded-xl overflow-hidden">
-                {inversiones.map(i => (
-                  <div key={i.id} className="px-3 py-2 flex items-center justify-between gap-2 text-sm">
-                    <div className="min-w-0">
-                      <span className="text-ink-700">{i.fecha}</span>
-                      {i.liquidez_mov_id && <span className="ml-2 text-[10px] rounded-full bg-celeste-100 text-celeste-700 px-1.5 py-0.5 font-semibold">Liquidez</span>}
-                      {i.nota && <span className="text-ink-500 ml-2 text-xs">{i.nota}</span>}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="tnum font-semibold text-ink-900">{fmtUsd(i.monto, 0)}</span>
-                      <button onClick={() => borrarInversion(i)} disabled={deletingId === i.id}
-                        className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9 disabled:opacity-50" title="Deshacer" aria-label="Deshacer">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </Card>
   );
 }
 

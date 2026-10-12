@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase';
 import { borrarMovimiento } from './usePosiciones';
 import type { CobroInversion } from '../types/domain';
 
-// Ledger de "cuánto del saldo disponible ya se invirtió" — ver 0019_cobros_inversiones.sql y
+// Ledger de lo que salió del saldo disponible de cobros: hoy son sobre todo los PASES a Liquidez (botón de la tarjeta Historial en
+// Cobros) y, de antes, las inversiones marcadas a mano — ver 0019_cobros_inversiones.sql, 0052 y
 // engine/cobros.ts (saldoInvertible). Por portfolio, no por usuario (cada portfolio tiene su
 // propio saldo disponible).
 export function useCobrosInversiones(portfolioId: string | null | undefined) {
