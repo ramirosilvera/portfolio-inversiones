@@ -140,6 +140,7 @@ export interface CobroInversion {
   fecha: string;
   monto: number;
   nota: string | null;
+  liquidez_mov_id?: string | null;   // si es un "pase a Liquidez" (0052): el crédito de efectivo que generó
   created_at: string;
 }
 

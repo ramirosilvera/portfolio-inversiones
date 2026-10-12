@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resumenCobros, saldoInvertible } from './cobros';
+import { resumenCobros, saldoInvertible, acreditadoEnLiquidez } from './cobros';
 import type { Cobro } from '../types/domain';
 
 const c = (over: Partial<Cobro>): Cobro => ({
@@ -66,7 +66,7 @@ describe('resumenCobros', () => {
 describe('saldoInvertible', () => {
   it('sin inversiones registradas → neto = disponible bruto', () => {
     const r = saldoInvertible(500, []);
-    expect(r).toEqual({ disponibleBruto: 500, invertido: 0, neto: 500, sobregirado: false });
+    expect(r).toEqual({ disponibleBruto: 500, acreditado: 0, pasable: 500, invertido: 0, neto: 500, sobregirado: false });
   });
 
   it('resta la suma de inversiones del disponible', () => {
@@ -93,5 +93,36 @@ describe('saldoInvertible', () => {
     const r = saldoInvertible(10, [{ monto: 0.1 }, { monto: 0.2 }]);
     expect(r.invertido).toBe(0.3);
     expect(r.neto).toBe(9.7);
+  });
+});
+
+describe('saldoInvertible con cobros ya acreditados en Liquidez', () => {
+  it('lo acreditado ya está en el efectivo: no cuenta como saldo por pasar (evita duplicarlo)', () => {
+    const s = saldoInvertible(100, [], 30);
+    expect(s.neto).toBe(70);
+    expect(s.pasable).toBe(70);
+    expect(s.acreditado).toBe(30);
+  });
+  it('un pase a Liquidez (inversión del ledger) baja el saldo igual que cualquier inversión', () => {
+    const s = saldoInvertible(100, [{ monto: 40 }], 30);
+    expect(s.neto).toBe(30);
+    expect(s.invertido).toBe(40);
+  });
+  it('sin acreditado el comportamiento es el de antes', () => {
+    expect(saldoInvertible(100, [{ monto: 25 }])).toMatchObject({ neto: 75, invertido: 25, acreditado: 0, sobregirado: false });
+  });
+  it('si lo acreditado + lo invertido supera lo disponible, queda 0 y marca sobregiro', () => {
+    const s = saldoInvertible(50, [{ monto: 40 }], 30);
+    expect(s.neto).toBe(0);
+    expect(s.sobregirado).toBe(true);
+  });
+  it('acreditadoEnLiquidez suma solo cobros DISPONIBLES con crédito en Liquidez', () => {
+    const t = acreditadoEnLiquidez([
+      { estado: 'disponible', monto: 12.07, liquidez_mov_id: 'm1' },
+      { estado: 'disponible', monto: 5, liquidez_mov_id: null },
+      { estado: 'reinvertido', monto: 9, liquidez_mov_id: 'm2' },
+      { estado: 'pendiente', monto: 7, liquidez_mov_id: 'm3' },
+    ]);
+    expect(t).toBe(12.07);
   });
 });
