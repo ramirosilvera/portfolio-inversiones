@@ -1,10 +1,11 @@
-import { type Env, json, preflight, guard, sbSelect, sbRpc, tokenInterno, requireCronSecret } from '../_shared';
+import { type Env, json, preflight, guard, sbSelect, sbRpc, sbUpsert, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
 import {
   sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente,
   type PosicionParaCobro, type FlujoCronograma, type CobroPendienteSugerido, type MovCantidad,
 } from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
+import { armarSnapshots, type PosicionValuable, type PrecioCache, type AporteMin } from '../_snapshots';
 
 // GET /api/cron/refresh-all
 // Calienta TODAS las caches de mercado en una sola pasada server-side, para que la data se
@@ -38,7 +39,7 @@ export const onRequestGet = guard(async ({ request, env }) => {
   // refrescar cotizaciones, estos mismos campos alimentan la sugerencia de cobros pendientes
   // (paso 4) — una sola consulta para ambos usos.
   const pos = await sbSelect<PosicionParaCobro>(env, 'posiciones',
-    'select=id,portfolio_id,ticker,tipo,cantidad,ratio_cedear,cupon_tasa,cupon_frecuencia,cupon_mes,vencimiento,fecha_compra');
+    'select=id,portfolio_id,ticker,tipo,cantidad,ratio_cedear,cupon_tasa,cupon_frecuencia,cupon_mes,vencimiento,fecha_compra,precio_compra');
   const uniq = (a: string[]) => [...new Set(a.map(s => s.toUpperCase()).filter(Boolean))];
   // Solo posiciones ABIERTAS: las cerradas (cantidad 0) no necesitan cotización ni fundamentals, y
   // cada una gastaba subrequests del techo de 50 por invocación de Cloudflare.
@@ -187,9 +188,30 @@ export const onRequestGet = guard(async ({ request, env }) => {
     } catch { /* una sugerencia fallida no frena las demás */ }
   }
 
+  // 4b) Valor diario de cada cartera (portfolio_snapshots) y dólar diario (fx_historico), grabados por el SERVIDOR: el histórico de
+  // rendimiento, benchmark y máxima caída no puede depender de que se abra la app (hubo un hueco de 205 días). Solo se graba una
+  // cartera si TODAS sus posiciones abiertas tienen precio fresco (ver functions/api/_snapshots.ts). Falla aislada: no afecta ok/total.
+  let snapshots = 0;
+  try {
+    const abiertasSnap = pos.filter(p => Number(p.cantidad) > 0) as unknown as PosicionValuable[];
+    const tickersSnap = uniq(abiertasSnap.filter(p => p.tipo !== 'cash' && p.tipo !== 'accion_ar').map(p => p.ticker));
+    const precios = new Map<string, PrecioCache>();
+    if (tickersSnap.length) {
+      const filas = await sbSelect<PrecioCache>(env, 'precios_cache', `select=ticker,precio,updated_at&ticker=in.(${tickersSnap.join(',')})`);
+      for (const f of filas) precios.set(f.ticker.toUpperCase(), f);
+    }
+    const aportesSnap = await sbSelect<AporteMin>(env, 'aportes', 'select=portfolio_id,fecha,monto,tipo');
+    const { filas: filasSnap } = armarSnapshots(hoy, abiertasSnap, precios, aportesSnap, Date.now());
+    if (filasSnap.length) { await sbUpsert(env, 'portfolio_snapshots', filasSnap, 'portfolio_id,fecha'); snapshots = filasSnap.length; }
+
+    const fx = await sbSelect<{ clave: string; valor: number }>(env, 'macro_cache', 'select=clave,valor&clave=in.(dolar_mep,dolar_ccl)');
+    const mep = fx.find(f => f.clave === 'dolar_mep')?.valor ?? null, ccl = fx.find(f => f.clave === 'dolar_ccl')?.valor ?? null;
+    if (mep != null || ccl != null) await sbUpsert(env, 'fx_historico', [{ fecha: hoy, mep, ccl, fuente: 'cron' }], 'fecha');
+  } catch { /* sin snapshot hoy: la app lo graba al abrirse y mañana el cron reintenta */ }
+
   // 5) Fundamentals al final (ver orden arriba).
   for (const p of fund) if (await hit(p)) ok++;
 
   // Solo conteos agregados — sin tickers ni montos (no filtrar composición del portfolio).
-  return json({ ok, total: prioritarios.length + fund.length, pendientes });
+  return json({ ok, total: prioritarios.length + fund.length, pendientes, snapshots });
 });

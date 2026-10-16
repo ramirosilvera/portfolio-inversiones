@@ -24,9 +24,10 @@ export function useSnapshots(portfolioId: string | null | undefined) {
 // abrir la app varias veces el mismo día solo actualiza el valor de hoy, no crea filas nuevas.
 export function useRecordSnapshot() {
   const qc = useQueryClient();
-  return async (portfolioId: string, fecha: string, valor: number, aportado: number) => {
+  // `detalle`: composición de ese día [{t: ticker, c: cantidad, v: valor USD}] — para auditar el valor y hacer atribución a futuro.
+  return async (portfolioId: string, fecha: string, valor: number, aportado: number, detalle?: { t: string; c: number; v: number }[]) => {
     const { error } = await supabase.from('portfolio_snapshots')
-      .upsert({ portfolio_id: portfolioId, fecha, valor, aportado }, { onConflict: 'portfolio_id,fecha' });
+      .upsert({ portfolio_id: portfolioId, fecha, valor, aportado, fuente: 'app', completo: true, detalle: detalle ?? null }, { onConflict: 'portfolio_id,fecha' });
     if (error) throw error;
     qc.invalidateQueries({ queryKey: ['snapshots', portfolioId] });
   };
