@@ -42,13 +42,18 @@ export function DesempenoCard({ portfolioId, snaps, flujos, patrimonio, hoy, lis
     return (
       <Card>
         <CardHeader title="Desempeño desde el inicio" />
-        <p className="p-4 text-sm text-ink-600">Necesita al menos dos valores diarios de la cartera. La app los registra sola todos los días.</p>
+        <p className="p-4 text-sm text-ink-600">
+          {!listo
+            ? 'Esperando las cotizaciones de mercado para valuar la cartera de hoy…'
+            : 'Necesita al menos dos valores diarios de la cartera. La app los registra sola todos los días.'}
+        </p>
       </Card>
     );
   }
 
   const { calidad, twr, tir, costos, cartera, benchmark, periodo } = d;
   const hayAportes = flujos.length > 0;
+  const primerFlujo = flujos.map(f => f.fecha).sort()[0] ?? null;
 
   return (
     <Card>
@@ -64,7 +69,7 @@ export function DesempenoCard({ portfolioId, snaps, flujos, patrimonio, hoy, lis
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <Stat label="Acumulado" value={twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'} hint="ponderado por tiempo: no cuenta aportes ni retiros como ganancia" />
           <Stat label="Anualizado" value={twr.anualizado != null ? fmtPctSigno(twr.anualizado, 1) : '—'} hint={twr.anualizado == null ? 'desde un año de historia' : 'ponderado por tiempo'} />
-          <Stat label="TIR anual" value={tir.anualizada != null ? fmtPctSigno(tir.anualizada, 1) : '—'} hint={hayAportes ? 'ponderada por dinero (cuándo aportaste)' : 'cargá tus aportes'} />
+          <Stat label="TIR anual" value={tir.anualizada != null ? fmtPctSigno(tir.anualizada, 1) : '—'} hint={!hayAportes ? 'cargá tus aportes' : tir.anualizada == null ? 'desde un año de historia' : 'ponderada por dinero (cuándo aportaste)'} />
           <Stat label="TIR neta de costos" value={tir.neta != null ? fmtPctSigno(tir.neta, 1) : '—'} hint="resta las comisiones en pesos con tipo de cambio registrado" />
         </div>
 
@@ -72,14 +77,14 @@ export function DesempenoCard({ portfolioId, snaps, flujos, patrimonio, hoy, lis
           <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold mb-1">Contra el S&amp;P 500 (retorno total, USD)</p>
           {benchmark ? (
             <div className="space-y-1 text-xs">
-              <p>Si cada aporte y retiro tuyo se hubiera hecho en el S&amp;P 500 el mismo día, hoy tendrías{' '}
+              <p>Si cada aporte y retiro tuyo (desde el {fmtFecha(primerFlujo)}) se hubiera hecho en el S&amp;P 500 el mismo día, hoy tendrías{' '}
                 <b className="tnum">{fmtUsd(benchmark.mismosFlujos.valorFinal, 0)}</b> (rendimiento del período <b className="tnum">{benchmark.mismosFlujos.rendimientoPeriodo != null ? fmtPctSigno(benchmark.mismosFlujos.rendimientoPeriodo, 1) : '—'}</b>
                 {benchmark.mismosFlujos.tir != null && <> · TIR <b className="tnum">{fmtPctSigno(benchmark.mismosFlujos.tir, 1)}</b></>}).
                 Tu cartera vale <b className="tnum">{fmtUsd(patrimonio, 0)}</b>:{' '}
                 <b className={`tnum ${benchmark.diferenciaValor >= 0 ? 'text-pos' : 'text-neg'}`}>{benchmark.diferenciaValor >= 0 ? '+' : '−'}{fmtUsd(Math.abs(benchmark.diferenciaValor), 0)}</b> contra el índice.
                 {benchmark.diferenciaTirPuntos != null && <> Diferencia de TIR: <b className="tnum">{(benchmark.diferenciaTirPuntos * 100).toFixed(1)} pp</b>.</>}
               </p>
-              <p className="text-ink-500">Cierre a cierre, el índice hizo {benchmark.twrBenchmark != null ? fmtPctSigno(benchmark.twrBenchmark, 1) : '—'} en el mismo período (tu acumulado ponderado por tiempo: {twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'}).
+              <p className="text-ink-500">Cierre a cierre, el índice hizo {benchmark.twrBenchmark != null ? fmtPctSigno(benchmark.twrBenchmark, 1) : '—'} entre {fmtFecha(periodo.desde)} y {fmtFecha(periodo.hasta)} (tu acumulado ponderado por tiempo: {twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'}).
                 SPY ya descuenta su costo de fondo (~0,09 %); tu cartera no descuenta costos que no estén registrados.</p>
             </div>
           ) : (

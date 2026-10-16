@@ -141,7 +141,14 @@ export function DashboardPage() {
       || Math.abs(hoySnap.aportado - aportadoNeto) > 0.01;
     if (cambió) {
       recordedRef.current = key;
-      const detalle = alloc.map(a => ({ t: a.ticker, c: Number(posiciones.find(p => p.ticker === a.ticker)?.cantidad) || 0, v: +a.mkt.toFixed(2) }));
+      // Una fila por ticker (si hay varias posiciones del mismo ticker se suman cantidad y valor, igual que en el servidor).
+      const porTicker = new Map<string, { t: string; c: number; v: number }>();
+      for (const a of alloc) {
+        const cant = posiciones.filter(p => p.ticker === a.ticker).reduce((sum, p) => sum + (Number(p.cantidad) || 0), 0);
+        const prev = porTicker.get(a.ticker);
+        porTicker.set(a.ticker, { t: a.ticker, c: prev ? prev.c : cant, v: +((prev?.v ?? 0) + a.mkt).toFixed(2) });
+      }
+      const detalle = [...porTicker.values()];
       void record(active.id, hoy, patrimonio, aportadoNeto, detalle).catch(() => { recordedRef.current = ''; });
     }
   }, [active?.id, datosListos, patrimonio, aportadoNeto, snaps, hoy, record, alloc, posiciones]);
