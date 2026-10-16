@@ -11,7 +11,9 @@ const tono = (n: number | null) => (n == null ? 'text-ink-500' : n >= 0 ? 'text-
 export function VsSp500({ rendAnios, hoy }: {
   rendAnios: { anio: number; rendimiento: number | null; dias?: number; concentrado?: boolean }[]; hoy: string;
 }) {
-  const { data, isLoading, isError } = useSp500();
+  // La serie se pide desde fines del año anterior al primero con datos (el servidor recorta la serie larga).
+  const primerAnio = rendAnios.length ? Math.min(...rendAnios.map(r => r.anio)) : null;
+  const { data, isLoading, isError } = useSp500(primerAnio != null ? `${primerAnio - 1}-12-15` : undefined);
   const filas = useMemo(
     () => (data?.puntos?.length ? compararConSp500(rendAnios.filter(r => r.rendimiento != null), data.puntos, hoy).filter(f => f.sp500 != null) : []),
     [rendAnios, data, hoy]);

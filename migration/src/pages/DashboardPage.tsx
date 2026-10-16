@@ -141,9 +141,10 @@ export function DashboardPage() {
       || Math.abs(hoySnap.aportado - aportadoNeto) > 0.01;
     if (cambió) {
       recordedRef.current = key;
-      void record(active.id, hoy, patrimonio, aportadoNeto).catch(() => { recordedRef.current = ''; });
+      const detalle = alloc.map(a => ({ t: a.ticker, c: Number(posiciones.find(p => p.ticker === a.ticker)?.cantidad) || 0, v: +a.mkt.toFixed(2) }));
+      void record(active.id, hoy, patrimonio, aportadoNeto, detalle).catch(() => { recordedRef.current = ''; });
     }
-  }, [active?.id, datosListos, patrimonio, aportadoNeto, snaps, hoy, record]);
+  }, [active?.id, datosListos, patrimonio, aportadoNeto, snaps, hoy, record, alloc, posiciones]);
 
   // ── Dashboard personalizable: agregar/quitar/reordenar tarjetas ───────────────
   const { widgets: layout, agregar, agregarSeccion, actualizar, eliminar, mover, restaurarDefault } = useDashboardLayout();

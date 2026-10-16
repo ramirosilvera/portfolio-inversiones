@@ -77,6 +77,25 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
 - El cron (`refresh-all`) sugiere los cupones con la **fecha exacta del cronograma** cuando está vigente; si no hay cronograma,
   cae al cálculo por mes (día 1) con los campos cargados en la posición.
 
+## Medición de desempeño a 10 años (migración 0053)
+
+Objetivo: poder responder con datos reales (1) rentabilidad anualizada en USD con dividendos y neta de costos, (2) comparación contra
+el S&P 500 con los mismos flujos y moneda, (3) máxima caída vs. benchmark. Lo que no se registra hoy no se recupera mañana.
+
+- **Snapshot diario en el servidor**: el cron `refresh-all` (paso 4b, `functions/api/_snapshots.ts`) graba `portfolio_snapshots`
+  todos los días (`fuente='cron'`, `detalle` con ticker/cantidad/valor). Solo si TODAS las posiciones abiertas tienen precio fresco
+  (≤ 5 días); un valor a medias nunca se graba. `accion_ar` no se valúa en el servidor (carteras con acciones locales quedan sin snapshot del cron).
+- **Dólar diario**: el cron guarda MEP/CCL en `fx_historico`. Al cargar ejecuciones, completar `ordenes_ejecutadas.mep` con el MEP
+  del día de ejecución (de `macro_cache` `dolar_mep` / `fx_historico`); sin MEP la comisión en pesos se muestra sin convertir (nunca estimada).
+- **Motor** `engine/desempeno.ts` (puro, testeado): índice TWR que neutraliza aportes/retiros, anualiza solo con ≥ 365 días, máxima
+  caída con fechas de pico/mínimo/recuperación (con huecos > 7 días es un "mínimo conocido", rotulado "≥"), benchmark SPY (adjclose =
+  retorno total) con los mismos flujos, TIR neta de comisiones convertibles. Tramos donde el snapshot quedó desfasado de un aporte se
+  omiten y se cuentan como anomalía. UI: `DesempenoCard` en Ahorros. SPY: `/api/market/sp500-anual?desde=` (no se guarda: el adjclose se reajusta retroactivamente).
+- **Límites honestos**: la historia previa a 2026 no está registrada (huecos de hasta 205 días en Ahorros); no se reconstruye ni se estima.
+- **Hoja de ruta**: (a) registrar todos los eventos (aportes, retiros, trades, cobros, comisiones) y acreditar los cobros a Liquidez de
+  forma consistente; (b) conciliación mensual contra el resumen del broker; (c) export/backup anual de snapshots y eventos; (d)
+  registrar comisiones de Ahorros; (e) si hace falta, reconstruir el pasado desde extractos del broker.
+
 ## Archivos clave
 
 | Archivo | Descripción |
