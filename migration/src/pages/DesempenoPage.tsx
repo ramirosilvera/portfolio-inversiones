@@ -34,7 +34,12 @@ export function DesempenoPage() {
   const { d, listo, spError, patrimonio, hoy, snaps, posiciones, qSnaps, qPos, sinAcreditar, hayPuntos, porAnio } = useDesempeno(active?.id);
   if (!active) return null;
 
-  const { calidad, twr, tir, costos, cartera, benchmark, periodo, evolucion } = d;
+  const { calidad, twr, tir, costos, cartera, benchmark, periodo, evolucion, desdeInicio } = d;
+  // Ganancia: desde el INICIO (primer aporte). El resto (S&P 500, máxima caída, gráfico) solo se puede medir desde el primer valor diario.
+  const gan = desdeInicio?.gananciaUsd ?? tir.gananciaUsd;
+  const ganPct = desdeInicio ? desdeInicio.sobreCapital : tir.acumulada;
+  const desdeGan = desdeInicio?.desde ?? periodo.desde;
+  const ventanasDistintas = !!desdeInicio && !!periodo.desde && desdeInicio.desde < periodo.desde && Math.abs(gan - tir.gananciaUsd) >= 0.005;
   const capitalNeto = tir.invertido - tir.retirado;
   const sePuedeAnualizar = periodo.dias >= MIN_DIAS_ANUALIZAR;
   const hayIndice = evolucion.some(e => e.sp != null);
@@ -62,14 +67,15 @@ export function DesempenoPage() {
           {/* ── 4 números ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
             <Kpi titulo="Patrimonio" valor={fmtUsd(patrimonio, 0)} sub={<>Aportado neto: {fmtUsd(capitalNeto, 0)}</>} />
-            <Kpi titulo="Ganancia" tonoValor={tono(tir.gananciaUsd)}
-              valor={<>{signo(tir.gananciaUsd)}{fmtUsd(Math.abs(tir.gananciaUsd), 0)}</>}
-              sub={<>{tir.acumulada != null ? <><b className={tono(tir.acumulada)}>{fmtPctSigno(tir.acumulada, 1)}</b> sobre lo aportado</> : null}
-                {sePuedeAnualizar && twr.anualizado != null && !twr.concentrado && <> · {fmtPctSigno(twr.anualizado, 1)} por año</>}</>} />
+            <Kpi titulo="Ganancia" tonoValor={tono(gan)}
+              valor={<>{signo(gan)}{fmtUsd(Math.abs(gan), 0)}</>}
+              sub={<>{ganPct != null ? <><b className={tono(ganPct)}>{fmtPctSigno(ganPct, 1)}</b> sobre lo aportado</> : null}
+                {desdeGan && <> · desde el {fmtFecha(desdeGan)}</>}
+                {sePuedeAnualizar && twr.anualizado != null && !twr.concentrado && !ventanasDistintas && <> · {fmtPctSigno(twr.anualizado, 1)} por año</>}</>} />
             <Kpi titulo="Contra el S&P 500" tonoValor={benchmark ? tono(benchmark.diferenciaValor) : undefined}
               valor={benchmark ? <>{signo(benchmark.diferenciaValor)}{fmtUsd(Math.abs(benchmark.diferenciaValor), 0)}</> : '—'}
               sub={benchmark
-                ? <>Tu cartera {tir.acumulada != null ? fmtPctSigno(tir.acumulada, 1) : '—'} vs S&amp;P {benchmark.mismosFlujos.rendimientoPeriodo != null ? fmtPctSigno(benchmark.mismosFlujos.rendimientoPeriodo, 1) : '—'} con tus mismos aportes</>
+                ? <>Desde el {fmtFecha(periodo.desde)}: tu cartera {tir.acumulada != null ? fmtPctSigno(tir.acumulada, 1) : '—'} vs S&amp;P {benchmark.mismosFlujos.rendimientoPeriodo != null ? fmtPctSigno(benchmark.mismosFlujos.rendimientoPeriodo, 1) : '—'} con tus mismos aportes</>
                 : (spError ? 'No se pudo traer el índice.' : 'Sin serie del índice todavía.')} />
             <Kpi titulo="Máxima caída" tonoValor={mdd && mdd.mdd < 0 ? 'text-neg' : 'text-pos'}
               valor={mdd ? (mdd.mdd === 0 ? 'Sin caídas' : <>{cartera.rotuloMinimoConocido && '≥ '}{fmtPct(Math.abs(mdd.mdd), 1)}</>) : '—'}
@@ -77,6 +83,13 @@ export function DesempenoPage() {
                 ? <>{fmtCorta(mdd.fechaPico!)} → {fmtCorta(mdd.fechaMinimo!)}{mdd.fechaRecuperacion ? ' · recuperada' : ' · sin recuperar'}{mddSp ? <> · S&amp;P en esas fechas {mddSp.mdd === 0 ? 'sin caídas' : fmtPct(Math.abs(mddSp.mdd), 1)}</> : null}</>
                 : undefined} />
           </div>
+
+          {ventanasDistintas && (
+            <p className="text-[11px] text-ink-600 leading-relaxed">
+              La <b>ganancia</b> cuenta desde tu primer aporte ({fmtFecha(desdeGan)}); en el tramo anterior al {fmtFecha(periodo.desde)} la cartera no tiene valores diarios, así que ahí el dato viene de la planilla ({(gan - tir.gananciaUsd >= 0 ? '+' : '−')}{fmtUsd(Math.abs(gan - tir.gananciaUsd), 0)} de la ganancia).
+              El resto de los indicadores (contra el S&amp;P 500, máxima caída y gráfico) se miden desde el {fmtFecha(periodo.desde)}, el primer día con valor diario.
+            </p>
+          )}
 
           {twr.concentrado && (
             <p className="text-[11px] text-warn">La mayor parte del capital entró hace pocos días: el rendimiento ponderado por tiempo no es representativo; por eso todo se mide sobre el capital aportado.</p>

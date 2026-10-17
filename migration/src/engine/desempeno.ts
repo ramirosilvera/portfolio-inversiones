@@ -255,6 +255,8 @@ export interface Desempeno {
   twr: { acumulado: number | null; anualizado: number | null; anomalias: number; concentrado: boolean };
   tir: { anualizada: number | null; acumulada: number | null; neta: number | null; invertido: number; retirado: number; gananciaUsd: number };
   costos: ResumenCostos;
+  // Ganancia DESDE EL INICIO (primer aporte), sin depender de la serie diaria: valor + retiros − capital puesto. null si no hay aportes cargados.
+  desdeInicio: { desde: string; gananciaUsd: number; sobreCapital: number | null; invertido: number; retirado: number } | null;
   evolucion: PuntoEvolucion[];                       // cartera vs capital aportado vs el S&P 500 con tus mismos flujos (para el gráfico)
   cartera: { mdd: MaxDrawdown | null; rotuloMinimoConocido: boolean };
   benchmark: null | {
@@ -337,6 +339,14 @@ export function calcularDesempeno(p: {
     twr: { acumulado: twrAc, anualizado: anualizar(twrAc, diasPer), anomalias, concentrado },
     tir: { anualizada: tirBruta, acumulada, neta: costos.comisionArsConvertidaUsd > 0 ? tirNeta : tirBruta, invertido, retirado, gananciaUsd: +(p.valorActual + retirado - invertido).toFixed(2) },
     costos,
+    desdeInicio: (() => {
+      const todos = p.flujos.filter(f => f.fecha <= p.hoy && f.monto !== 0 && !Number.isNaN(Date.parse(f.fecha))).sort((a, b) => a.fecha.localeCompare(b.fecha));
+      if (!todos.length) return null;
+      const inv = todos.filter(f => f.monto > 0).reduce((x, f) => x + f.monto, 0);
+      const ret = -todos.filter(f => f.monto < 0).reduce((x, f) => x + f.monto, 0);
+      const gan = p.valorActual + ret - inv;
+      return { desde: todos[0].fecha, gananciaUsd: +gan.toFixed(2), sobreCapital: inv > 0 ? gan / inv : null, invertido: +inv.toFixed(2), retirado: +ret.toFixed(2) };
+    })(),
     evolucion: evolucion(puntos, flujosVentana.filter(f => f.fecha <= p.hoy), p.serieSp),
     cartera: { mdd: mddCartera, rotuloMinimoConocido: !calidad.confiable },
     benchmark,

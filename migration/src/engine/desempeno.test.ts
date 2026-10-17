@@ -333,3 +333,21 @@ describe('evolucion — cartera vs capital vs S&P 500', () => {
     expect(r.evolucion[1]).toMatchObject({ valor: 1200, capital: 1000 });
   });
 });
+
+describe('desdeInicio — ganancia desde el primer aporte', () => {
+  it('no depende de la serie diaria: valor + retiros − aportes, desde el primer aporte (Ahorros)', () => {
+    const r = calcularDesempeno({
+      puntos: [v('2025-12-31', 9361.76), v('2026-10-17', 16976.42)],
+      flujos: [f('2025-06-02', 6399.58), f('2026-03-02', 14000), f('2026-09-07', -3838), f('2026-09-28', -2010)],
+      valorActual: 16976.42, hoy: '2026-10-17', serieSp: null, ordenes: [],
+    });
+    expect(r.desdeInicio!.desde).toBe('2025-06-02');
+    expect(r.desdeInicio!.invertido).toBe(20399.58);
+    expect(r.desdeInicio!.retirado).toBe(5848);
+    expect(r.desdeInicio!.gananciaUsd).toBeCloseTo(16976.42 + 5848 - 20399.58, 2);
+    expect(r.desdeInicio!.sobreCapital).toBeCloseTo((16976.42 + 5848 - 20399.58) / 20399.58, 6);
+  });
+  it('sin aportes cargados es null', () => {
+    expect(calcularDesempeno({ puntos: [v('2026-01-01', 100), v('2026-02-01', 110)], flujos: [], valorActual: 110, hoy: '2026-02-01', serieSp: null, ordenes: [] }).desdeInicio).toBeNull();
+  });
+});
