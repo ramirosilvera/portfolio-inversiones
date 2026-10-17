@@ -159,3 +159,11 @@ describe('traspaso con su orden', () => {
     expect(controlarOrdenes(base, movs, ['MA', 'COC4D'], ['LIQUIDEZ'], undefined, [{ ticker: 'COC4D', cantidad: -2000 }]).some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(false);
   });
 });
+
+describe('orden de costo trasladado', () => {
+  it("una orden origen 'transferida' no se concilia contra compras ni cuenta como error", () => {
+    const tr = o({ origen: 'transferida', fecha: '2026-10-18', ticker: 'COC4D', nominales: 2000, monto_usd: 0, precio_ejecutado: null, comision_usd: 10, comision_ars: null, mep: null });
+    const c = controlarOrdenes([tr], [{ fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000, transferencia: true }], ['COC4D']);
+    expect(c.filter(x => x.severidad === 'error')).toEqual([]);
+  });
+});

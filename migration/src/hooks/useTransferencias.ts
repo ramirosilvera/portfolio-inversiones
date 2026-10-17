@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { reajustarObjetivosTrasCierre } from '../lib/objetivos';
+import { planTrasladoCosto } from '../engine/trasladoCosto';
 
 export interface Transferencia {
   id: string;
@@ -37,9 +38,14 @@ export function useTransferencias() {
 // aportes (retiro/inicial) para que el rendimiento por año no la cuente como ganancia/pérdida de
 // mercado. `valorMercado` (cantidad × cotización de hoy) hace que ese flujo sea a mercado; sin
 // cotización, la función cae al costo.
+// `traslado`: llevar también el costo de las órdenes de compra de la posición (comisiones), en proporción a la cantidad transferida. Ver
+// engine/trasladoCosto.ts: el origen queda sin ese costo (sus órdenes bajan) y el destino lo asume (registro de costo + aporte; el origen
+// registra el retiro por el mismo monto).
+export interface TrasladoCosto { ticker: string; cantidadPosicion: number; origenNombre: string; destinoNombre: string }
+
 export function useTransferirPosicion() {
   const qc = useQueryClient();
-  return async (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string, valorMercado?: number | null): Promise<void> => {
+  return async (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string, valorMercado?: number | null, traslado?: TrasladoCosto): Promise<void> => {
     // Origen antes de transferir: si se mueve TODO, la fila queda en 0 con su objetivo y hay que sacarla del plan.
     const { data: origen } = await supabase.from('posiciones').select('portfolio_id, cantidad').eq('id', posicionId).maybeSingle();
     const { error } = await supabase.rpc('transferir_posicion', {
@@ -47,6 +53,40 @@ export function useTransferirPosicion() {
       p_valor_mercado: valorMercado != null && valorMercado > 0 ? valorMercado : null,
     });
     if (error) throw error;
+    // Costo de las órdenes que viaja con la posición (después de la transferencia: si ella falla, no se mueve nada).
+    let avisoCosto: string | null = null;
+    if (traslado && origen) {
+      try {
+        const { data: ords, error: oErr } = await supabase.from('ordenes_ejecutadas')
+          .select('id, ticker, estado, origen, lado, comision_usd, comision_ars, mep').eq('portfolio_id', origen.portfolio_id);
+        if (oErr) throw oErr;
+        const plan = planTrasladoCosto(ords ?? [], traslado.ticker, cantidad, traslado.cantidadPosicion);
+        if (plan.totalUsd > 0 || plan.arsSinMep > 0) {
+          const hoy = new Date().toISOString().slice(0, 10);
+          const pct = `${Math.round(plan.fraccion * 100)} % de la posición`;
+          const { error: insErr } = await supabase.from('ordenes_ejecutadas').insert({
+            portfolio_id: portfolioDestino, fecha: hoy, ticker: traslado.ticker, broker: 'Traslado', nominales: cantidad, precio_ejecutado: null, monto_usd: 0,
+            comision_usd: plan.totalUsd > 0 ? plan.totalUsd : null, comision_ars: plan.arsSinMep > 0 ? plan.arsSinMep : null, mep: null,
+            estado: 'terminada', origen: 'transferida', lado: 'compra',
+            nota: `Costo de las órdenes trasladado desde ${traslado.origenNombre} (${pct}). Solo registra la comisión: la compra original queda en el origen.`,
+          });
+          if (insErr) throw insErr;
+          for (const u of plan.origen) {
+            const { error: upErr } = await supabase.from('ordenes_ejecutadas').update({ comision_usd: u.comision_usd, comision_ars: u.comision_ars }).eq('id', u.id);
+            if (upErr) throw upErr;
+          }
+          if (plan.totalUsd > 0) {
+            const { error: apErr } = await supabase.from('aportes').insert([
+              { portfolio_id: origen.portfolio_id, fecha: hoy, monto: plan.totalUsd, tipo: 'retiro', descripcion: `Costo de las órdenes de ${traslado.ticker} trasladado a ${traslado.destinoNombre} (${pct}); no es un retiro de efectivo real.` },
+              { portfolio_id: portfolioDestino, fecha: hoy, monto: plan.totalUsd, tipo: 'inicial', descripcion: `Costo de las órdenes de ${traslado.ticker} trasladado desde ${traslado.origenNombre} (${pct}); no es capital externo real.` },
+            ]);
+            if (apErr) throw apErr;
+          }
+        }
+      } catch (e) {
+        avisoCosto = e instanceof Error ? e.message : String(e);
+      }
+    }
     let avisoObjetivos: string | null = null;
     if (origen && cantidad >= Number(origen.cantidad) - 1e-9) {
       try { await reajustarObjetivosTrasCierre(origen.portfolio_id, posicionId); }
@@ -58,7 +98,10 @@ export function useTransferirPosicion() {
       qc.invalidateQueries({ queryKey: ['movimientos'] }),
       qc.invalidateQueries({ queryKey: ['aportes'] }),
       qc.invalidateQueries({ queryKey: ['posicion_brokers'] }),
+      qc.invalidateQueries({ queryKey: ['ordenes'] }),
+      qc.invalidateQueries({ queryKey: ['ordenes_ejecutadas'] }),
     ]);
+    if (avisoCosto) throw new Error(`Transferencia hecha, pero el traslado del costo de las órdenes quedó incompleto (revisá Órdenes y Aportes): ${avisoCosto}`);
     if (avisoObjetivos) throw new Error(`Transferencia hecha, pero no se pudieron reajustar los objetivos del portfolio de origen: ${avisoObjetivos}`);
   };
 }

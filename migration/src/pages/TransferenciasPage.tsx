@@ -4,7 +4,9 @@ import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosiciones, useQuotes } from '../hooks/usePosiciones';
 import { unitValueUSD } from '../lib/valuation';
 import { useTransferencias, useTransferirPosicion } from '../hooks/useTransferencias';
-import { Card, CardHeader, Button, Field, inputCls, Empty, fmtNum } from '../components/ui';
+import { useOrdenes } from '../hooks/useOrdenes';
+import { planTrasladoCosto } from '../engine/trasladoCosto';
+import { Card, CardHeader, Button, Field, inputCls, Empty, fmtNum, fmtUsd } from '../components/ui';
 import type { Posicion } from '../types/domain';
 
 // Reasignación interna de activos entre portfolios propios (fines contables) — preserva el costo y
@@ -27,10 +29,13 @@ export function TransferenciasPage() {
     abiertas.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker),
     abiertas.filter(p => p.tipo === 'bono').map(p => p.ticker),
     abiertas.filter(p => p.tipo === 'accion_ar').map(p => p.ticker));
-  const transferir = (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string) => {
+  const transferir = (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string, llevarCosto = false) => {
     const pos = abiertas.find(p => p.id === posicionId);
     const unit = pos ? unitValueUSD(pos, quotes[pos.ticker] ?? null) : null;
-    return transferirRpc(posicionId, portfolioDestino, cantidad, nota, unit != null ? unit * cantidad : null);
+    const traslado = llevarCosto && pos && active
+      ? { ticker: pos.ticker, cantidadPosicion: pos.cantidad, origenNombre: active.nombre, destinoNombre: portfolios.find(p => p.id === portfolioDestino)?.nombre ?? 'otro portfolio' }
+      : undefined;
+    return transferirRpc(posicionId, portfolioDestino, cantidad, nota, unit != null ? unit * cantidad : null, traslado);
   };
   const pfName = useMemo(() => new Map(portfolios.map(p => [p.id, p.nombre])), [portfolios]);
 
@@ -88,7 +93,7 @@ function TransferirForm({ portfolioOrigenId, posiciones, destinos, transferir }:
   portfolioOrigenId: string;
   posiciones: Posicion[];
   destinos: { id: string; nombre: string }[];
-  transferir: (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string) => Promise<void>;
+  transferir: (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string, llevarCosto?: boolean) => Promise<void>;
 }) {
   const [posicionId, setPosicionId] = useState('');
   const [cantidad, setCantidad] = useState('');
@@ -99,6 +104,10 @@ function TransferirForm({ portfolioOrigenId, posiciones, destinos, transferir }:
   const [ok, setOk] = useState<string | null>(null);
 
   const pos = posiciones.find(p => p.id === posicionId);
+  // Costo de las órdenes de compra de la posición que viajaría con la parte transferida (cálculo en engine/trasladoCosto.ts).
+  const { data: ordenesOrigen = [] } = useOrdenes(portfolioOrigenId);
+  const plan = useMemo(() => (pos ? planTrasladoCosto(ordenesOrigen, pos.ticker, Number(cantidad) || 0, pos.cantidad) : null), [ordenesOrigen, pos, cantidad]);
+  const [llevarCosto, setLlevarCosto] = useState(true);
 
   const enviar = async () => {
     setErr(null); setOk(null);
@@ -109,7 +118,7 @@ function TransferirForm({ portfolioOrigenId, posiciones, destinos, transferir }:
     if (cant > pos.cantidad) { setErr(`No podés transferir más de ${fmtNum(pos.cantidad, 0)} que tenés.`); return; }
     setBusy(true);
     try {
-      await transferir(pos.id, destinoId, cant, nota || undefined);
+      await transferir(pos.id, destinoId, cant, nota || undefined, llevarCosto && !!plan && plan.totalUsd > 0);
       setOk(`Transferido ${fmtNum(cant, 0)} de ${pos.ticker}.`);
       setPosicionId(''); setCantidad(''); setDestinoId(''); setNota('');
     } catch (e) {
@@ -163,6 +172,19 @@ function TransferirForm({ portfolioOrigenId, posiciones, destinos, transferir }:
         </Field>
         <Button onClick={enviar} disabled={busy}><ArrowRightLeft className="w-4 h-4" /> {busy ? 'Transfiriendo…' : 'Transferir'}</Button>
       </div>
+      {pos && plan && (plan.totalUsd > 0 || plan.arsSinMep > 0) && (Number(cantidad) || 0) > 0 && (
+        <div className="px-4 pb-3">
+          <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
+            <input type="checkbox" checked={llevarCosto} onChange={e => setLlevarCosto(e.target.checked)} disabled={busy} className="mt-0.5" />
+            <span>
+              <b>Llevar también el costo de las órdenes</b>: {fmtUsd(plan.totalUsd, 2)} de comisiones ({Math.round(plan.fraccion * 100)} % de lo que pagaste por {pos.ticker}).
+              {plan.arsSinMep > 0 && <> Además $ {Math.round(plan.arsSinMep).toLocaleString('es-AR')} en pesos sin MEP (viajan sin convertir).</>}
+              {' '}El origen registra un retiro y el destino un aporte por ese monto, y su orden pasa a mostrar la comisión en el destino. Es lo correcto para una reasignación;
+              destildalo si la transferencia es una venta entre carteras a valor de mercado.
+            </span>
+          </label>
+        </div>
+      )}
       {err && <p className="px-4 pb-3 text-xs text-warn">{err}</p>}
       {ok && <p className="px-4 pb-3 text-xs text-pos">{ok}</p>}
     </Card>
