@@ -57,7 +57,7 @@ export function CostosCobroEditor({ c, bruto, disabled, etiquetaBruto = 'bruto',
           <label className="flex items-center gap-1" title="Lo que cobra tu broker sobre el pago; se configura en Brokers">Com. broker %
             <input type="number" min="0" max="99" step="0.01" value={c.com} onChange={e => c.setCom(e.target.value)} disabled={disabled} className={campo} />
           </label>
-          <span className="text-ink-500">Arrancan en lo configurado en Brokers (o en lo observado en IOL si no cargaste el tuyo).</span>
+          <span className="text-ink-500">Arrancan en lo configurado en Brokers; si tu broker no tiene dato, la comisión general es 1 %.</span>
         </div>
       )}
     </div>

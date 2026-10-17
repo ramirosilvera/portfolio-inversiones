@@ -3,16 +3,19 @@
 //   2. COMISIÓN DEL BANCO DEPOSITARIO del CEDEAR (la fija cada anuncio de Caja de Valores sobre el dividendo bruto; Caterpillar 2022: 8,4 %).
 //      Tampoco es del broker: depende del CEDEAR/banco emisor. En tus pagos de IOL salió ≈ 5,5 % del bruto (UNH, MSFT, MA acreditados al 64,7 %,
 //      64,7 % y 63,8 %: 1 − 0,30 − 0,055 ≈ 0,645).
-//   3. COMISIÓN DEL BROKER sobre el pago: la única que cambia de broker. IOL debita en pesos ≈ 0,72 % de lo acreditado en dividendos y
-//      ≈ 0,45 % en cupones de ON. BBVA y Santander: sin dato (no se encontró su tarifario del plan Black) → se usa la general hasta que
-//      cargues la tuya en Brokers.
+//   3. COMISIÓN DEL BROKER sobre el pago: la única que cambia de broker. IOL (dato propio, ya cargado en Brokers) debita en pesos ≈ 0,72 % de
+//      lo acreditado en dividendos y ≈ 0,45 % en cupones de ON. Un broker SIN dato (Santander, BBVA, o una posición sin broker asignado)
+//      usa la tasa general: 1 %, por decisión del usuario, hasta que cargue la suya en Brokers.
 // Los cupones de ON locales no tienen retención ni comisión depositaria. Sirve para proyectar y registrar cuando no hay el dato real; el
 // dato real (lo que acreditó el bróker) siempre lo pisa. Todo cobro con costos estimados se marca `costos_estimados`.
 
 export const TASA_RETENCION_EEUU = 0.30;
 export const TASA_COMISION_DEPOSITARIA = 0.055;
-export const TASA_COMISION_BROKER_DIVIDENDO = 0.0072;   // sobre lo que queda después de retención y comisión depositaria
-export const TASA_COMISION_BROKER_INTERES = 0.0045;     // sobre el cupón
+export const TASA_COMISION_BROKER_DIVIDENDO = 0.01;     // general (broker sin dato), sobre lo que queda después de retención y comisión depositaria
+export const TASA_COMISION_BROKER_INTERES = 0.01;       // general (broker sin dato), sobre el cupón
+// Lo observado en IOL (dato propio de ese broker; se guarda en brokers.comision_cobro_*).
+export const TASA_IOL_COMISION_DIVIDENDO = 0.0072;
+export const TASA_IOL_COMISION_INTERES = 0.0045;
 
 export type TipoCobroCosto = 'dividendo' | 'interes' | 'amortizacion';
 
