@@ -266,3 +266,14 @@ describe('indiceTwr — aporte mayor al valor previo', () => {
     expect(r.serie[2].indice).toBeCloseTo(29900 / 29777, 10);            // desde ahí rinde normal
   });
 });
+
+describe('indiceTwr — valor idéntico con un flujo', () => {
+  it('un snapshot igual al anterior el día de un aporte se difiere (no se lee como caída)', () => {
+    const r = indiceTwr([v('2026-08-03', 11885), v('2026-08-04', 11885), v('2026-08-20', 22835)], [f('2026-08-04', 2000), f('2026-08-10', 2010), f('2026-08-13', 2621), f('2026-08-14', 2642), f('2026-08-19', 1968.89)]);
+    expect(r.anomalias).toBe(0);
+    expect(r.serie[r.serie.length - 1].indice).toBeCloseTo((22835 - 11241.89) / 11885, 6);
+  });
+  it('sin flujo, un valor repetido (fin de semana) sigue siendo un tramo normal', () => {
+    expect(indiceTwr([v('2026-08-01', 100), v('2026-08-02', 100)], []).serie[1].indice).toBe(1);
+  });
+});
