@@ -90,7 +90,7 @@ el S&P 500 con los mismos flujos y moneda, (3) máxima caída vs. benchmark. Lo 
 - **Motor** `engine/desempeno.ts` (puro, testeado): índice TWR que neutraliza aportes/retiros, anualiza solo con ≥ 365 días, máxima
   caída con fechas de pico/mínimo/recuperación (con huecos > 7 días es un "mínimo conocido", rotulado "≥"), benchmark SPY (adjclose =
   retorno total) con los mismos flujos, TIR neta de comisiones convertibles. Tramos donde el snapshot quedó desfasado de un aporte se
-  omiten y se cuentan como anomalía. UI: `DesempenoCard` en Ahorros. SPY: `/api/market/sp500-anual?desde=` (no se guarda: el adjclose se reajusta retroactivamente).
+  omiten y se cuentan como anomalía. UI: página `Desempeño` (`/desempeno`, `pages/DesempenoPage.tsx` + hook `useDesempeno`) con las 3 preguntas; alerta en el Dashboard si el cron deja de grabar (`engine/snapshotServidor.ts`). SPY: `/api/market/sp500-anual?desde=` (no se guarda: el adjclose se reajusta retroactivamente).
 - **Límites honestos**: la historia previa a 2026 no está registrada (huecos de hasta 205 días en Ahorros); no se reconstruye ni se estima.
 - **Hoja de ruta**: (a) registrar todos los eventos (aportes, retiros, trades, cobros, comisiones) y acreditar los cobros a Liquidez de
   forma consistente; (b) conciliación mensual contra el resumen del broker; (c) export/backup anual de snapshots y eventos; (d)

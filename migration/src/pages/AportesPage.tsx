@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, Trash2, Wallet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { useAportes, useAporteMutations } from '../hooks/useAportes';
 import { useMacro } from '../hooks/usePosiciones';
 import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 import { useCobros } from '../hooks/useCobros';
-import { DesempenoCard } from '../components/DesempenoCard';
 import { cobrosSinAcreditar } from '../engine/pnl';
-import { resumenAportes, flujosFirmados } from '../engine/aportes';
+import { resumenAportes } from '../engine/aportes';
 import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtArs, fmtPct, fmtPctSigno } from '../components/ui';
 import type { Aporte, AporteTipo } from '../types/domain';
 
@@ -102,8 +102,7 @@ export function AportesPage() {
   // (RendimientoPorAnioCard), nunca recalculado acá con su propia copia (regla de oro #1).
   const { data: cobrosRend = [] } = useCobros(active?.id);
   const sinAcreditar = useMemo(() => cobrosSinAcreditar(cobrosRend), [cobrosRend]);
-  const { porAnio, anioActual, sinPrecio: sinPrecioRend, preciosPendientes, valuacionDeMercado, hayDatos, cargando, snaps: snapsDes, aportes: aportesDes, patrimonio: patrimonioDes, hoy: hoyDes } = useRendimientoAnual(active?.id);
-  const flujosDes = useMemo(() => flujosFirmados(aportesDes.filter(a => a.fecha && !Number.isNaN(Date.parse(a.fecha)))), [aportesDes]);
+  const { porAnio, anioActual, sinPrecio: sinPrecioRend, preciosPendientes, valuacionDeMercado, hayDatos, cargando } = useRendimientoAnual(active?.id);
   const [filtroAnio, setFiltroAnio] = useState<AnioFiltro>('todos');
   const [sortAnio, setSortAnio] = useState<{ key: AnioSortKey; dir: 'asc' | 'desc' }>({ key: 'anio', dir: 'desc' });
   const handleSortAnio = (key: AnioSortKey) => setSortAnio(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
@@ -301,8 +300,7 @@ export function AportesPage() {
               </>
             )}
           </Card>
-          {/* Desempeño desde el inicio: acumulado/anualizado, contra el S&P 500 con tus mismos flujos y máxima caída (engine/desempeno.ts). */}
-          {active && <DesempenoCard portfolioId={active.id} snaps={snapsDes} flujos={flujosDes} patrimonio={patrimonioDes} hoy={hoyDes} listo={!cargando && valuacionDeMercado} />}
+          <p className="text-[11px] text-ink-600">Rentabilidad anualizada, comparación con el S&amp;P 500 y máxima caída: ver <Link to="/desempeno" className="text-celeste-600 underline">Desempeño</Link>.</p>
         </div>
       )}
     </div>
