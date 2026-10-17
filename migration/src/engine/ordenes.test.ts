@@ -138,3 +138,15 @@ describe('comisión alta', () => {
     expect(controlarOrdenes([o({ comision_usd: 5 })], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], ['MA']).some(x => x.tipo === 'comision_alta')).toBe(true);
   });
 });
+
+describe('transferencias entre portfolios', () => {
+  it('la entrada de una transferencia no se marca como "compra sin orden"', () => {
+    const base = [o({ fecha: '2026-10-13' })];
+    const sin = controlarOrdenes(base, [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000 }], ['MA', 'COC4D']);
+    expect(sin.filter(x => x.tipo === 'compra_sin_orden')).toHaveLength(0);                 // (la de COC4D es anterior a la primera orden)
+    const con = controlarOrdenes([o({ fecha: '2026-08-01' }), ...base], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000, transferencia: true }], ['MA', 'COC4D']);
+    expect(con.some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(false);
+    const compra = controlarOrdenes([o({ fecha: '2026-08-01' }), ...base], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000 }], ['MA', 'COC4D']);
+    expect(compra.some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(true);
+  });
+});

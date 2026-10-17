@@ -117,7 +117,7 @@ export function OrdenesPage() {
   const meses = useMemo(() => resumenPorMes(ordenes), [ordenes]);
   const controles = useMemo<Control[]>(() => controlarOrdenes(
     ordenes,
-    movs.filter(m => m.tipo === 'compra').map(m => ({ fecha: m.fecha, ticker: m.ticker, cantidad: Number(m.cantidad) || 0 })),
+    movs.filter(m => m.tipo === 'compra').map(m => ({ fecha: m.fecha, ticker: m.ticker, cantidad: Number(m.cantidad) || 0, transferencia: /^transferencia/i.test(m.nota ?? '') })),
     posiciones.map(p => p.ticker), ['LIQUIDEZ'],
     movs.filter(m => m.tipo === 'venta').map(m => ({ fecha: m.fecha, ticker: m.ticker, cantidad: Number(m.cantidad) || 0 })),
   ), [ordenes, movs, posiciones]);

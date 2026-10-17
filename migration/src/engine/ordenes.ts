@@ -8,7 +8,7 @@ export interface OrdenFila {
   estado: string; origen: string; nota: string | null; movimiento_id: string | null;
   lado?: 'compra' | 'venta';          // 0057; ausente = compra
 }
-export interface MovCompra { fecha: string; ticker: string; cantidad: number }
+export interface MovCompra { fecha: string; ticker: string; cantidad: number; transferencia?: boolean }   // transferencia: la entrada vino de otro portfolio (la orden vive en el de origen)
 
 const n = (x: unknown) => (x == null ? 0 : Number(x) || 0);
 export const esEjecutada = (o: Pick<OrdenFila, 'estado'>) => o.estado === 'terminada';
@@ -141,8 +141,13 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
   // Compras sin orden: solo desde la primera orden registrada (antes de eso el portfolio no llevaba este registro).
   const primera = ejecutadasCompra.map(o => o.fecha).sort()[0];
   if (primera) {
+    // Una entrada por TRANSFERENCIA desde otro portfolio no es una compra de este: su orden está en el portfolio de origen.
+    const soloTransferencia = new Set<string>();
+    const noTransf = new Set<string>();
+    for (const m of compras) { const k = clave(m.fecha, m.ticker.toUpperCase()); (m.transferencia ? soloTransferencia : noTransf).add(k); }
     for (const [k, cant] of movPorDia) {
       const [f, t] = k.split('|');
+      if (soloTransferencia.has(k) && !noTransf.has(k)) continue;
       if (f >= primera && !ordenPorDia.has(k)) out.push({ tipo: 'compra_sin_orden', severidad: 'info', texto: `${t} · ${fmtF(f)}: compra de ${cant} sin orden registrada (¿suscripción OTC o falta cargar la orden?).` });
     }
   }
