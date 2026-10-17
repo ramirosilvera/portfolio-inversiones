@@ -46,7 +46,7 @@ export const SECCION_CATALOG: SeccionDef[] = [
   // 2 secciones separadas (`aportes` incluida acá); se fusionaron en una sola tarjeta configurable
   // — `aportes` sigue resolviendo acá vía ALIASES, así un layout guardado con la key vieja no
   // rompe ni duplica la tarjeta.
-  { key: 'rendimiento_por_anio', titulo: 'Rendimiento por año / Aportes', descripcion: 'Cuánto rindió cada año calendario y/o cuánto capital aportaste — elegís qué ver desde la propia tarjeta.' },
+  { key: 'rendimiento_por_anio', titulo: 'Aportes', descripcion: 'Cuánto capital aportaste y retiraste. El rendimiento está en la tarjeta Desempeño.' },
   { key: 'desempeno', titulo: 'Desempeño', descripcion: 'Ganancia en dólares, comparación con el S&P 500 y máxima caída desde el primer valor diario — el detalle y las tres preguntas están en Desempeño.' },
   { key: 'distribucion', titulo: 'Distribución', descripcion: 'Renta fija vs. variable, con objetivo editable y desvío por ticker.' },
   { key: 'cedears', titulo: 'CEDEARs', descripcion: 'Capital, concentración y diversificación sectorial.' },

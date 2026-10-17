@@ -190,6 +190,29 @@ export function indiceBenchmark(serie: PuntoSp[], desde: string, hasta: string, 
   return serie.filter(p => p.f >= desde && p.f <= hasta).map(p => ({ fecha: p.f, indice: p.c / base }));
 }
 
+// ── Evolución: cartera vs capital aportado vs "lo mismo en el S&P 500" ───────────────────────────────────────────────────────
+// Para el gráfico clásico: en cada fecha con valor, cuánto vale la cartera, cuánto capital pusiste (aportes − retiros acumulados) y cuánto
+// valdría si cada aporte/retiro se hubiera hecho en el S&P 500 el mismo día (unidades acumuladas × cierre del día). `sp` es null si falta el
+// cierre de alguna fecha de flujo o de la fecha misma (no se estima).
+export interface PuntoEvolucion { fecha: string; valor: number; capital: number; sp: number | null }
+
+export function evolucion(puntos: PuntoValor[], flujos: FlujoFechado[], serieSp: PuntoSp[] | null): PuntoEvolucion[] {
+  const pts = puntos.filter(p => p && !Number.isNaN(Date.parse(p.fecha)) && Number.isFinite(p.valor) && p.valor > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const fl = flujos.filter(f => f && f.monto !== 0 && !Number.isNaN(Date.parse(f.fecha))).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const out: PuntoEvolucion[] = [];
+  let i = 0, capital = 0, unidades = 0, spOk = !!serieSp?.length;
+  for (const p of pts) {
+    while (i < fl.length && fl[i].fecha <= p.fecha) {
+      capital += fl[i].monto;
+      if (spOk) { const px = cierreAl(serieSp!, fl[i].fecha); if (px != null && px > 0) unidades += fl[i].monto / px; else spOk = false; }
+      i++;
+    }
+    const pxHoy = spOk ? cierreAl(serieSp!, p.fecha) : null;
+    out.push({ fecha: p.fecha, valor: +p.valor.toFixed(2), capital: +capital.toFixed(2), sp: spOk && pxHoy != null && pxHoy > 0 ? +(unidades * pxHoy).toFixed(2) : null });
+  }
+  return out;
+}
+
 // ── Costos registrados ────────────────────────────────────────────────────────────────────────────────────────────────
 export interface OrdenCosto { monto_usd: number | null; comision_usd: number | null; comision_ars: number | null; mep: number | null; origen?: string | null }
 
@@ -232,6 +255,7 @@ export interface Desempeno {
   twr: { acumulado: number | null; anualizado: number | null; anomalias: number; concentrado: boolean };
   tir: { anualizada: number | null; acumulada: number | null; neta: number | null; invertido: number; retirado: number; gananciaUsd: number };
   costos: ResumenCostos;
+  evolucion: PuntoEvolucion[];                       // cartera vs capital aportado vs el S&P 500 con tus mismos flujos (para el gráfico)
   cartera: { mdd: MaxDrawdown | null; rotuloMinimoConocido: boolean };
   benchmark: null | {
     mismosFlujos: BenchmarkMismosFlujos;
@@ -313,6 +337,7 @@ export function calcularDesempeno(p: {
     twr: { acumulado: twrAc, anualizado: anualizar(twrAc, diasPer), anomalias, concentrado },
     tir: { anualizada: tirBruta, acumulada, neta: costos.comisionArsConvertidaUsd > 0 ? tirNeta : tirBruta, invertido, retirado, gananciaUsd: +(p.valorActual + retirado - invertido).toFixed(2) },
     costos,
+    evolucion: evolucion(puntos, flujosVentana.filter(f => f.fecha <= p.hoy), p.serieSp),
     cartera: { mdd: mddCartera, rotuloMinimoConocido: !calidad.confiable },
     benchmark,
   };
