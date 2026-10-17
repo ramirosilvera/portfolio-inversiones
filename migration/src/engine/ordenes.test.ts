@@ -103,3 +103,67 @@ describe('controlarOrdenes — antes del historial de movimientos', () => {
     expect(c.some(x => x.tipo === 'sin_movimiento')).toBe(true);
   });
 });
+
+describe('controlarOrdenes — ventas', () => {
+  const pos = ['MA'];
+  it('una orden de venta se concilia contra las ventas, no contra las compras', () => {
+    const v = o({ lado: 'venta', nominales: 9 });
+    expect(controlarOrdenes([v], [], pos, ['LIQUIDEZ'], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }]).filter(x => x.tipo === 'sin_movimiento' || x.tipo === 'movimiento_distinto')).toEqual([]);
+    expect(controlarOrdenes([v], [], pos, ['LIQUIDEZ'], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 5 }]).some(x => x.tipo === 'movimiento_distinto')).toBe(true);
+    expect(controlarOrdenes([v], [], pos, ['LIQUIDEZ'], []).some(x => x.tipo === 'sin_movimiento')).toBe(true);
+  });
+  it('sin la lista de ventas no se concilian (y una venta no cuenta como "compra sin conciliar")', () => {
+    const c = controlarOrdenes([o({ lado: 'venta' })], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], pos);
+    expect(c.filter(x => x.tipo === 'sin_movimiento' || x.tipo === 'movimiento_distinto')).toEqual([]);
+  });
+});
+
+describe('órdenes estimadas', () => {
+  it('se cuentan aparte y generan un aviso informativo', () => {
+    const lista = [o({}), o({ origen: 'estimada', comision_usd: 7.83, comision_ars: null, mep: null })];
+    const r = resumenOrdenes(lista);
+    expect(r.estimadas).toBe(1);
+    expect(r.comisionEstimadaUsd).toBe(7.83);
+    expect(controlarOrdenes(lista, [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 18 }], ['MA']).some(x => x.tipo === 'ordenes_estimadas')).toBe(true);
+    expect(controlarOrdenes([o({})], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], ['MA']).some(x => x.tipo === 'ordenes_estimadas')).toBe(false);
+  });
+});
+
+describe('comisión alta', () => {
+  it('una orden estimada al 1 % no dispara el aviso por redondeo de centavos', () => {
+    const est = o({ origen: 'estimada', ticker: 'GOOGL', monto_usd: 1480.77, comision_usd: 14.81, comision_ars: null, mep: null, precio_ejecutado: 2.8586, nominales: 518 });
+    expect(controlarOrdenes([est], [], ['GOOGL']).some(x => x.tipo === 'comision_alta')).toBe(false);
+  });
+  it('una orden real con comisión alta sí se marca', () => {
+    expect(controlarOrdenes([o({ comision_usd: 5 })], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], ['MA']).some(x => x.tipo === 'comision_alta')).toBe(true);
+  });
+});
+
+describe('transferencias entre portfolios', () => {
+  it('la entrada de una transferencia no se marca como "compra sin orden"', () => {
+    const base = [o({ fecha: '2026-10-13' })];
+    const sin = controlarOrdenes(base, [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000 }], ['MA', 'COC4D']);
+    expect(sin.filter(x => x.tipo === 'compra_sin_orden')).toHaveLength(0);                 // (la de COC4D es anterior a la primera orden)
+    const con = controlarOrdenes([o({ fecha: '2026-08-01' }), ...base], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000, transferencia: true }], ['MA', 'COC4D']);
+    expect(con.some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(false);
+    const compra = controlarOrdenes([o({ fecha: '2026-08-01' }), ...base], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000 }], ['MA', 'COC4D']);
+    expect(compra.some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(true);
+  });
+});
+
+describe('traspaso con su orden', () => {
+  it('la compra original de una posición que salió por transferencia no se marca "sin orden"', () => {
+    const base = [o({ fecha: '2026-10-13' }), o({ fecha: '2026-08-01', ticker: 'MA' })];
+    const movs = [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-01', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000 }];
+    expect(controlarOrdenes(base, movs, ['MA', 'COC4D']).some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(true);
+    expect(controlarOrdenes(base, movs, ['MA', 'COC4D'], ['LIQUIDEZ'], undefined, [{ ticker: 'COC4D', cantidad: -2000 }]).some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(false);
+  });
+});
+
+describe('orden de costo trasladado', () => {
+  it("una orden origen 'transferida' no se concilia contra compras ni cuenta como error", () => {
+    const tr = o({ origen: 'transferida', fecha: '2026-10-18', ticker: 'COC4D', nominales: 2000, monto_usd: 0, precio_ejecutado: null, comision_usd: 10, comision_ars: null, mep: null });
+    const c = controlarOrdenes([tr], [{ fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000, transferencia: true }], ['COC4D']);
+    expect(c.filter(x => x.severidad === 'error')).toEqual([]);
+  });
+});

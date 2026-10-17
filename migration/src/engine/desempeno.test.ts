@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   indiceTwr, twrAcumulado, anualizar, maxDrawdown, calidadSerie, cierreAl, benchmarkConMismosFlujos, indiceBenchmark,
-  resumenCostos, calcularDesempeno, MIN_DIAS_ANUALIZAR,
+  resumenCostos, calcularDesempeno, MIN_DIAS_ANUALIZAR, evolucion,
 } from './desempeno';
 
 const v = (fecha: string, valor: number) => ({ fecha, valor });
@@ -247,8 +247,8 @@ describe('calcularDesempeno — capital concentrado (caso Herencia)', () => {
       valorActual: 40183, hoy: '2026-10-17', serieSp: null, ordenes: [],
     });
     expect(r.twr.concentrado).toBe(true);
-    expect(r.tir.invertido).toBeCloseTo(2836 + 37000, 6);
-    expect(r.tir.acumulada).toBeCloseTo((40183 - 39836) / 39836, 6);
+    expect(r.tir.invertido).toBeCloseTo(3000 + 37000, 6);             // el aporte del 17/07 es el capital inicial (7 días antes del primer valor)
+    expect(r.tir.acumulada).toBeCloseTo((40183 - 40000) / 40000, 6);
   });
   it('capital estable en el tiempo no es concentrado', () => {
     const r = calcularDesempeno({
@@ -275,5 +275,61 @@ describe('indiceTwr — valor idéntico con un flujo', () => {
   });
   it('sin flujo, un valor repetido (fin de semana) sigue siendo un tramo normal', () => {
     expect(indiceTwr([v('2026-08-01', 100), v('2026-08-02', 100)], []).serie[1].indice).toBe(1);
+  });
+});
+
+describe('resumenCostos — estimadas', () => {
+  it('separa la comisión que viene de órdenes estimadas', () => {
+    const r = resumenCostos([
+      { monto_usd: 1000, comision_usd: 5, comision_ars: null, mep: null },
+      { monto_usd: 1000, comision_usd: 10, comision_ars: null, mep: null, origen: 'estimada' },
+    ]);
+    expect(r.totalUsdConocido).toBe(15);
+    expect(r.estimadasUsd).toBe(10);
+  });
+});
+
+describe('calcularDesempeno — inicio reciente y ganancia en USD', () => {
+  it('un aporte pocos días antes del primer valor es el capital inicial (Herencia): la ganancia en USD incluye la primera semana', () => {
+    const r = calcularDesempeno({
+      puntos: [v('2026-07-24', 2836.51), v('2026-09-28', 29777.29), v('2026-10-17', 40182.83)],
+      flujos: [f('2026-07-17', 3000), f('2026-09-28', 27010), f('2026-09-29', 10000)],
+      valorActual: 40182.83, hoy: '2026-10-17', serieSp: null, ordenes: [],
+    });
+    expect(r.tir.invertido).toBeCloseTo(40010, 6);
+    expect(r.tir.gananciaUsd).toBeCloseTo(172.83, 2);                // = valor − aportado, igual que "Rendimiento por año"
+  });
+  it('con una brecha grande entre el primer aporte y el primer valor, el valor reemplaza a los aportes anteriores (Ahorros)', () => {
+    const r = calcularDesempeno({
+      puntos: [v('2025-12-31', 9361.76), v('2026-10-17', 10000)], flujos: [f('2025-06-02', 6399.58), f('2026-03-02', 862.83)],
+      valorActual: 10000, hoy: '2026-10-17', serieSp: null, ordenes: [],
+    });
+    expect(r.tir.invertido).toBeCloseTo(9361.76 + 862.83, 6);
+    expect(r.tir.gananciaUsd).toBeCloseTo(10000 - 9361.76 - 862.83, 2);
+  });
+});
+
+describe('evolucion — cartera vs capital vs S&P 500', () => {
+  const sp = [{ f: '2026-01-01', c: 100 }, { f: '2026-02-01', c: 110 }, { f: '2026-03-01', c: 121 }];
+  it('capital acumulado y valor del mismo flujo invertido en el índice', () => {
+    const e = evolucion([v('2026-01-01', 1000), v('2026-02-01', 1500), v('2026-03-01', 1700)], [f('2026-01-01', 1000), f('2026-02-01', 330)], sp);
+    expect(e.map(x => x.capital)).toEqual([1000, 1330, 1330]);
+    expect(e[0].sp).toBe(1000);
+    expect(e[1].sp).toBeCloseTo((1000 / 100 + 330 / 110) * 110, 1);        // 1330
+    expect(e[2].sp).toBeCloseTo((1000 / 100 + 330 / 110) * 121, 1);        // 1469,3
+  });
+  it('un retiro resta capital y unidades del índice', () => {
+    const e = evolucion([v('2026-01-01', 1000), v('2026-03-01', 600)], [f('2026-01-01', 1000), f('2026-02-01', -500)], sp);
+    expect(e[1].capital).toBe(500);
+    expect(e[1].sp).toBeCloseTo((1000 / 100 - 500 / 110) * 121, 1);
+  });
+  it('sin serie del índice o sin cierre en una fecha de flujo, sp es null (no se estima)', () => {
+    expect(evolucion([v('2026-01-01', 1000)], [f('2026-01-01', 1000)], null)[0].sp).toBeNull();
+    expect(evolucion([v('2026-03-01', 1000)], [f('2020-01-01', 1000)], sp)[0].sp).toBeNull();
+  });
+  it('calcularDesempeno lo expone con los flujos de la ventana', () => {
+    const r = calcularDesempeno({ puntos: [v('2026-01-01', 1000), v('2026-03-01', 1200)], flujos: [f('2026-01-01', 1000)], valorActual: 1200, hoy: '2026-03-01', serieSp: sp, ordenes: [] });
+    expect(r.evolucion).toHaveLength(2);
+    expect(r.evolucion[1]).toMatchObject({ valor: 1200, capital: 1000 });
   });
 });

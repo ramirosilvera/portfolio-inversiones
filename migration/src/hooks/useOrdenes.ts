@@ -28,7 +28,7 @@ export function useOrdenes(portfolioId: string | null | undefined) {
 export interface OrdenInput {
   fecha: string; ticker: string; broker: string; numero_orden: string | null; nominales: number;
   precio_ejecutado: number | null; monto_usd: number; comision_usd: number | null; comision_ars: number | null; mep: number | null;
-  estado: string; origen: string; nota: string | null; movimiento_id?: string | null;
+  estado: string; origen: string; nota: string | null; movimiento_id?: string | null; lado?: 'compra' | 'venta';
 }
 
 export function useOrdenMutations(portfolioId: string | null | undefined) {

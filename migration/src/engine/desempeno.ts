@@ -21,6 +21,8 @@ const dias = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)
 // Un hueco mayor a esto entre dos valores consecutivos vuelve la serie "con huecos": la caída máxima observada puede ser menor
 // que la real (el mínimo pudo ocurrir entre dos puntos). Una semana cubre fines de semana y feriados largos.
 export const MAX_HUECO_CONFIABLE = 7;
+// Brecha máxima (días) entre el primer aporte y el primer valor diario para considerar que la cartera "recién arrancaba".
+export const MAX_BRECHA_INICIO = 14;
 // Por debajo de un año no se anualiza.
 export const MIN_DIAS_ANUALIZAR = 365;
 
@@ -188,8 +190,31 @@ export function indiceBenchmark(serie: PuntoSp[], desde: string, hasta: string, 
   return serie.filter(p => p.f >= desde && p.f <= hasta).map(p => ({ fecha: p.f, indice: p.c / base }));
 }
 
+// ── Evolución: cartera vs capital aportado vs "lo mismo en el S&P 500" ───────────────────────────────────────────────────────
+// Para el gráfico clásico: en cada fecha con valor, cuánto vale la cartera, cuánto capital pusiste (aportes − retiros acumulados) y cuánto
+// valdría si cada aporte/retiro se hubiera hecho en el S&P 500 el mismo día (unidades acumuladas × cierre del día). `sp` es null si falta el
+// cierre de alguna fecha de flujo o de la fecha misma (no se estima).
+export interface PuntoEvolucion { fecha: string; valor: number; capital: number; sp: number | null }
+
+export function evolucion(puntos: PuntoValor[], flujos: FlujoFechado[], serieSp: PuntoSp[] | null): PuntoEvolucion[] {
+  const pts = puntos.filter(p => p && !Number.isNaN(Date.parse(p.fecha)) && Number.isFinite(p.valor) && p.valor > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const fl = flujos.filter(f => f && f.monto !== 0 && !Number.isNaN(Date.parse(f.fecha))).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const out: PuntoEvolucion[] = [];
+  let i = 0, capital = 0, unidades = 0, spOk = !!serieSp?.length;
+  for (const p of pts) {
+    while (i < fl.length && fl[i].fecha <= p.fecha) {
+      capital += fl[i].monto;
+      if (spOk) { const px = cierreAl(serieSp!, fl[i].fecha); if (px != null && px > 0) unidades += fl[i].monto / px; else spOk = false; }
+      i++;
+    }
+    const pxHoy = spOk ? cierreAl(serieSp!, p.fecha) : null;
+    out.push({ fecha: p.fecha, valor: +p.valor.toFixed(2), capital: +capital.toFixed(2), sp: spOk && pxHoy != null && pxHoy > 0 ? +(unidades * pxHoy).toFixed(2) : null });
+  }
+  return out;
+}
+
 // ── Costos registrados ────────────────────────────────────────────────────────────────────────────────────────────────
-export interface OrdenCosto { monto_usd: number | null; comision_usd: number | null; comision_ars: number | null; mep: number | null }
+export interface OrdenCosto { monto_usd: number | null; comision_usd: number | null; comision_ars: number | null; mep: number | null; origen?: string | null }
 
 export interface ResumenCostos {
   ordenes: number;
@@ -199,23 +224,25 @@ export interface ResumenCostos {
   comisionArsConvertidaUsd: number;  // la parte de esas comisiones en pesos que tiene tipo de cambio REGISTRADO (mep)
   comisionArsSinConvertirPesos: number; // la parte SIN tipo de cambio: no se estima, queda en pesos
   totalUsdConocido: number;          // comisionUsd + comisionArsConvertidaUsd
+  estimadasUsd: number;              // parte de ese total que sale de órdenes ESTIMADAS (origen 'estimada'), no de un dato real
   pctSobreOperado: number | null;
 }
 
 export function resumenCostos(ordenes: OrdenCosto[]): ResumenCostos {
-  let operado = 0, cUsd = 0, cArs = 0, cArsConv = 0, cArsSin = 0;
+  let operado = 0, cUsd = 0, cArs = 0, cArsConv = 0, cArsSin = 0, est = 0;
   for (const o of ordenes) {
     operado += Number(o.monto_usd) || 0;
     cUsd += Number(o.comision_usd) || 0;
     const ars = Number(o.comision_ars) || 0;
     cArs += ars;
     if (ars > 0) { if (o.mep && o.mep > 0) cArsConv += ars / o.mep; else cArsSin += ars; }
+    if (o.origen === 'estimada') est += (Number(o.comision_usd) || 0) + (ars > 0 && o.mep && o.mep > 0 ? ars / o.mep : 0);
   }
   const total = cUsd + cArsConv;
   return {
     ordenes: ordenes.length, operadoUsd: +operado.toFixed(2), comisionUsd: +cUsd.toFixed(2), comisionArsPesos: +cArs.toFixed(2),
     comisionArsConvertidaUsd: +cArsConv.toFixed(2), comisionArsSinConvertirPesos: +cArsSin.toFixed(2),
-    totalUsdConocido: +total.toFixed(2), pctSobreOperado: operado > 0 ? total / operado : null,
+    totalUsdConocido: +total.toFixed(2), estimadasUsd: +est.toFixed(2), pctSobreOperado: operado > 0 ? total / operado : null,
   };
 }
 
@@ -226,8 +253,9 @@ export interface Desempeno {
   // `concentrado`: la mayor parte del capital entró hace pocos días (capital ponderado por tiempo < 1/3 del aportado, mismo criterio que
   // rendimientoPorAnio): el % ponderado por tiempo queda dominado por un denominador diminuto y NO es representativo del dinero invertido.
   twr: { acumulado: number | null; anualizado: number | null; anomalias: number; concentrado: boolean };
-  tir: { anualizada: number | null; acumulada: number | null; neta: number | null; invertido: number; retirado: number };
+  tir: { anualizada: number | null; acumulada: number | null; neta: number | null; invertido: number; retirado: number; gananciaUsd: number };
   costos: ResumenCostos;
+  evolucion: PuntoEvolucion[];                       // cartera vs capital aportado vs el S&P 500 con tus mismos flujos (para el gráfico)
   cartera: { mdd: MaxDrawdown | null; rotuloMinimoConocido: boolean };
   benchmark: null | {
     mismosFlujos: BenchmarkMismosFlujos;
@@ -256,9 +284,15 @@ export function calcularDesempeno(p: {
   // período; antes la TIR y el índice partían del primer aporte (importado de la planilla, sin valores diarios) y el acumulado del
   // primer snapshot, y las cifras se contradecían.
   const validos = puntos.filter(x => x && !Number.isNaN(Date.parse(x.fecha)) && x.valor > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
-  const flujosVentana: FlujoFechado[] = validos.length
-    ? [{ fecha: validos[0].fecha, monto: validos[0].valor }, ...p.flujos.filter(f => f.fecha > validos[0].fecha && f.monto !== 0)]
-    : p.flujos;
+  // Excepción: si el PRIMER aporte es de pocos días antes del primer valor diario (la cartera recién arrancaba: Herencia, aporte del 17/07 y primer
+  // valor del 24/07), esos aportes SON el capital inicial y entran tal cual — usar el valor del primer día perdería la primera semana (comisiones,
+  // spread) y la ganancia en dólares no coincidiría con la de "Rendimiento por año". Con una brecha grande (Ahorros: aporte de 06/2025, primer
+  // valor 31/12/2025) el valor del primer día reemplaza a los aportes anteriores.
+  const primerFlujoFecha = [...p.flujos].filter(f => f.monto > 0).map(f => f.fecha).sort()[0] ?? null;
+  const inicioReciente = validos.length > 0 && primerFlujoFecha != null && primerFlujoFecha <= validos[0].fecha && dias(primerFlujoFecha, validos[0].fecha) <= MAX_BRECHA_INICIO;
+  const flujosVentana: FlujoFechado[] = !validos.length ? p.flujos
+    : inicioReciente ? p.flujos.filter(f => f.monto !== 0)
+    : [{ fecha: validos[0].fecha, monto: validos[0].valor }, ...p.flujos.filter(f => f.fecha > validos[0].fecha && f.monto !== 0)];
   const fl = flujosVentana.filter(f => f.fecha <= p.hoy && f.monto !== 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
   const invertido = fl.filter(f => f.monto > 0).reduce((s, f) => s + f.monto, 0);
   const retirado = -fl.filter(f => f.monto < 0).reduce((s, f) => s + f.monto, 0);
@@ -301,8 +335,9 @@ export function calcularDesempeno(p: {
     periodo: { desde, hasta, dias: diasPer, menorAUnAnio: diasPer < MIN_DIAS_ANUALIZAR },
     calidad,
     twr: { acumulado: twrAc, anualizado: anualizar(twrAc, diasPer), anomalias, concentrado },
-    tir: { anualizada: tirBruta, acumulada, neta: costos.comisionArsConvertidaUsd > 0 ? tirNeta : tirBruta, invertido, retirado },
+    tir: { anualizada: tirBruta, acumulada, neta: costos.comisionArsConvertidaUsd > 0 ? tirNeta : tirBruta, invertido, retirado, gananciaUsd: +(p.valorActual + retirado - invertido).toFixed(2) },
     costos,
+    evolucion: evolucion(puntos, flujosVentana.filter(f => f.fecha <= p.hoy), p.serieSp),
     cartera: { mdd: mddCartera, rotuloMinimoConocido: !calidad.confiable },
     benchmark,
   };

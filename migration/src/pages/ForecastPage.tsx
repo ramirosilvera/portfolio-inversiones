@@ -9,7 +9,6 @@ import { analisisMeta } from '../engine/presupuesto';
 import { marketValueUSD, costUSD } from '../lib/valuation';
 import { Card, CardHeader, Button, Stat, inputCls, fmtUsd, fmtUsdCompact, fmtPct, fmtPctSigno } from '../components/ui';
 import { PresupuestoVsReal } from '../components/PresupuestoVsReal';
-import { VsSp500 } from '../components/VsSp500';
 import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 
 // Año en curso real: si se hardcodea, a partir del año siguiente el eje temporal y las edades
@@ -32,7 +31,7 @@ export function ForecastPage() {
     [posiciones, quotes]);
 
   // Rendimiento real por año (el de la tarjeta de rendimiento): evidencia para elegir el retorno que se asume acá.
-  const { porAnio, hoy } = useRendimientoAnual(active?.id);
+  const { porAnio } = useRendimientoAnual(active?.id);
   const { data: saved, isLoading: savedLoading, isError: savedError, save: saveInputs, remove: removeInputs, savePresupuesto } = useProyeccionInputs(active?.id);
   const [aporteAnual, setAporteAnual] = useState(DEFAULTS.aporteAnual);
   const [tasaAnual, setTasaAnual] = useState(DEFAULTS.tasaAnual);
@@ -125,8 +124,6 @@ export function ForecastPage() {
         supuestos={{ aporteAnual, tasaAnual, anios, edadInicial }}
         presupuesto={saved?.presupuesto ?? null}
         onFijar={savePresupuesto} onBorrar={() => savePresupuesto(null)} />
-
-      <VsSp500 rendAnios={porAnio} hoy={hoy} />
 
       <Card>
         <CardHeader title="Crecimiento proyectado" />

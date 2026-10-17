@@ -13,7 +13,7 @@ import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
 import { useFlujo } from '../hooks/useFlujo';
 import { useCobros } from '../hooks/useCobros';
 import { useProyeccionInputs } from '../hooks/useProyeccionInputs';
-import { calcularForecast, retornoObjetivo, type Presupuesto, type ResumenForecast } from '../engine/presupuesto';
+import { calcularForecast, type Presupuesto, type ResumenForecast } from '../engine/presupuesto';
 import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { useBrokers } from '../hooks/useBrokers';
 import { usePosicionBrokers } from '../hooks/usePosicionBrokers';
@@ -42,6 +42,7 @@ import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
 import { AlertaSnapshotServidor } from '../components/AlertaSnapshotServidor';
+import { useDesempeno } from '../hooks/useDesempeno';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
 import type { Posicion, AssetType, SeccionKey, DashboardWidget, Aporte } from '../types/domain';
@@ -56,7 +57,7 @@ export function DashboardPage() {
     posiciones, quotes, aportes, snaps,
     sinPrecio, valuacionDeMercado,
     patrimonio, costo, pnl, alloc,
-    hoy, anioActual, aportadoNeto, porAnio, hayDatos,
+    hoy, aportadoNeto,
   } = useRendimientoAnual(active?.id);
   // Tickers tenidos (sin efectivo) — para el aviso de precios viejos de <UpdatedAt>.
   const tickersTenidos = useMemo(() => posiciones.filter(p => p.cantidad > 0 && p.tipo !== 'cash').map(p => p.ticker), [posiciones]);
@@ -178,7 +179,8 @@ export function DashboardPage() {
     // Rendimiento por año + Aportes unificados en una sola tarjeta (antes 2 separadas) — el usuario
     // elige qué mostrar (selector en el header, persistido por portfolio); por default solo
     // Rendimiento, para no duplicar de entrada lo que ya se ve completo en /aportes.
-    rendimiento_por_anio: <CapitalResumen porAnio={porAnio} anioActual={anioActual} hayDatosRendimiento={hayDatos} aportes={aportes} personalizando={personalizando} tasaPresupuesto={presupuesto?.tasaAnual ?? null} />,
+    rendimiento_por_anio: <CapitalResumen aportes={aportes} personalizando={personalizando} />,
+    desempeno: <DesempenoResumen personalizando={personalizando} />,
     distribucion: <Distribucion alloc={alloc} total={patrimonio} isLoading={qPos.isLoading}
       objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct}
       setObjetivoFijaPct={objetivoDistribucion.setObjetivoPct} setToleranciaDistribucionPct={objetivoDistribucion.setToleranciaPct}
@@ -354,173 +356,27 @@ function ObjetivoCapitalCard({ objetivo, patrimonio, presupuesto, forecast }: { 
   );
 }
 
-// Rendimiento por año calendario Y/O Aportes — dos vistas del mismo concepto de capital ("cómo
-// rindió" vs. "cuánto metí"), fusionadas en una sola tarjeta con un selector de modo en vez de 2
-// tarjetas separadas. El rendimiento muestra solo los últimos N años (más años acumulándose año a
-// año, sin límite, hacía que esta tarjeta creciera indefinidamente en el inicio) — el detalle
-// completo de las dos vistas (historial de movimientos, tabla ordenable/filtrable de rendimiento)
-// vive en /aportes, con los MISMOS `porAnio`/`aportes` (mismo hook, nunca recalculados acá).
-const ANIOS_VISIBLES_DASHBOARD = 5;
-type ModoCapital = 'rendimiento' | 'aportes' | 'ambos';
-const MODO_CAPITAL_LABEL: Record<ModoCapital, string> = { rendimiento: 'Rendimiento', aportes: 'Aportes', ambos: 'Ambos' };
-
-// Qué mostrar en la tarjeta — preferencia de VISTA, no de layout: vive en localStorage por
-// portfolio (mismo patrón que useObjetivoDistribucion más abajo), no en dashboard_layout. No es
-// "agregar/quitar una tarjeta" (eso ya lo cubre el Dashboard personalizable) — es una preferencia
-// de cómo se ve ESTA tarjeta puntual, así que no tiene sentido que viaje con el resto del layout ni
-// que "Restaurar predeterminado" la toque.
-function leerModoCapital(key: string | null): ModoCapital {
-  try {
-    const raw = key ? localStorage.getItem(key) : null;
-    if (raw === 'rendimiento' || raw === 'aportes' || raw === 'ambos') return raw;
-  } catch { /* */ }
-  return 'rendimiento';
-}
-
-function useModoCapital(portfolioId: string | undefined) {
-  const key = portfolioId ? `dashboard.modoCapital.${portfolioId}` : null;
-  // Inicializador lazy (no useEffect-only) — con solo useEffect, el primer render SIEMPRE arrancaba
-  // en 'rendimiento' así el usuario tuviera 'aportes' guardado, y un instante después saltaba al
-  // modo real: un parpadeo visible cada vez que se entra al Dashboard.
-  const [modo, setModoState] = useState<ModoCapital>(() => leerModoCapital(key));
-  useEffect(() => { setModoState(leerModoCapital(key)); }, [key]);
-  const setModo = (m: ModoCapital) => {
-    setModoState(m);
-    if (key) { try { localStorage.setItem(key, m); } catch { /* */ } }
-  };
-  return { modo, setModo };
-}
-
-function CapitalResumen({ porAnio, anioActual, hayDatosRendimiento, aportes, personalizando, tasaPresupuesto }: {
-  porAnio: { anio: number; rendimiento: number | null; concentrado?: boolean; pnlSobreCapital?: number | null; dias?: number }[]; anioActual: number; hayDatosRendimiento: boolean;
-  aportes: Aporte[]; personalizando: boolean;
-  tasaPresupuesto?: number | null;   // retorno anual del presupuesto (Forecast): referencia para el año en curso
-}) {
-  const { active } = usePortfolios();
-  const { modo, setModo } = useModoCapital(active?.id);
+// Aportes: cuánto capital pusiste y retiraste. El RENDIMIENTO (ganancia, contra el S&P 500, máxima caída, por año) ya no vive acá: está en la tarjeta
+// «Desempeño» y en /desempeno, para tener un solo lugar y un solo %. El detalle de los movimientos está en /aportes.
+function CapitalResumen({ aportes, personalizando }: { aportes: Aporte[]; personalizando: boolean }) {
   const hayAportes = aportes.length > 0;
-  // Antes esto era `modo === 'aportes' ? hayAportes : hayDatosRendimiento` — un portfolio con
-  // posiciones pero SIN aportes cargados, en modo "Aportes", hacía `visible=false` y la tarjeta
-  // desaparecía por completo apenas se clickeaba ese modo — sin forma de volver atrás, porque el
-  // selector vive DENTRO de la tarjeta que acaba de esconderse. Ahora se muestra si hay CUALQUIER
-  // motivo (rendimiento o aportes), y cada bloque interno decide por su cuenta si tiene algo real
-  // que mostrar o un estado vacío explicado.
-  const visible = hayDatosRendimiento || hayAportes;
-  if (!visible) return null;
-
-  const ordenado = [...porAnio].reverse(); // más reciente primero
-  const visiblesAnio = ordenado.slice(0, ANIOS_VISIBLES_DASHBOARD);
-  const restantes = ordenado.length - visiblesAnio.length;
   const { aportado, retirado, neto } = resumenAportes(aportes);
-  const titulo = modo === 'rendimiento' ? 'Rendimiento por año' : modo === 'aportes' ? 'Aportes' : 'Rendimiento y aportes';
-  const href = modo === 'aportes' ? '/aportes' : '/aportes#rendimiento-anual';
-  const movimientos = `${aportes.length} movimiento${aportes.length > 1 ? 's' : ''} de capital, no rendimiento de mercado.`;
-  const sub = modo === 'aportes' ? movimientos
-    : modo === 'rendimiento' ? 'Rendimiento por año calendario, no anualizado.'
-    : `Rendimiento por año calendario y ${movimientos.charAt(0).toLowerCase()}${movimientos.slice(1)}`;
-
+  const right = <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
   return (
     <Card>
-      <CardHeader title={titulo} sub={sub}
-        right={!personalizando && (
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <div role="radiogroup" aria-label="Qué mostrar" className="inline-flex rounded-full border border-line divide-x divide-line overflow-hidden text-[11px] font-semibold">
-              {(['rendimiento', 'aportes', 'ambos'] as const).map(m => (
-                <button key={m} type="button" onClick={() => setModo(m)} role="radio" aria-checked={modo === m}
-                  className={`px-3 py-1.5 transition-colors ${modo === m ? 'bg-celeste-700 text-white' : 'bg-surface text-ink-600 hover:bg-canvas'}`}>
-                  {MODO_CAPITAL_LABEL[m]}
-                </button>
-              ))}
+      <CardHeader title="Aportes" sub={hayAportes ? `${aportes.length} movimiento${aportes.length > 1 ? 's' : ''} de capital, no rendimiento de mercado.` : undefined}
+        right={personalizando ? right : <Link to="/aportes" className="hover:underline">{right}</Link>} />
+      {hayAportes ? (
+        <div className="grid grid-cols-3 gap-2 p-3">
+          {([['Aportado', aportado, 'Suma de todos los aportes'], ['Retirado', retirado, 'Suma de todos los retiros de capital'], ['Neto', neto, 'Aportado menos retirado']] as const).map(([t, v, h]) => (
+            <div key={t} className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title={h}>
+              <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">{t}</p>
+              <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(v, 0)}>{fmtUsdCompact(v, { k: true })}</p>
             </div>
-            <Link to={href} className="text-[11px] text-celeste-600 hover:underline">
-              {/* Antes solo en modo 'rendimiento' — en 'ambos' también se truncan los últimos N años,
-                  así que ocultar el conteo ahí hacía parecer que esos 5 chips eran el historial completo. */}
-              {modo !== 'aportes' && restantes > 0 ? `Ver ${restantes} año${restantes > 1 ? 's' : ''} más →` : 'Ver detalle →'}
-            </Link>
-          </div>
-        )} />
-
-      {(modo === 'rendimiento' || modo === 'ambos') && (
-        <div className={modo === 'ambos' ? 'border-b border-line' : ''}>
-          {modo === 'ambos' && (
-            <p className="px-4 pt-3 text-[10px] uppercase tracking-wide text-ink-600 font-semibold">Rendimiento por año</p>
-          )}
-          <div className="p-3 flex flex-wrap gap-2">
-            {visiblesAnio.map(({ anio, rendimiento, concentrado, pnlSobreCapital }) => (
-              <div key={anio} className="rounded-xl bg-canvas ring-1 ring-inset ring-line px-3 py-2 min-w-[88px]"
-                title={concentrado && pnlSobreCapital != null ? `Casi todo el capital entró hace pocos días: el % ponderado por tiempo exagera. Sobre el capital aportado: ${fmtPctSigno(pnlSobreCapital, 1)}` : undefined}>
-                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold">{anio}{anio === anioActual ? ' · en curso' : ''}</p>
-                <p className={`text-lg font-bold tnum mt-0.5 ${rendimiento == null ? 'text-ink-600' : rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}>
-                  {rendimiento != null ? fmtPct(rendimiento) : '—'}{concentrado && rendimiento != null && '*'}
-                </p>
-              </div>
-            ))}
-          </div>
-          {/* Evaluado sobre TODOS los años (no solo los visibles) — los "—" se concentran justo en
-              los años más viejos, que son los que este texto explica; si se evaluara sobre
-              `visiblesAnio` desaparecería la explicación exactamente cuando hace falta. */}
-          {/* Año con casi todo el capital recién ingresado: Modified Dietz exagera el % (denominador diminuto);
-              se aclara con el valor sobre el capital aportado, que coincide con el P&L del Forecast. */}
-          {/* Conexión con el Forecast: el año en curso contra el retorno presupuestado, prorrateado por los días del período. */}
-          {(() => {
-            const ac = porAnio.find(r => r.anio === anioActual);
-            if (tasaPresupuesto == null || !ac || ac.rendimiento == null || ac.concentrado || !(ac.dias && ac.dias > 0)) return null;
-            const obj = retornoObjetivo(tasaPresupuesto, ac.dias);
-            return (
-              <p className="px-4 pb-2 text-[11px] text-ink-500" title="Retorno anual del presupuesto (Forecast) prorrateado a los días del período del año en curso.">
-                {anioActual} a la fecha: <span className={`tnum font-semibold ${ac.rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}>{fmtPctSigno(ac.rendimiento, 1)}</span> vs objetivo del Forecast <span className="tnum font-semibold text-ink-700">{fmtPctSigno(obj, 1)}</span> ({fmtPct(tasaPresupuesto, 1)}/año prorrateado)
-              </p>
-            );
-          })()}
-          {porAnio.filter(r => r.concentrado && r.pnlSobreCapital != null).map(r => (
-            <p key={r.anio} className="px-4 pb-2 text-[11px] text-warn">
-              * {r.anio}: casi todo el capital entró hace pocos días y el % ponderado por tiempo exagera. Sobre el capital aportado: {fmtPctSigno(r.pnlSobreCapital, 1)}.
-            </p>
           ))}
-          {porAnio.some(r => r.rendimiento == null) && (
-            <p className="px-4 pb-3 text-[11px] text-ink-500">Los años en "—" se completan a medida que la app registra el valor diario.</p>
-          )}
         </div>
-      )}
-
-      {(modo === 'aportes' || modo === 'ambos') && (
-        hayAportes ? (
-          <div>
-            {modo === 'ambos' && (
-              <p className="px-4 pt-3 text-[10px] uppercase tracking-wide text-ink-600 font-semibold">Aportes — desde el inicio</p>
-            )}
-            {/* Tiles locales en vez del <Stat> compartido: éste usa text-xl + truncate, que en las 3
-                columnas angostas de esta tarjeta (más angosta que una página completa) cortaba
-                números normales de 5-6 cifras a "US$1…" — un número que el usuario pidió ver quedaba
-                ilegible sin hacer hover. Con text-base + break-words, un valor grande pasa a la
-                segunda línea en vez de esconderse detrás de "…" (mismo criterio que CobrosResumen/
-                LiquidezFci, que ya usan tiles más chicos que Stat por este mismo motivo). */}
-            <div className="grid grid-cols-3 gap-2 p-3">
-              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los aportes">
-                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Aportado</p>
-                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(aportado, 0)}>{fmtUsdCompact(aportado, { k: true })}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Suma de todos los retiros de capital">
-                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Retirado</p>
-                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(retirado, 0)}>{fmtUsdCompact(retirado, { k: true })}</p>
-              </div>
-              {/* Sin color pos/neg: acá no significa ganancia/pérdida (ese semáforo lo usa el resto
-                  de la app para P&L) — "positivo" solo dice que aportaste más de lo que retiraste.
-                  Label acortado a "Neto" (no "Neto aportado"): con el label largo, esta tercera
-                  columna se corta a "NETO APORT…" en el mismo ancho angosto — el texto de abajo
-                  ("Aportado − retirado — no es rendimiento") ya aclara qué es. */}
-              <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-2.5 min-w-0" title="Aportado menos retirado">
-                <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">Neto</p>
-                <p className="text-base font-bold font-display tnum mt-1 text-ink-900 truncate leading-tight" title={fmtUsd(neto, 0)}>{fmtUsdCompact(neto, { k: true })}</p>
-              </div>
-            </div>
-            {/* Visible, no solo tooltip — al lado de un % de rendimiento real (modo "Ambos"), un
-                hover-only "no es rendimiento" no alcanza para evitar la confusión. */}
-            <p className="px-4 pb-3 text-[11px] text-ink-500">Aportado − retirado — no es rendimiento.</p>
-          </div>
-        ) : (
-          <p className="px-4 pb-3 pt-3 text-[11px] text-ink-500">Sin aportes registrados todavía.</p>
-        )
+      ) : (
+        <p className="px-4 pb-3 pt-3 text-[11px] text-ink-500">Sin aportes registrados todavía.</p>
       )}
     </Card>
   );
@@ -1223,6 +1079,35 @@ function MacroResumen({ resumen, personalizando }: { resumen: ResumenMacro; pers
         {personalizando
           ? <span className="text-[11px] text-celeste-600">Ver contexto macro completo →</span>
           : <Link to="/macro" className="text-[11px] text-celeste-600 hover:underline">Ver contexto macro completo →</Link>}
+      </div>
+    </Card>
+  );
+}
+
+// Resumen de Desempeño (el detalle y las tres preguntas viven en /desempeno, con el MISMO hook y motor: nunca se recalcula acá). Muestra lo que no
+// depende del método: la ganancia en dólares (igual a la de "Rendimiento por año" cuando el período coincide), contra el S&P 500 con tus mismos
+// flujos y la máxima caída. Sin datos suficientes no ocupa lugar.
+function DesempenoResumen({ personalizando }: { personalizando: boolean }) {
+  const { active } = usePortfolios();
+  const x = useDesempeno(active?.id);
+  if (!x.listo || !x.hayPuntos) return null;
+  const { d } = x;
+  const f = (iso: string | null) => (iso ? iso.split('-').reverse().join('/') : '—');
+  const gan = d.tir.gananciaUsd;
+  const b = d.benchmark;
+  const mdd = d.cartera.mdd;
+  const right = <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
+  return (
+    <Card>
+      <CardHeader title="Desempeño" sub={`Desde el ${f(d.periodo.desde)} · ${d.periodo.dias} días · en USD`}
+        right={personalizando ? right : <Link to="/desempeno" className="hover:underline">{right}</Link>} />
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Stat label="Ganancia" value={<span className={gan >= 0 ? 'text-pos' : 'text-neg'}>{gan >= 0 ? '+' : '−'}{fmtUsd(Math.abs(gan), 0)}</span>}
+          hint={d.tir.acumulada != null ? `${fmtPctSigno(d.tir.acumulada, 1)} sobre lo aportado` : undefined} />
+        <Stat label="Contra el S&P 500" value={b ? <span className={b.diferenciaValor >= 0 ? 'text-pos' : 'text-neg'}>{b.diferenciaValor >= 0 ? '+' : '−'}{fmtUsd(Math.abs(b.diferenciaValor), 0)}</span> : '—'}
+          hint={b ? `tu cartera vs S&P ${b.mismosFlujos.rendimientoPeriodo != null ? fmtPctSigno(b.mismosFlujos.rendimientoPeriodo, 1) : '—'} con tus mismos aportes` : 'sin serie del índice'} />
+        <Stat label="Máxima caída" value={mdd ? (mdd.mdd === 0 ? 'sin caídas' : `${d.cartera.rotuloMinimoConocido ? '≥ ' : ''}${fmtPct(Math.abs(mdd.mdd), 1)}`) : '—'}
+          hint={mdd && mdd.mdd < 0 ? `${f(mdd.fechaPico)} → ${f(mdd.fechaMinimo)}` : undefined} />
       </div>
     </Card>
   );

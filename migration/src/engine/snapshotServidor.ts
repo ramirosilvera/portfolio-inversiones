@@ -25,3 +25,12 @@ export function estadoSnapshotServidor(
   const d = dias(ultimo, hoy);
   return d > MAX_DIAS_SIN_SNAPSHOT_SERVIDOR ? { estado: 'atrasado', ultimo, dias: d } : { estado: 'ok', ultimo };
 }
+
+// Fila que graba la APP. NO incluye `fuente` ni `completo` a propósito: en un upsert las columnas ausentes no se tocan si la fila ya existe, así que
+// si el cron ya grabó el día (fuente='cron') el navegador solo actualiza valor/aportado/detalle y NO le cambia el origen — antes lo pisaba con
+// 'app', y la alerta de «el servidor no graba» (estadoSnapshotServidor arriba, que cuenta solo filas del cron) saltaba aunque el cron estuviera
+// funcionando. Si la fila no existe, entra con los defaults de la tabla (fuente 'app', completo true).
+export function filaSnapshotApp(portfolioId: string, fecha: string, valor: number, aportado: number, detalle?: { t: string; c: number; v: number }[]) {
+  return { portfolio_id: portfolioId, fecha, valor, aportado, detalle: detalle ?? null };
+}
+

@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Trash2, Wallet, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Plus, Trash2, Wallet } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { useAportes, useAporteMutations } from '../hooks/useAportes';
 import { useMacro } from '../hooks/usePosiciones';
-import { useRendimientoAnual } from '../hooks/useRendimientoAnual';
-import { useCobros } from '../hooks/useCobros';
-import { cobrosSinAcreditar } from '../engine/pnl';
 import { resumenAportes } from '../engine/aportes';
-import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtArs, fmtPct, fmtPctSigno } from '../components/ui';
+import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtArs } from '../components/ui';
 import type { Aporte, AporteTipo } from '../types/domain';
 
 // Conversión USD↔ARS con el MEP vigente, mismo criterio que el campo ARS vinculado de Comprar/
@@ -41,24 +38,6 @@ function MontoInput({ value, onChange, placeholder, disabled, className }: {
 }
 
 const TIPO_TONE: Record<AporteTipo, 'accent' | 'gray' | 'warn' | 'neg'> = { inicial: 'accent', recurrente: 'gray', adelanto: 'warn', retiro: 'neg' };
-
-type AnioFiltro = 'todos' | 'positivos' | 'negativos' | 'sindatos';
-// "Sin datos" → "Sin %": filtra por `rendimiento == null` (ver más abajo), y desde que la tabla
-// también muestra Aportes/P&L un año puede no tener % pero sí tener esas otras dos columnas — el
-// nombre viejo sugería "no hay nada en esta fila", que ya no es necesariamente cierto.
-const FILTRO_LABEL: Record<AnioFiltro, string> = { todos: 'Todos', positivos: 'Positivos', negativos: 'Negativos', sindatos: 'Sin %' };
-type AnioSortKey = 'anio' | 'rendimiento' | 'aportes' | 'pnl';
-
-// Años "sin dato" siempre al final, sea cual sea la dirección — null no es "peor que -100%" ni
-// "peor que -$1000", es una pregunta sin respuesta todavía. Compartido por las 3 columnas numéricas
-// (Rendimiento, Aportes, P&L) — cada una puede ser null independientemente de las otras (ej. un
-// retiro que deja la base ≤0 invalida el %, pero el P&L en dólares sigue siendo un número real).
-function compararConNulls(a: number | null, b: number | null, dir: 'asc' | 'desc'): number {
-  if (a == null && b == null) return 0;
-  if (a == null) return 1;
-  if (b == null) return -1;
-  return dir === 'asc' ? a - b : b - a;
-}
 
 export function AportesPage() {
   const { active } = usePortfolios();
@@ -97,37 +76,6 @@ export function AportesPage() {
   }, [mep]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { aportado, retirado, neto } = resumenAportes(aportes);
-
-  // Detalle completo de rendimiento por año — MISMO hook que usa el resumen del Dashboard
-  // (RendimientoPorAnioCard), nunca recalculado acá con su propia copia (regla de oro #1).
-  const { data: cobrosRend = [] } = useCobros(active?.id);
-  const sinAcreditar = useMemo(() => cobrosSinAcreditar(cobrosRend), [cobrosRend]);
-  const { porAnio, anioActual, sinPrecio: sinPrecioRend, preciosPendientes, valuacionDeMercado, hayDatos, cargando } = useRendimientoAnual(active?.id);
-  const [filtroAnio, setFiltroAnio] = useState<AnioFiltro>('todos');
-  const [sortAnio, setSortAnio] = useState<{ key: AnioSortKey; dir: 'asc' | 'desc' }>({ key: 'anio', dir: 'desc' });
-  const handleSortAnio = (key: AnioSortKey) => setSortAnio(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
-
-  // Si se llegó desde el link "Ver los N años más →" del Dashboard, la tarjeta de detalle queda
-  // 3ra en la página (después del form y el historial) — sin esto, el usuario cae arriba de todo y
-  // tiene que buscarla a mano.
-  useEffect(() => {
-    if (window.location.hash === '#rendimiento-anual') {
-      document.getElementById('rendimiento-anual')?.scrollIntoView({ block: 'start' });
-    }
-  }, []);
-
-  const filasAnio = useMemo(() => {
-    let filas = porAnio;
-    if (filtroAnio === 'positivos') filas = filas.filter(r => r.rendimiento != null && r.rendimiento >= 0);
-    else if (filtroAnio === 'negativos') filas = filas.filter(r => r.rendimiento != null && r.rendimiento < 0);
-    else if (filtroAnio === 'sindatos') filas = filas.filter(r => r.rendimiento == null);
-    return [...filas].sort((a, b) => {
-      if (sortAnio.key === 'anio') return sortAnio.dir === 'asc' ? a.anio - b.anio : b.anio - a.anio;
-      if (sortAnio.key === 'rendimiento') return compararConNulls(a.rendimiento, b.rendimiento, sortAnio.dir);
-      if (sortAnio.key === 'aportes') return compararConNulls(a.aportadoNeto, b.aportadoNeto, sortAnio.dir);
-      return compararConNulls(a.pnl, b.pnl, sortAnio.dir);
-    });
-  }, [porAnio, filtroAnio, sortAnio]);
 
   const borrar = async (a: Aporte) => {
     if (!window.confirm(`¿Borrar el aporte de ${fmtUsd(a.monto)} del ${a.fecha}?`)) return;
@@ -217,118 +165,9 @@ export function AportesPage() {
         </div>
       </Card>
 
-      {(cargando || hayDatos) && (
-        <div id="rendimiento-anual" className="scroll-mt-4">
-          <Card>
-            <CardHeader title="Rendimiento por año"
-              sub="Rendimiento (%), aportes netos y P&L en USD por año. Mismo cálculo que el Dashboard." />
-            {cargando ? (
-              <p className="p-4 text-sm text-ink-600">Cargando…</p>
-            ) : (
-              <>
-                {/* `preciosPendientes` (cotizaciones todavía en vuelo) es DISTINTO de "falta un precio
-                    de verdad" — sin esta distinción, el aviso aparecía en CADA carga fría (quotes
-                    arranca vacío) aunque un instante después resolviera bien, entrenando al usuario a
-                    ignorarlo justo el día que sí importa. */}
-                {!preciosPendientes && !valuacionDeMercado && (
-                  <p className="px-4 pt-3 text-[11px] text-warn">
-                    Sin cotización de <b>{sinPrecioRend.slice(0, 4).join(', ')}{sinPrecioRend.length > 4 ? ` +${sinPrecioRend.length - 4}` : ''}</b>:
-                    el año en curso se calcula a costo y hoy no queda en el histórico.
-                  </p>
-                )}
-                <div role="radiogroup" aria-label="Filtrar años" className="px-4 pt-3 flex flex-wrap gap-2">
-                  {(['todos', 'positivos', 'negativos', 'sindatos'] as const).map(opt => (
-                    <button key={opt} onClick={() => setFiltroAnio(opt)} role="radio" aria-checked={filtroAnio === opt}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${filtroAnio === opt ? 'bg-celeste-500 text-white border-celeste-500' : 'border-line bg-surface text-ink-700 hover:bg-canvas'}`}>
-                      {FILTRO_LABEL[opt]}
-                    </button>
-                  ))}
-                </div>
-                <div className="overflow-x-auto mt-1">
-                  <table className="w-full text-sm">
-                    <thead className="text-[11px] text-ink-600">
-                      <tr className="border-b border-line">
-                        <ThSortAnio label="Año" sortKey="anio" sort={sortAnio} onClick={handleSortAnio} align="left" />
-                        <ThSortAnio label="Rendimiento" sortKey="rendimiento" sort={sortAnio} onClick={handleSortAnio} />
-                        <ThSortAnio label="Aportes netos" sortKey="aportes" sort={sortAnio} onClick={handleSortAnio}
-                          title="Aportes − retiros de ESE año, no el acumulado histórico" />
-                        <ThSortAnio label="P&L del año" sortKey="pnl" sort={sortAnio} onClick={handleSortAnio}
-                          title="Ganancia en USD de ESE año — no es el P&L no realizado del Dashboard" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line">
-                      {filasAnio.length === 0 ? (
-                        <tr><td colSpan={4} className="px-3 py-3 text-ink-600">Sin años que coincidan con el filtro.</td></tr>
-                      ) : filasAnio.map(({ anio, rendimiento, aportadoNeto, pnl, concentrado, pnlSobreCapital }) => (
-                        <tr key={anio}>
-                          <td className="px-3 py-2 text-left tnum text-ink-800">{anio}{anio === anioActual ? ' · en curso' : ''}</td>
-                          <td className={`px-3 py-2 text-right tnum font-semibold ${rendimiento == null ? 'text-ink-600' : rendimiento >= 0 ? 'text-pos' : 'text-neg'}`}
-                            title={rendimiento != null
-                              ? (concentrado && pnlSobreCapital != null ? `Casi todo el capital entró hace pocos días: el % ponderado por tiempo exagera. Sobre el capital aportado: ${fmtPctSigno(pnlSobreCapital, 1)}` : undefined)
-                              : aportadoNeto == null ? 'Sin snapshot de cierre para este año'
-                              : 'Un retiro dejó la base en ≤0: el % no es representativo, el P&L sí'}>
-                            {rendimiento != null ? fmtPct(rendimiento) : '—'}{concentrado && rendimiento != null && '*'}
-                          </td>
-                          {/* Sin color pos/neg (a diferencia de Rendimiento/P&L): un aporte neto
-                              positivo no es una ganancia, solo dice que entró más capital del que
-                              salió ese año — mismo criterio que "Neto aportado" en el Dashboard. */}
-                          <td className="px-3 py-2 text-right tnum text-ink-700"
-                            title={aportadoNeto == null ? 'Sin snapshot de cierre para este año' : 'Aportes − retiros de ESE año (no acumulado histórico)'}>
-                            {aportadoNeto != null ? fmtUsd(aportadoNeto, 0) : <span className="text-ink-600">—</span>}
-                          </td>
-                          <td className={`px-3 py-2 text-right tnum font-semibold ${pnl == null ? 'text-ink-600' : pnl >= 0 ? 'text-pos' : 'text-neg'}`}
-                            title={pnl == null ? 'Sin snapshot de cierre para este año' : 'Ganancia en dólares del año — Vfin − Vini − aportes netos'}>
-                            {pnl != null ? fmtUsd(pnl, 0) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {filasAnio.filter(r => r.concentrado && r.pnlSobreCapital != null).map(r => (
-                  <p key={r.anio} className="px-4 pt-3 text-[11px] text-warn">
-                    * {r.anio}: casi todo el capital entró hace pocos días y el % ponderado por tiempo exagera. Sobre el capital aportado: {fmtPctSigno(r.pnlSobreCapital, 1)} (P&L {fmtUsd(r.pnl, 0)}).
-                  </p>
-                ))}
-                {sinAcreditar > 0.5 && (
-                  <p className="px-4 pt-3 text-[11px] text-warn"
-                    title="El rendimiento sale del patrimonio (posiciones + Liquidez). Un dividendo o cupón suma solo si su efectivo está en la Liquidez. Si lo cobraste y no figura ahí, acreditalo desde Cobros — salvo que ya esté en el saldo por una conciliación con el broker, para no contarlo dos veces.">
-                    Hay {fmtUsd(sinAcreditar, 2)} de dividendos/intereses confirmados sin acreditar en Liquidez: suman al rendimiento solo si ese efectivo ya está en tu saldo.
-                  </p>
-                )}
-                <p className="px-4 py-3 text-[11px] text-ink-500">Rendimiento pasado, no anualizado ni proyectado. Los años en "—" se completan con el valor diario que registra la app.</p>
-              </>
-            )}
-          </Card>
-          <p className="text-[11px] text-ink-600">Rentabilidad anualizada, comparación con el S&amp;P 500 y máxima caída: ver <Link to="/desempeno" className="text-celeste-600 underline">Desempeño</Link>.</p>
-        </div>
-      )}
+      <p className="text-[11px] text-ink-600 leading-relaxed">
+        Acá solo se ven los movimientos de capital. Cuánto rindió la cartera (ganancia, contra el S&amp;P 500, máxima caída y por año) está en <Link to="/desempeno" className="text-celeste-600 underline">Desempeño</Link>.
+      </p>
     </div>
-  );
-}
-
-// Mismo patrón que ThSort en RadarPage.tsx (columna ordenable con click + flecha) — copiado local
-// en vez de compartido porque son columnas/tipos de dato distintos (acá 4 columnas). El padding vive
-// DENTRO del botón (no en el <th>) para que el área clickeable sea todo el label, no solo el texto —
-// un <th className="px-3 py-2"><button>...</button></th> deja un botón de ~16px de alto, bajo el
-// mínimo táctil recomendado de 24px. `flex-row-reverse` en las columnas right-aligned: sin esto la
-// flecha queda pegada al label (que ya está pegado al borde derecho), separándose visualmente de los
-// números de la columna — con la flecha primero, el LABEL es lo que queda pegado al borde, igual que
-// los valores de abajo.
-function ThSortAnio({ label, sortKey, sort, onClick, align = 'right', title }: {
-  label: string; sortKey: AnioSortKey; sort: { key: AnioSortKey; dir: 'asc' | 'desc' }; onClick: (key: AnioSortKey) => void; align?: 'left' | 'right'; title?: string;
-}) {
-  const active = sort.key === sortKey;
-  return (
-    <th className={align === 'left' ? 'text-left' : 'text-right'}
-      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button onClick={() => onClick(sortKey)} title={title}
-        className={`inline-flex items-center gap-1 px-3 py-2 hover:text-ink-900 transition-colors ${align === 'left' ? '' : 'flex-row-reverse justify-end'} ${active ? 'text-ink-900 font-semibold' : ''}`}>
-        {label}
-        {active
-          ? (sort.dir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)
-          : <ArrowUpDown className="w-3 h-3 opacity-40" />}
-      </button>
-    </th>
   );
 }

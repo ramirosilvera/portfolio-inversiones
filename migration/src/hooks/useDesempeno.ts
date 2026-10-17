@@ -33,5 +33,5 @@ export function useDesempeno(portfolioId: string | undefined) {
 
   const primerFlujo = useMemo(() => flujos.filter(f => f.monto !== 0).map(f => f.fecha).sort()[0] ?? null, [flujos]);
 
-  return { d, listo, primerFlujo, spError, flujos, patrimonio, hoy, snaps, posiciones: r.posiciones, qSnaps: r.qSnaps, qPos: r.qPos, sinAcreditar, hayPuntos: puntos.length >= 2 };
+  return { d, listo, primerFlujo, spError, flujos, patrimonio, hoy, snaps, posiciones: r.posiciones, qSnaps: r.qSnaps, qPos: r.qPos, sinAcreditar, hayPuntos: puntos.length >= 2, porAnio: r.porAnio };
 }

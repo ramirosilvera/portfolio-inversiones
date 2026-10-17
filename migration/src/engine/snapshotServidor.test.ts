@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estadoSnapshotServidor } from './snapshotServidor';
+import { estadoSnapshotServidor, filaSnapshotApp } from './snapshotServidor';
 
 const op = { hayPosiciones: true, tieneAccionAr: false };
 
@@ -23,4 +23,14 @@ describe('estadoSnapshotServidor', () => {
     expect(estadoSnapshotServidor([], '2026-10-17', { hayPosiciones: false, tieneAccionAr: false }).estado).toBe('no_aplica');
     expect(estadoSnapshotServidor([], '2026-10-17', { hayPosiciones: true, tieneAccionAr: true }).estado).toBe('no_aplica');
   });
+});
+
+describe('filaSnapshotApp', () => {
+  it('no incluye fuente ni completo: el navegador no pisa el origen "cron" de una fila ya grabada por el servidor', () => {
+    const f = filaSnapshotApp('pf', '2026-10-17', 1000, 900, [{ t: 'MA', c: 1, v: 1000 }]);
+    expect(f).not.toHaveProperty('fuente');
+    expect(f).not.toHaveProperty('completo');
+    expect(f).toMatchObject({ portfolio_id: 'pf', fecha: '2026-10-17', valor: 1000, aportado: 900 });
+  });
+  it('sin detalle manda null', () => { expect(filaSnapshotApp('pf', '2026-10-17', 1, 1).detalle).toBeNull(); });
 });
