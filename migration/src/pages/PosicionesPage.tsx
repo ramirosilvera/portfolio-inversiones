@@ -239,7 +239,8 @@ export function PosicionesPage() {
           // efectivo adentro para la próxima compra no es un movimiento externo, no toca aportes
           // (mismo criterio que el toggle de "capital nuevo" al comprar, ver más arriba).
           if (retiro) {
-            const monto = qty * precio;
+            // Lo que sale del portfolio es lo que efectivamente cobraste: el producto menos la comisión que descuenta el broker.
+            const monto = +(qty * precio - (Number(orden?.comision_usd) || 0)).toFixed(2);
             if (monto > 0) {
               try { await addAporte({ monto, fecha, tipo: 'retiro', descripcion: `Venta ${sellData.pos.ticker}` }); }
               catch { /* la venta ya se registró — un aporte fallido no debe parecer que todo falló */ }
@@ -802,7 +803,7 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
             <label className="flex items-start gap-2 text-xs text-ink-700 cursor-pointer">
               <input type="checkbox" checked={retiro} onChange={e => setRetiro(e.target.checked)} className="mt-0.5" />
               <span>
-                ¿Sacás esta plata del portfolio? Registra un retiro de {fmtUsd(n * p, 0)} en Aportes.
+                ¿Sacás esta plata del portfolio? Registra un retiro de {fmtUsd(n * p - (comis.registrar ? comis.comision : 0), 0)} en Aportes (el producto menos la comisión).
                 Destildado, el efectivo se acredita en la Liquidez del portfolio.
               </span>
             </label>

@@ -277,3 +277,14 @@ describe('indiceTwr — valor idéntico con un flujo', () => {
     expect(indiceTwr([v('2026-08-01', 100), v('2026-08-02', 100)], []).serie[1].indice).toBe(1);
   });
 });
+
+describe('resumenCostos — estimadas', () => {
+  it('separa la comisión que viene de órdenes estimadas', () => {
+    const r = resumenCostos([
+      { monto_usd: 1000, comision_usd: 5, comision_ars: null, mep: null },
+      { monto_usd: 1000, comision_usd: 10, comision_ars: null, mep: null, origen: 'estimada' },
+    ]);
+    expect(r.totalUsdConocido).toBe(15);
+    expect(r.estimadasUsd).toBe(10);
+  });
+});
