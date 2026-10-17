@@ -9,7 +9,8 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { resumenPorBroker } from '../engine/brokers';
 import { unitValueUSD } from '../lib/valuation';
 import { Card, CardHeader, Button, Badge, NumField, inputCls, Empty, fmtUsdCompact, fmtPct, colorDeBroker } from '../components/ui';
-import type { Posicion } from '../types/domain';
+import type { Posicion, Broker } from '../types/domain';
+import { TASA_RETENCION_EEUU, TASA_COMISION_DEPOSITARIA, TASA_COMISION_BROKER_DIVIDENDO, TASA_COMISION_BROKER_INTERES } from '../engine/costosCobros';
 
 // Brokers: dónde está físicamente cada posición. "Patrimonio por broker" es información MÍNIMA a
 // propósito — nombre, USD, % y cantidad de posiciones. La asignación en sí (qué posición está en
@@ -19,7 +20,7 @@ export function BrokersPage() {
   const chart = useChartTheme();
   const { active } = usePortfolios();
   const { data: posiciones = [] } = usePosiciones(active?.id);
-  const { data: brokers, isLoading: brokersLoading, add, remove } = useBrokers();
+  const { data: brokers, isLoading: brokersLoading, add, remove, updateCostos } = useBrokers();
   const { data: asignacionesAll, isLoading: asigLoading, setAsignaciones } = usePosicionBrokers();
 
   const abiertas = useMemo(() => posiciones.filter(p => p.cantidad > 0), [posiciones]);
@@ -174,6 +175,21 @@ export function BrokersPage() {
       </Card>
 
       <Card>
+        <CardHeader title="Costos por broker" sub="Se usan para estimar el neto de cada cobro y como referencia de lo que cuesta operar. Vacío = tasa general." />
+        {brokers.length === 0 ? (
+          <Empty icon={Landmark} title="Sin brokers cargados">Agregá el primero arriba.</Empty>
+        ) : (
+          <div className="divide-y divide-line">
+            {brokers.map(b => <BrokerCostosRow key={b.id} broker={b} onSave={patch => updateCostos(b.id, patch)} />)}
+          </div>
+        )}
+        <p className="px-4 pb-3 pt-1 text-[11px] text-ink-500 leading-relaxed">
+          La retención de EE.UU. (30 %) y la comisión del banco depositario (la fija Caja de Valores en cada anuncio de dividendo; ≈ 5,5 % observado en tus pagos de IOL)
+          no dependen del broker, pero las dejo editables acá. Lo que sí cambia de broker es la comisión sobre el pago y el costo de operar.
+        </p>
+      </Card>
+
+      <Card>
         <CardHeader title="Tus brokers" />
         {deleteErr && <p className="px-4 pt-2 text-xs text-warn">{deleteErr}</p>}
         {brokersLoading ? (
@@ -293,6 +309,61 @@ function AsignacionRow({ pos, asignaciones, brokers, onSave }: {
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>
         <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</Button>
+      </div>
+    </div>
+  );
+}
+
+// Costos editables de un broker. Se muestran y editan en % (se guardan como fracción); campo vacío = tasa general.
+const aPct = (x: number | null | undefined) => (x == null ? '' : String(+(x * 100).toFixed(3)));
+const dePct = (s: string): number | null => (s.trim() === '' ? null : Number(s.replace(',', '.')) / 100);
+
+function BrokerCostosRow({ broker, onSave }: { broker: Broker; onSave: (p: Partial<Broker>) => Promise<void> }) {
+  const [v, setV] = useState({
+    ret: aPct(broker.retencion_dividendo), dep: aPct(broker.comision_depositaria), div: aPct(broker.comision_cobro_dividendo),
+    cup: aPct(broker.comision_cobro_interes), ope: aPct(broker.comision_operacion), nota: broker.notas_costos ?? '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
+  const set = (k: keyof typeof v) => (e: { target: { value: string } }) => { setV(p => ({ ...p, [k]: e.target.value })); setMsg(null); };
+  const guardar = async () => {
+    const patch = {
+      retencion_dividendo: dePct(v.ret), comision_depositaria: dePct(v.dep), comision_cobro_dividendo: dePct(v.div),
+      comision_cobro_interes: dePct(v.cup), comision_operacion: dePct(v.ope), notas_costos: v.nota.trim() || null,
+    };
+    if ([patch.retencion_dividendo, patch.comision_depositaria, patch.comision_cobro_dividendo, patch.comision_cobro_interes, patch.comision_operacion]
+      .some(x => x != null && !(x >= 0 && x < 1))) { setMsg({ ok: false, t: 'Las tasas deben estar entre 0 % y 99 %.' }); return; }
+    setBusy(true); setMsg(null);
+    try { await onSave(patch); setMsg({ ok: true, t: 'Guardado.' }); }
+    catch (e) { setMsg({ ok: false, t: e instanceof Error ? e.message : 'No se pudo guardar' }); }
+    finally { setBusy(false); }
+  };
+  const campo = (label: string, k: keyof typeof v, ph: number, hint: string) => (
+    <label className="block min-w-0" title={hint}>
+      <span className="block text-[11px] font-semibold text-ink-600 mb-1">{label}</span>
+      <div className="relative">
+        <input type="number" min="0" max="99" step="0.01" value={v[k]} onChange={set(k)} placeholder={String(+(ph * 100).toFixed(3))} className={`${inputCls} pr-7 tnum`} />
+        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-500 text-xs">%</span>
+      </div>
+    </label>
+  );
+  return (
+    <div className="p-4 space-y-3">
+      <p className="text-sm font-semibold text-ink-900">{broker.nombre}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {campo('Retención EE.UU.', 'ret', TASA_RETENCION_EEUU, 'Sobre dividendos de CEDEARs. Universal (30 % para argentinos).')}
+        {campo('Com. depositario', 'dep', TASA_COMISION_DEPOSITARIA, 'La fija el banco depositario del CEDEAR (Caja de Valores), no el broker.')}
+        {campo('Com. s/ dividendos', 'div', TASA_COMISION_BROKER_DIVIDENDO, 'Lo que cobra el broker sobre cada dividendo acreditado.')}
+        {campo('Com. s/ cupones', 'cup', TASA_COMISION_BROKER_INTERES, 'Lo que cobra el broker sobre cada cupón de ON.')}
+        {campo('Operar (todo incluido)', 'ope', 0, 'Comisión + derechos + IVA por comprar o vender (referencia).')}
+      </div>
+      <label className="block">
+        <span className="block text-[11px] font-semibold text-ink-600 mb-1">Notas (de dónde sale cada dato)</span>
+        <textarea value={v.nota} onChange={set('nota')} rows={2} className={`${inputCls} text-xs`} />
+      </label>
+      <div className="flex items-center gap-3">
+        <Button onClick={guardar} disabled={busy}>{busy ? 'Guardando…' : 'Guardar costos'}</Button>
+        {msg && <span className={`text-xs ${msg.ok ? 'text-pos' : 'text-warn'}`}>{msg.t}</span>}
       </div>
     </div>
   );
