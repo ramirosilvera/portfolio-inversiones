@@ -65,8 +65,8 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
   const [modoAmort, setModoAmort] = useState<'nominales' | 'valorResidual'>('nominales');
   const [valorResidualPct, setValorResidualPct] = useState('');
   const [nota, setNota] = useState('');
-  // Costos opcionales: si el monto cargado es BRUTO, se puede registrar por su neto estimado (retención + comisión).
-  const costosForm = useCostosCobro(tipo, Number(monto) || 0, false);
+  // Costos: la estimación (retención + comisión, las mismas tasas para cualquier bróker) queda lista y tildada; se edita o se destilda si el monto cargado ya es el neto real.
+  const costosForm = useCostosCobro(tipo, Number(monto) || 0, true);
   // Acreditar el cobro en la LIQUIDEZ del portfolio: por default sí si el portfolio ya la tiene
   // (null = "seguir el default", que depende de posiciones, que carga async).
   const tieneLiquidez = posiciones.some(p => p.tipo === 'cash' && p.ticker === 'LIQUIDEZ');
@@ -201,7 +201,7 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
           )}
 
           <Field label="Monto cobrado (USD)"><input type="number" value={monto} onChange={e => setMonto(e.target.value)} className={inputCls} placeholder="USD" /></Field>
-          {tipo !== 'amortizacion' && <div className="col-span-2 sm:col-span-4 -mt-1"><CostosCobroEditor c={costosForm} bruto={Number(monto) || 0} disabled={busy} etiquetaBruto="bruto: si ya es lo que te acreditaron, dejalo sin tildar" /></div>}
+          {tipo !== 'amortizacion' && <div className="col-span-2 sm:col-span-4 -mt-1"><CostosCobroEditor c={costosForm} bruto={Number(monto) || 0} disabled={busy} etiquetaBruto="bruto: si ya es lo que te acreditaron, destildalo" /></div>}
           {tipo === 'amortizacion' && (
             <>
               <Field label="¿Qué cambió en tu bróker?" className="col-span-2 sm:col-span-4">
