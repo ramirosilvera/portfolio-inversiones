@@ -117,3 +117,14 @@ describe('controlarOrdenes — ventas', () => {
     expect(c.filter(x => x.tipo === 'sin_movimiento' || x.tipo === 'movimiento_distinto')).toEqual([]);
   });
 });
+
+describe('órdenes estimadas', () => {
+  it('se cuentan aparte y generan un aviso informativo', () => {
+    const lista = [o({}), o({ origen: 'estimada', comision_usd: 7.83, comision_ars: null, mep: null })];
+    const r = resumenOrdenes(lista);
+    expect(r.estimadas).toBe(1);
+    expect(r.comisionEstimadaUsd).toBe(7.83);
+    expect(controlarOrdenes(lista, [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 18 }], ['MA']).some(x => x.tipo === 'ordenes_estimadas')).toBe(true);
+    expect(controlarOrdenes([o({})], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], ['MA']).some(x => x.tipo === 'ordenes_estimadas')).toBe(false);
+  });
+});

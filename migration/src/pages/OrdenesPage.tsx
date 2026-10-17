@@ -152,7 +152,7 @@ export function OrdenesPage() {
             <Stat label="Órdenes ejecutadas" value={String(resumen.ejecutadas)} hint={`${resumen.canceladas} canceladas · ${resumen.rechazadas} rechazadas`} />
             <Stat label="Operado" value={fmtUsd(resumen.operadoUsd, 0)} hint="solo órdenes terminadas" />
             <Stat label="Comisiones (USD)" value={fmtUsd(resumen.totalUsdConocido, 2)} hint={`${fmtUsd(resumen.comisionUsd, 2)} en USD + ${fmtUsd(resumen.comisionArsEnUsd, 2)} de pesos al MEP`} />
-            <Stat label="Costo sobre lo operado" value={resumen.pctSobreOperado != null ? fmtPct(resumen.pctSobreOperado, 2) : '—'} hint={resumen.comisionArsSinMepPesos > 0 ? `+ $ ${resumen.comisionArsSinMepPesos.toLocaleString('es-AR', { maximumFractionDigits: 0 })} sin MEP, no incluidos` : 'incluye todo lo registrado'} />
+            <Stat label="Costo sobre lo operado" value={resumen.pctSobreOperado != null ? fmtPct(resumen.pctSobreOperado, 2) : '—'} hint={resumen.comisionArsSinMepPesos > 0 ? `+ $ ${resumen.comisionArsSinMepPesos.toLocaleString('es-AR', { maximumFractionDigits: 0 })} sin MEP, no incluidos` : resumen.estimadas > 0 ? `${resumen.estimadas} órdenes estimadas (≈ ${fmtUsd(resumen.comisionEstimadaUsd, 2)} de comisión)` : 'incluye todo lo registrado'} />
           </div>
 
           <Card>
@@ -220,7 +220,7 @@ export function OrdenesPage() {
                         <td className="px-2 py-2 text-right tnum">{o.comision_usd != null ? fmtUsd(o.comision_usd, 2) : '—'}</td>
                         <td className="px-2 py-2 text-right tnum">{o.comision_ars != null ? o.comision_ars.toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—'}</td>
                         <td className="px-2 py-2 text-right tnum">{o.mep != null ? o.mep.toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—'}</td>
-                        <td className="px-2 py-2"><Badge tone={tonoEstado(o.estado)}>{o.estado}</Badge>{cs.length > 0 && <span className="ml-1 text-warn font-bold" title={cs.map(c => c.texto).join('\n')}>!</span>}</td>
+                        <td className="px-2 py-2"><Badge tone={tonoEstado(o.estado)}>{o.estado}</Badge>{o.origen === 'estimada' && <span className="ml-1"><Badge tone="warn">estimada</Badge></span>}{cs.length > 0 && <span className="ml-1 text-warn font-bold" title={cs.map(c => c.texto).join('\n')}>!</span>}</td>
                         <td className="px-4 py-2 whitespace-nowrap text-right">
                           <button aria-label="Editar orden" className="p-1.5 text-ink-600 hover:text-ink-900" onClick={() => setModal({ id: o.id, draft: deOrden(o) })}><Pencil className="w-3.5 h-3.5" /></button>
                           <button aria-label="Borrar orden" className="p-1.5 text-ink-600 hover:text-neg" onClick={async () => {
