@@ -202,7 +202,39 @@ describe('indiceTwr — snapshot desfasado del aporte', () => {
       [{ fecha: '2026-08-03', valor: 11885 }, { fecha: '2026-08-04', valor: 11885 }, { fecha: '2026-08-20', valor: 22834 }],
       [{ fecha: '2026-08-04', monto: 4000 }],
     );
-    expect(r.anomalias).toBe(1);
+    expect(r.anomalias).toBe(2);
     expect(Math.min(...r.serie.map(s => s.indice))).toBeGreaterThan(0.9);
+  });
+});
+
+describe('indiceTwr — tramos diferidos', () => {
+  it('dos tramos absurdos por un snapshot desfasado se resuelven juntos y no cuentan como anomalía', () => {
+    // El aporte de 4000 (04/08) no estaba en el valor de ese día; el valor del 20/08 sí incluye todo.
+    const r = indiceTwr(
+      [v('2026-08-03', 11885), v('2026-08-04', 11885), v('2026-08-20', 17700)],
+      [f('2026-08-04', 4000), f('2026-08-13', 2000)],
+    );
+    expect(r.anomalias).toBe(0);
+    expect(r.serie[r.serie.length - 1].indice).toBeCloseTo((17700 - 6000) / 11885, 10);
+  });
+  it('si nunca se resuelve, queda como anomalía', () => {
+    expect(indiceTwr([v('2026-01-01', 100), v('2026-01-02', 10)], [f('2026-01-02', 50)]).anomalias).toBe(1);
+  });
+});
+
+describe('calcularDesempeno — ventana única', () => {
+  const dias = (n: number) => new Date(Date.parse('2025-01-01') + n * 86_400_000).toISOString().slice(0, 10);
+  it('el primer aporte anterior al primer valor diario NO entra: la TIR y el índice parten del primer valor', () => {
+    const r = calcularDesempeno({
+      puntos: [v(dias(200), 1500), v(dias(700), 1800)],
+      flujos: [f(dias(0), 1000)],                               // aporte importado, sin valores diarios
+      valorActual: 1800, hoy: dias(700),
+      serieSp: [{ f: dias(0), c: 100 }, { f: dias(200), c: 150 }, { f: dias(700), c: 165 }], ordenes: [],
+    });
+    expect(r.twr.acumulado).toBeCloseTo(0.2, 10);
+    expect(r.tir.anualizada).toBeCloseTo(Math.pow(1.2, 365 / 500) - 1, 3);
+    expect(r.benchmark!.mismosFlujos.valorFinal).toBeCloseTo(1500 / 150 * 165, 6);     // 1650: capital inicial = 1500 el día 200
+    expect(r.benchmark!.diferenciaValor).toBeCloseTo(150, 6);
+    expect(r.benchmark!.twrBenchmark).toBeCloseTo(0.1, 10);                              // mismo período que el TWR de la cartera
   });
 });
