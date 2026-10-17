@@ -66,6 +66,7 @@ export function DashboardPage() {
   // Ganancia de la cartera: la MISMA que muestra Desempeño (valor + retiros − capital puesto, con comisiones y dividendos adentro), medida desde el primer valor
   // diario. Antes acá había un «P&L total» contra el costo de las posiciones (sin comisiones y sumando renta no acreditada) que no coincidía con Desempeño.
   const desemp = useDesempeno(active?.id);
+  const gananciaHero = desemp.d.desdeInicio?.gananciaUsd ?? (patrimonio - aportadoNeto);
   const resumenCobrado = useMemo(() => resumenCobros(cobros), [cobros]);
   // Forecast: el presupuesto congelado vive en proyeccion_inputs (se fija en /forecast). El resumen sale
   // de engine/presupuesto.calcularForecast — la MISMA función que usa la página, así los números no
@@ -232,13 +233,11 @@ export function DashboardPage() {
             misma info (más completa, por año) ya está en la tarjeta "Rendimiento por año" de abajo.
             Solo queda P&L, que no se repite en ningún otro lado. */}
         <Stat label="Ganancia"
-          value={desemp.listo && desemp.hayPuntos
-            ? <span className={desemp.d.tir.gananciaUsd >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(desemp.d.tir.gananciaUsd)}</span>
-            : (desemp.listo ? <span className={patrimonio - aportadoNeto >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(patrimonio - aportadoNeto)}</span> : '—')}
-          delta={desemp.listo && desemp.hayPuntos && desemp.d.tir.acumulada != null ? desemp.d.tir.acumulada : undefined}
-          hint={desemp.listo && desemp.hayPuntos
-            ? `Desde el ${(desemp.d.periodo.desde ?? '').split('-').reverse().join('/')}: valor + retiros − capital puesto. Incluye comisiones, dividendos y ventas. Detalle en Desempeño.`
-            : 'Valor − capital aportado, desde el inicio. Detalle en Desempeño.'} />
+          value={desemp.listo ? <span className={gananciaHero >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(gananciaHero)}</span> : '—'}
+          delta={desemp.listo && desemp.d.desdeInicio?.sobreCapital != null ? desemp.d.desdeInicio.sobreCapital : undefined}
+          hint={desemp.listo && desemp.d.desdeInicio
+            ? `Desde el ${desemp.d.desdeInicio.desde.split('-').reverse().join('/')}: valor + retiros − capital puesto. Incluye comisiones, dividendos y ventas. Detalle en Desempeño.`
+            : 'Valor − capital aportado. Detalle en Desempeño.'} />
       </div>
 
       {/* Cuerpo personalizable: agregar/quitar/reordenar tarjetas — ver components/dashboard/. El
@@ -1098,7 +1097,8 @@ function DesempenoResumen({ personalizando }: { personalizando: boolean }) {
   if (!x.listo || !x.hayPuntos) return null;
   const { d } = x;
   const f = (iso: string | null) => (iso ? iso.split('-').reverse().join('/') : '—');
-  const gan = d.tir.gananciaUsd;
+  const gan = d.desdeInicio?.gananciaUsd ?? d.tir.gananciaUsd;
+  const ganPct = d.desdeInicio ? d.desdeInicio.sobreCapital : d.tir.acumulada;
   const b = d.benchmark;
   const mdd = d.cartera.mdd;
   const right = <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
@@ -1108,9 +1108,9 @@ function DesempenoResumen({ personalizando }: { personalizando: boolean }) {
         right={personalizando ? right : <Link to="/desempeno" className="hover:underline">{right}</Link>} />
       <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Stat label="Ganancia" value={<span className={gan >= 0 ? 'text-pos' : 'text-neg'}>{gan >= 0 ? '+' : '−'}{fmtUsd(Math.abs(gan), 0)}</span>}
-          hint={d.tir.acumulada != null ? `${fmtPctSigno(d.tir.acumulada, 1)} sobre lo aportado` : undefined} />
+          hint={ganPct != null ? `${fmtPctSigno(ganPct, 1)} sobre lo aportado, desde el ${f(d.desdeInicio?.desde ?? d.periodo.desde)}` : undefined} />
         <Stat label="Contra el S&P 500" value={b ? <span className={b.diferenciaValor >= 0 ? 'text-pos' : 'text-neg'}>{b.diferenciaValor >= 0 ? '+' : '−'}{fmtUsd(Math.abs(b.diferenciaValor), 0)}</span> : '—'}
-          hint={b ? `tu cartera vs S&P ${b.mismosFlujos.rendimientoPeriodo != null ? fmtPctSigno(b.mismosFlujos.rendimientoPeriodo, 1) : '—'} con tus mismos aportes` : 'sin serie del índice'} />
+          hint={b ? `desde el ${f(d.periodo.desde)}: tu cartera ${d.tir.acumulada != null ? fmtPctSigno(d.tir.acumulada, 1) : '—'} vs S&P ${b.mismosFlujos.rendimientoPeriodo != null ? fmtPctSigno(b.mismosFlujos.rendimientoPeriodo, 1) : '—'}` : 'sin serie del índice'} />
         <Stat label="Máxima caída" value={mdd ? (mdd.mdd === 0 ? 'sin caídas' : `${d.cartera.rotuloMinimoConocido ? '≥ ' : ''}${fmtPct(Math.abs(mdd.mdd), 1)}`) : '—'}
           hint={mdd && mdd.mdd < 0 ? `${f(mdd.fechaPico)} → ${f(mdd.fechaMinimo)}` : undefined} />
       </div>
