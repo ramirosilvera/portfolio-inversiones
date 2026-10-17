@@ -12,7 +12,7 @@
 // creación). Los años sin datos suficientes devuelven null (no se inventa el corte).
 // =============================================================================
 
-export interface Punto { fecha: string; valor: number; aportado: number } // aportado = neto acumulado
+export interface Punto { fecha: string; valor: number; aportado: number; fuente?: string | null } // aportado = neto acumulado
 export interface Flujo { fecha: string; monto: number }                   // firmado: aporte +, retiro −
 // `aportadoNeto` = aportes − retiros DEL AÑO (no acumulado histórico); `pnl` = ganancia en dólares
 // del año (Vfin − Vini − aportadoNeto). Pueden ser no-nulos aunque `rendimiento` sí sea null (un

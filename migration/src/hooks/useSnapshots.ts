@@ -13,7 +13,7 @@ export function useSnapshots(portfolioId: string | null | undefined) {
     staleTime: 60 * 60_000,
     queryFn: async (): Promise<Punto[]> => {
       const { data, error } = await supabase.from('portfolio_snapshots')
-        .select('fecha, valor, aportado').eq('portfolio_id', portfolioId).order('fecha', { ascending: true });
+        .select('fecha, valor, aportado, fuente').eq('portfolio_id', portfolioId).order('fecha', { ascending: true });
       if (error) throw error;
       return (data ?? []) as Punto[];
     },
