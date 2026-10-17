@@ -62,18 +62,32 @@ export function DesempenoPage() {
         <>
           <Pregunta n={1} titulo="Rentabilidad" sub="¿Cuánto rinde mi cartera por año, en USD, con dividendos y neta de costos?"
             badge={<Badge tone={sePuedeAnualizar ? 'pos' : 'warn'}>{sePuedeAnualizar ? 'anualizado' : 'menos de 1 año'}</Badge>}>
-            <p className="text-lg">
-              {twr.anualizado != null
-                ? <><b className="tnum">{fmtPctSigno(twr.anualizado, 1)}</b> por año <span className="text-ink-500 text-sm">en {aniosTxt}</span></>
-                : <><b className="tnum">{twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'}</b> acumulado <span className="text-ink-500 text-sm">en {aniosTxt}</span></>}
-            </p>
+            {twr.concentrado ? (
+              <>
+                <p className="text-lg">
+                  <b className="tnum">{tir.acumulada != null ? fmtPctSigno(tir.acumulada, 1) : '—'}</b> sobre el capital aportado{' '}
+                  <span className="text-ink-500 text-sm">en {aniosTxt}</span>
+                </p>
+                <p className="text-[11px] text-warn">
+                  La mayor parte del capital entró hace pocos días: el % ponderado por tiempo ({twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'}) se calcula sobre
+                  un capital inicial chico y no representa lo que rindió tu dinero. Mirá el rendimiento sobre el capital aportado.
+                </p>
+              </>
+            ) : (
+              <p className="text-lg">
+                {twr.anualizado != null
+                  ? <><b className="tnum">{fmtPctSigno(twr.anualizado, 1)}</b> por año <span className="text-ink-500 text-sm">en {aniosTxt}</span></>
+                  : <><b className="tnum">{twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'}</b> acumulado <span className="text-ink-500 text-sm">en {aniosTxt}</span></>}
+              </p>
+            )}
             {!sePuedeAnualizar && primeraFecha && (
               <p className="text-[11px] text-warn">
                 Todavía no se puede anualizar: hace falta un año de historia (llega el {fmtFecha(sumarDias(primeraFecha, MIN_DIAS_ANUALIZAR))}). Anualizar {aniosTxt} sería una estimación, no un dato.
               </p>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <Stat label="Acumulado" value={twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'} hint="ponderado por tiempo: no cuenta aportes ni retiros como ganancia" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <Stat label="Sobre capital aportado" value={tir.acumulada != null ? fmtPctSigno(tir.acumulada, 1) : '—'} hint="ganancia ÷ capital invertido, sin anualizar" />
+              <Stat label="Acumulado ponderado" value={twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'} hint={twr.concentrado ? 'no representativo: el capital entró hace poco' : 'ponderado por tiempo: no cuenta aportes ni retiros como ganancia'} />
               <Stat label="Anualizado" value={twr.anualizado != null ? fmtPctSigno(twr.anualizado, 1) : '—'} hint={twr.anualizado == null ? 'desde un año de historia' : 'ponderado por tiempo'} />
               <Stat label="TIR anual" value={tir.anualizada != null ? fmtPctSigno(tir.anualizada, 1) : '—'} hint={tir.anualizada == null ? 'desde un año de historia' : 'ponderada por dinero (cuándo aportaste)'} />
               <Stat label="TIR neta de costos" value={tir.neta != null ? fmtPctSigno(tir.neta, 1) : '—'} hint="descuenta las comisiones en pesos con tipo de cambio registrado" />
@@ -103,11 +117,13 @@ export function DesempenoPage() {
                   Si cada aporte y retiro tuyo se hubiera hecho en el S&amp;P 500 (retorno total, con dividendos) el mismo día, hoy tendrías{' '}
                   <b className="tnum">{fmtUsd(benchmark.mismosFlujos.valorFinal, 0)}</b>. Tu cartera vale <b className="tnum">{fmtUsd(patrimonio, 0)}</b>.
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <Stat label="Tu cartera (acumulado)" value={twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'} hint="ponderado por tiempo" />
-                  <Stat label="S&P 500 (acumulado)" value={benchmark.twrBenchmark != null ? fmtPctSigno(benchmark.twrBenchmark, 1) : '—'} hint={`${fmtFecha(periodo.desde)} → ${fmtFecha(periodo.hasta)}`} />
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <Stat label="Tu cartera, sobre capital" value={tir.acumulada != null ? fmtPctSigno(tir.acumulada, 1) : '—'} hint="ganancia ÷ capital aportado" />
+                  <Stat label="Índice, sobre capital" value={benchmark.mismosFlujos.rendimientoPeriodo != null ? fmtPctSigno(benchmark.mismosFlujos.rendimientoPeriodo, 1) : '—'} hint="con tus mismos aportes y retiros" />
                   <Stat label="Diferencia de TIR" value={benchmark.diferenciaTirPuntos != null ? `${(benchmark.diferenciaTirPuntos * 100).toFixed(1)} pp` : '—'} hint={benchmark.diferenciaTirPuntos == null ? 'desde un año de historia' : 'tu TIR − TIR del índice'} />
-                  <Stat label="TIR del índice" value={benchmark.mismosFlujos.tir != null ? fmtPctSigno(benchmark.mismosFlujos.tir, 1) : '—'} hint="con tus mismos flujos" />
+                  <Stat label="Cartera, ponderado" value={twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'} hint={twr.concentrado ? 'no representativo: capital reciente' : 'cierre a cierre'} />
+                  <Stat label="S&P 500, cierre a cierre" value={benchmark.twrBenchmark != null ? fmtPctSigno(benchmark.twrBenchmark, 1) : '—'} hint={`${fmtFecha(periodo.desde)} → ${fmtFecha(periodo.hasta)}`} />
+                  <Stat label="TIR del índice" value={benchmark.mismosFlujos.tir != null ? fmtPctSigno(benchmark.mismosFlujos.tir, 1) : '—'} hint={benchmark.mismosFlujos.tir == null ? 'desde un año de historia' : 'con tus mismos flujos'} />
                 </div>
                 <p className="text-[11px] text-ink-600">
                   Se mide desde el {fmtFecha(periodo.desde)} (primer valor diario registrado): ese valor es el capital inicial y cuentan tus aportes y retiros posteriores.{primerFlujo && primerFlujo < (periodo.desde ?? '') && <> Tu primer aporte es del {fmtFecha(primerFlujo)}, pero antes del {fmtFecha(periodo.desde)} no hay valores diarios y ese tramo no se compara.</>} SPY ya descuenta su costo de fondo (~0,09 %); tu cartera no descuenta costos que no estén registrados.
@@ -132,7 +148,7 @@ export function DesempenoPage() {
                 Desde que el servidor registra el valor todos los días, los huecos nuevos no se producen.
               </p>
             )}
-            {twr.anomalias > 0 && <p className="text-[11px] text-warn">{twr.anomalias} {twr.anomalias === 1 ? 'tramo' : 'tramos'} con un aporte/retiro que no cuadra con el valor registrado ese día se omitieron del cálculo.</p>}
+            {twr.anomalias > 0 && <p className="text-[11px] text-warn">{twr.anomalias} {twr.anomalias === 1 ? 'tramo' : 'tramos'} con un aporte mayor al valor previo o que no cuadra con el valor registrado ese día no se pudieron medir: no suman ni restan al ponderado ni a la caída.</p>}
           </Pregunta>
         </>
       )}

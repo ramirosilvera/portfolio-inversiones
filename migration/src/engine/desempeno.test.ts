@@ -238,3 +238,31 @@ describe('calcularDesempeno — ventana única', () => {
     expect(r.benchmark!.twrBenchmark).toBeCloseTo(0.1, 10);                              // mismo período que el TWR de la cartera
   });
 });
+
+describe('calcularDesempeno — capital concentrado (caso Herencia)', () => {
+  it('un aporte grande reciente marca el % ponderado como no representativo y deja la ganancia sobre el capital', () => {
+    const r = calcularDesempeno({
+      puntos: [v('2026-07-24', 2836), v('2026-09-20', 3148), v('2026-09-28', 29777), v('2026-09-29', 39523), v('2026-10-17', 40183)],
+      flujos: [f('2026-07-17', 3000), f('2026-09-28', 27000), f('2026-09-29', 10000)],
+      valorActual: 40183, hoy: '2026-10-17', serieSp: null, ordenes: [],
+    });
+    expect(r.twr.concentrado).toBe(true);
+    expect(r.tir.invertido).toBeCloseTo(2836 + 37000, 6);
+    expect(r.tir.acumulada).toBeCloseTo((40183 - 39836) / 39836, 6);
+  });
+  it('capital estable en el tiempo no es concentrado', () => {
+    const r = calcularDesempeno({
+      puntos: [v('2026-01-01', 1000), v('2026-07-01', 1100)], flujos: [f('2026-01-01', 1000)], valorActual: 1100, hoy: '2026-07-01', serieSp: null, ordenes: [],
+    });
+    expect(r.twr.concentrado).toBe(false);
+  });
+});
+
+describe('indiceTwr — aporte mayor al valor previo', () => {
+  it('re-ancla el índice sin inventar una caída por el costo de ejecutar el aporte', () => {
+    const r = indiceTwr([v('2026-09-20', 3148), v('2026-09-28', 29777), v('2026-09-29', 29900)], [f('2026-09-28', 27000)]);
+    expect(r.anomalias).toBe(1);
+    expect(r.serie.map(s => s.indice)[1]).toBe(1);                       // el tramo del aporte no mueve el índice
+    expect(r.serie[2].indice).toBeCloseTo(29900 / 29777, 10);            // desde ahí rinde normal
+  });
+});
