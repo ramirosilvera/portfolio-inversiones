@@ -150,3 +150,12 @@ describe('transferencias entre portfolios', () => {
     expect(compra.some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(true);
   });
 });
+
+describe('traspaso con su orden', () => {
+  it('la compra original de una posición que salió por transferencia no se marca "sin orden"', () => {
+    const base = [o({ fecha: '2026-10-13' }), o({ fecha: '2026-08-01', ticker: 'MA' })];
+    const movs = [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-01', ticker: 'MA', cantidad: 9 }, { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000 }];
+    expect(controlarOrdenes(base, movs, ['MA', 'COC4D']).some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(true);
+    expect(controlarOrdenes(base, movs, ['MA', 'COC4D'], ['LIQUIDEZ'], undefined, [{ ticker: 'COC4D', cantidad: -2000 }]).some(x => x.tipo === 'compra_sin_orden' && x.texto.includes('COC4D'))).toBe(false);
+  });
+});
