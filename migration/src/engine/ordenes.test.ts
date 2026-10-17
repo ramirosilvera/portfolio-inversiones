@@ -1,0 +1,84 @@
+import { describe, it, expect } from 'vitest';
+import { resumenOrdenes, resumenPorMes, controlarOrdenes, montoCoherente, tickerDePosicion, type OrdenFila } from './ordenes';
+
+const o = (over: Partial<OrdenFila>): OrdenFila => ({
+  id: Math.random().toString(36).slice(2), fecha: '2026-10-13', ticker: 'MAD', broker: 'IOL', numero_orden: '1', nominales: 9, precio_limite: null,
+  precio_ejecutado: 19.07, monto_usd: 171.63, comision_usd: 0.62, comision_ars: 159.39, mep: 1540, estado: 'terminada', origen: 'api', nota: null, movimiento_id: null, ...over,
+});
+
+describe('resumenOrdenes', () => {
+  it('solo cuentan las ejecutadas; canceladas y rechazadas se cuentan aparte (una cancelada con monto no infla lo operado)', () => {
+    const r = resumenOrdenes([o({}), o({ estado: 'cancelada', monto_usd: 1500, comision_usd: null, comision_ars: null }), o({ estado: 'rechazada' })]);
+    expect(r.ejecutadas).toBe(1); expect(r.canceladas).toBe(1); expect(r.rechazadas).toBe(1);
+    expect(r.operadoUsd).toBe(171.63);
+  });
+  it('la comisión en pesos se convierte solo con MEP registrado; sin MEP queda aparte', () => {
+    const r = resumenOrdenes([o({ comision_ars: 1540, mep: 1540 }), o({ comision_ars: 3000, mep: null })]);
+    expect(r.comisionArsEnUsd).toBe(1);
+    expect(r.comisionArsSinMepPesos).toBe(3000);
+    expect(r.totalUsdConocido).toBe(+(0.62 * 2 + 1).toFixed(2));
+  });
+});
+
+describe('resumenPorMes', () => {
+  it('agrupa por mes y ordena ascendente', () => {
+    const r = resumenPorMes([o({ fecha: '2026-10-05' }), o({ fecha: '2026-09-28' }), o({ fecha: '2026-10-13' })]);
+    expect(r.map(x => [x.mes, x.ordenes])).toEqual([['2026-09', 1], ['2026-10', 2]]);
+  });
+});
+
+describe('montoCoherente', () => {
+  it('CEDEAR por unidad y bono cada 100 nominales', () => {
+    expect(montoCoherente({ nominales: 9, precio_ejecutado: 19.07, monto_usd: 171.63 })).toBe(true);
+    expect(montoCoherente({ nominales: 700, precio_ejecutado: 107.3, monto_usd: 751.1 })).toBe(true);
+    expect(montoCoherente({ nominales: 9, precio_ejecutado: 19.07, monto_usd: 250 })).toBe(false);
+  });
+  it('sin precio no se puede verificar', () => { expect(montoCoherente({ nominales: 9, precio_ejecutado: null, monto_usd: 10 })).toBeNull(); });
+});
+
+describe('tickerDePosicion', () => {
+  it('MAD → MA si la cartera tiene MA; los bonos que terminan en D quedan igual', () => {
+    const s = new Set(['MA', 'DNC7D']);
+    expect(tickerDePosicion('MAD', s)).toBe('MA');
+    expect(tickerDePosicion('DNC7D', s)).toBe('DNC7D');
+  });
+});
+
+describe('controlarOrdenes', () => {
+  const pos = ['MA', 'DNC7D'];
+  it('una orden bien cargada y conciliada no genera controles', () => {
+    expect(controlarOrdenes([o({})], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], pos)).toEqual([]);
+  });
+  it('detecta comisión faltante, sin MEP, monto incoherente y comisión alta', () => {
+    const c = controlarOrdenes([
+      o({ id: 'a', comision_usd: null, comision_ars: null }),
+      o({ id: 'b', mep: null }),
+      o({ id: 'c', monto_usd: 400 }),
+      o({ id: 'd', comision_usd: 5 }),
+    ], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 36 }], pos);
+    const tipos = c.map(x => x.tipo);
+    expect(tipos).toEqual(expect.arrayContaining(['sin_comision', 'sin_mep', 'monto_incoherente', 'comision_alta']));
+    expect(c[0].severidad).toBe('error');                                    // los errores van primero
+  });
+  it('concilia por (fecha, ticker): suma de nominales de las órdenes vs compra registrada', () => {
+    const ok = controlarOrdenes([o({ nominales: 5, monto_usd: 95.35 }), o({ nominales: 4, monto_usd: 76.28 })], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], pos);
+    expect(ok.filter(x => x.tipo === 'movimiento_distinto' || x.tipo === 'sin_movimiento')).toEqual([]);
+    const mal = controlarOrdenes([o({})], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 10 }], pos);
+    expect(mal.some(x => x.tipo === 'movimiento_distinto')).toBe(true);
+    expect(controlarOrdenes([o({})], [], pos).some(x => x.tipo === 'sin_movimiento')).toBe(true);
+  });
+  it('compra sin orden: solo desde la primera orden y sin contar la liquidez', () => {
+    const c = controlarOrdenes([o({})], [
+      { fecha: '2026-10-13', ticker: 'MA', cantidad: 9 },
+      { fecha: '2026-08-10', ticker: 'COC4D', cantidad: 2000 },     // posterior a la primera orden? no: es anterior → no se marca
+      { fecha: '2026-10-20', ticker: 'COC4D', cantidad: 500 },
+      { fecha: '2026-10-20', ticker: 'LIQUIDEZ', cantidad: 8000 },
+    ], pos);
+    const sin = c.filter(x => x.tipo === 'compra_sin_orden');
+    expect(sin).toHaveLength(1);
+    expect(sin[0].texto).toContain('COC4D');
+  });
+  it('un portfolio sin órdenes no genera "compra sin orden" (no llevaba el registro)', () => {
+    expect(controlarOrdenes([], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], pos)).toEqual([]);
+  });
+});

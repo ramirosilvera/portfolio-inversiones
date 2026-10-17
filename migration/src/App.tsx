@@ -12,6 +12,7 @@ import { BonosPage } from './pages/BonosPage';
 import { CedearsPage } from './pages/CedearsPage';
 import { AportesPage } from './pages/AportesPage';
 import { DesempenoPage } from './pages/DesempenoPage';
+import { OrdenesPage } from './pages/OrdenesPage';
 import { ConfigPage } from './pages/ConfigPage';
 import { ConsolidadoPage } from './pages/ConsolidadoPage';
 import { ForecastPage } from './pages/ForecastPage';
@@ -73,6 +74,7 @@ export function App() {
           <Route path="finanzas" element={<FinanzasPage />} />
           <Route path="aportes" element={<AportesPage />} />
           <Route path="desempeno" element={<DesempenoPage />} />
+          <Route path="ordenes" element={<OrdenesPage />} />
           <Route path="forecast" element={<ForecastPage />} />
           {/* Ruta vieja (marcadores, links guardados): la sección se llamaba Proyección. */}
           <Route path="proyeccion" element={<Navigate to="/forecast" replace />} />

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { useDesempeno } from '../hooks/useDesempeno';
 import { Card, CardHeader, Stat, Badge, fmtUsd, fmtPct, fmtPctSigno } from '../components/ui';
@@ -97,7 +98,7 @@ export function DesempenoPage() {
               {sinAcreditar > 0.5 && <span className="text-warn"> Hay {fmtUsd(sinAcreditar, 2)} confirmados sin acreditar: solo cuentan si ese efectivo ya está en tu saldo.</span>}
             </p>
             <p className="text-[11px] text-ink-600">
-              <b>Costos:</b>{' '}
+              <b>Costos</b> (<Link to="/ordenes" className="text-celeste-600 underline">ver órdenes y controles</Link>):{' '}
               {costos.ordenes === 0
                 ? 'no hay órdenes con comisiones registradas: el rendimiento no descuenta costos de operación.'
                 : <>{costos.ordenes} órdenes · comisiones {fmtUsd(costos.totalUsdConocido, 2)}{costos.pctSobreOperado != null && <> ({fmtPct(costos.pctSobreOperado, 2)} de lo operado)</>}
