@@ -19,17 +19,17 @@ const num = (s: string) => (s.trim() === '' ? null : Number(s.replace(',', '.'))
 
 interface Draft {
   fecha: string; ticker: string; broker: string; numero_orden: string; nominales: string; precio: string; monto: string;
-  comUsd: string; comArs: string; mep: string; estado: string; nota: string;
+  comUsd: string; comArs: string; mep: string; estado: string; nota: string; lado: 'compra' | 'venta';
 }
 const vacio = (mep: number | null): Draft => ({
   fecha: new Date().toISOString().slice(0, 10), ticker: '', broker: 'IOL', numero_orden: '', nominales: '', precio: '', monto: '',
-  comUsd: '', comArs: '', mep: mep ? String(Math.round(mep * 100) / 100) : '', estado: 'terminada', nota: '',
+  comUsd: '', comArs: '', mep: mep ? String(Math.round(mep * 100) / 100) : '', estado: 'terminada', nota: '', lado: 'compra',
 });
 const deOrden = (o: OrdenFila): Draft => ({
   fecha: o.fecha, ticker: o.ticker, broker: o.broker, numero_orden: o.numero_orden ?? '', nominales: String(o.nominales),
   precio: o.precio_ejecutado == null ? '' : String(o.precio_ejecutado), monto: String(o.monto_usd),
   comUsd: o.comision_usd == null ? '' : String(o.comision_usd), comArs: o.comision_ars == null ? '' : String(o.comision_ars),
-  mep: o.mep == null ? '' : String(o.mep), estado: o.estado, nota: o.nota ?? '',
+  mep: o.mep == null ? '' : String(o.mep), estado: o.estado, nota: o.nota ?? '', lado: o.lado ?? 'compra',
 });
 
 function OrdenModal({ inicial, onClose, onSave }: { inicial: Draft; onClose: () => void; onSave: (d: OrdenInput) => Promise<void> }) {
@@ -53,7 +53,7 @@ function OrdenModal({ inicial, onClose, onSave }: { inicial: Draft; onClose: () 
       await onSave({
         fecha: d.fecha, ticker: d.ticker.toUpperCase().trim(), broker: d.broker.trim() || 'IOL', numero_orden: d.numero_orden.trim() || null,
         nominales, precio_ejecutado: precio, monto_usd: monto, comision_usd: cu, comision_ars: ca, mep: mep != null && mep > 0 ? mep : null,
-        estado: d.estado, origen: 'manual', nota: d.nota.trim() || null,
+        estado: d.estado, origen: 'manual', nota: d.nota.trim() || null, lado: d.lado,
       });
       onClose();
     } catch (e) { setErr(`No se pudo guardar: ${e instanceof Error ? e.message : 'error'}`); }
@@ -67,6 +67,9 @@ function OrdenModal({ inicial, onClose, onSave }: { inicial: Draft; onClose: () 
           <CardHeader title="Orden ejecutada" sub="Registro de lo operado en el broker. No ejecuta ni modifica nada en el mercado."
             right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
           <div className="p-4 grid grid-cols-2 gap-3 text-sm">
+            <Field label="Operación">
+              <select className={inputCls} value={d.lado} onChange={set('lado')}><option value="compra">compra</option><option value="venta">venta</option></select>
+            </Field>
             <Field label="Fecha"><input type="date" className={inputCls} value={d.fecha} onChange={set('fecha')} /></Field>
             <Field label="Ticker"><input className={inputCls} value={d.ticker} onChange={set('ticker')} placeholder="MAD, DNC7D…" /></Field>
             <Field label="Nominales"><input className={inputCls} value={d.nominales} onChange={set('nominales')} inputMode="decimal" /></Field>
@@ -115,7 +118,8 @@ export function OrdenesPage() {
   const controles = useMemo<Control[]>(() => controlarOrdenes(
     ordenes,
     movs.filter(m => m.tipo === 'compra').map(m => ({ fecha: m.fecha, ticker: m.ticker, cantidad: Number(m.cantidad) || 0 })),
-    posiciones.map(p => p.ticker),
+    posiciones.map(p => p.ticker), ['LIQUIDEZ'],
+    movs.filter(m => m.tipo === 'venta').map(m => ({ fecha: m.fecha, ticker: m.ticker, cantidad: Number(m.cantidad) || 0 })),
   ), [ordenes, movs, posiciones]);
   const porOrden = useMemo(() => { const m = new Map<string, Control[]>(); for (const c of controles) if (c.ordenId) (m.get(c.ordenId) ?? m.set(c.ordenId, []).get(c.ordenId)!).push(c); return m; }, [controles]);
   const filas = ordenes.filter(o => filtro === 'todas' || (filtro === 'terminada' ? o.estado === 'terminada' : o.estado !== 'terminada'));
@@ -209,7 +213,7 @@ export function OrdenesPage() {
                     return (
                       <tr key={o.id} className="border-b border-line/60 align-top">
                         <td className="px-4 py-2 whitespace-nowrap">{fmtFecha(o.fecha)}</td>
-                        <td className="px-2 py-2 font-semibold">{o.ticker}{o.numero_orden && <span className="block text-[10px] font-normal text-ink-500">#{o.numero_orden}</span>}</td>
+                        <td className="px-2 py-2 font-semibold">{o.ticker}{o.lado === 'venta' && <span className="ml-1 text-[10px] font-bold text-neg">venta</span>}{o.numero_orden && <span className="block text-[10px] font-normal text-ink-500">#{o.numero_orden}</span>}</td>
                         <td className="px-2 py-2 text-right tnum">{o.nominales.toLocaleString('es-AR')}</td>
                         <td className="px-2 py-2 text-right tnum">{o.precio_ejecutado ?? '—'}</td>
                         <td className="px-2 py-2 text-right tnum">{fmtUsd(o.monto_usd, 2)}</td>

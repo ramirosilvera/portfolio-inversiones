@@ -128,6 +128,7 @@ export async function borrarMovimiento(movId: string): Promise<void> {
 export interface OrdenAltaCostos {
   broker?: string; numero_orden?: string | null; comision_usd?: number | null; comision_ars?: number | null; mep?: number | null;
   descontarComision?: boolean;
+  nota?: string | null;     // ej. "Comisión estimada (0,67 %)": queda en la orden para distinguir estimada de real
 }
 
 export function usePosicionMutations(portfolioId: string | null | undefined) {
@@ -253,7 +254,7 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
           nominales: addQty, precio_ejecutado: addPrice, monto_usd: +(addQty * addPrice).toFixed(2),
           comision_usd: orden.comision_usd ?? null, comision_ars: orden.comision_ars ?? null,
           mep: Number(orden.mep) > 0 ? Number(orden.mep) : null,
-          estado: 'terminada', origen: 'manual', nota: p.notas ?? 'Cargada al agregar la posición', movimiento_id: compraMovId,
+          estado: 'terminada', origen: 'manual', lado: 'compra', nota: [p.notas ?? 'Cargada al agregar la posición', orden.nota].filter(Boolean).join(' · '), movimiento_id: compraMovId,
         });
         if (ordErr) { invalidate(); throw new Error(`Compra registrada, pero no se pudo guardar la orden: ${ordErr.message}`); }
       }
@@ -264,7 +265,8 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
     // no se borra, para conservar el historial y poder reabrirla con una compra futura.
     // `acreditar`: el producto (cantidad × precio) entra a la LIQUIDEZ del portfolio — sin eso, la
     // venta sacaba valor del patrimonio sin que entrara la plata y el rendimiento lo leía como pérdida.
-    sell: async (pos: Posicion, sellQty: number, sellPrice: number, fecha?: string, acreditar = false) => {
+    // `orden` (opcional): deja además el registro de la orden de VENTA con su comisión; `descontarComision` resta la comisión de lo acreditado en Liquidez.
+    sell: async (pos: Posicion, sellQty: number, sellPrice: number, fecha?: string, acreditar = false, orden?: OrdenAltaCostos) => {
       const qty = Math.min(Number(sellQty) || 0, Number(pos.cantidad) || 0);
       if (qty <= 0) throw new Error('Cantidad de venta inválida');
       // Historial cuadrado antes de vender: una posición con historial PARCIAL (saldo viejo + una
@@ -279,6 +281,24 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
       });
       invalidate();
       if (error) throw new Error(`No se pudo registrar la venta: ${error.message}`);
+      if (orden && portfolioId) {
+        const fechaV = fecha ?? new Date().toISOString().slice(0, 10);
+        const comUsdV = Number(orden.comision_usd) || 0;
+        const { error: ordErr } = await supabase.from('ordenes_ejecutadas').insert({
+          portfolio_id: portfolioId, fecha: fechaV, ticker: pos.ticker, broker: orden.broker || 'IOL', numero_orden: orden.numero_orden?.trim() || null,
+          nominales: qty, precio_ejecutado: Number(sellPrice) || 0, monto_usd: +(qty * (Number(sellPrice) || 0)).toFixed(2),
+          comision_usd: orden.comision_usd ?? null, comision_ars: orden.comision_ars ?? null, mep: Number(orden.mep) > 0 ? Number(orden.mep) : null,
+          estado: 'terminada', origen: 'manual', lado: 'venta', nota: ['Venta registrada desde la posición', orden.nota].filter(Boolean).join(' · '),
+        });
+        if (ordErr) throw new Error(`Venta registrada, pero no se pudo guardar la orden: ${ordErr.message}`);
+        if (acreditar && orden.descontarComision && comUsdV > 0) {
+          const { error: liqErr } = await supabase.rpc('mover_liquidez', {
+            p_portfolio: portfolioId, p_monto: -comUsdV, p_fecha: fechaV, p_nota: `comisión de la venta de ${pos.ticker}`,
+          });
+          invalidate();
+          if (liqErr) throw new Error(`Venta y orden registradas, pero no se pudo descontar la comisión de la liquidez: ${liqErr.message}`);
+        }
+      }
       // Vendió todo: la posición sale del plan de objetivos y el resto se reescala a 100 %.
       if (portfolioId && qty >= Number(pos.cantidad) - 1e-9) {
         try { await reajustarObjetivosTrasCierre(portfolioId, pos.id); }
