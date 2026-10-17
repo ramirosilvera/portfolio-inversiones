@@ -36,20 +36,24 @@ export function indiceTwr(puntos: PuntoValor[], flujos: FlujoFechado[]): { serie
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
   if (!pts.length) return { serie: [], anomalias: 0 };
   const serie: PuntoIndice[] = [{ fecha: pts[0].fecha, indice: 1 }];
-  let anomalias = 0;
+  // `base` = último valor aceptado. Un tramo que no define un rendimiento creíble NO se descarta solo: se difiere y se vuelve a
+  // intentar contra el valor siguiente, desde la misma base y con todos los flujos acumulados. Caso típico: el snapshot del día del
+  // aporte se grabó ANTES de acreditar la plata (el valor no la incluye) y el siguiente sí → cada tramo por separado es absurdo
+  // (−33 % y +31 %), pero juntos dan un retorno normal. Solo si nunca se resuelve queda como anomalía (y se avisa).
+  let base = pts[0];
+  let diferidos = 0, anomalias = 0;
   for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i];
-    if (b.fecha === a.fecha) continue;
-    const F = flujos.filter(f => f.fecha > a.fecha && f.fecha <= b.fecha).reduce((s, f) => s + f.monto, 0);
+    const b = pts[i];
+    if (b.fecha === base.fecha) continue;
+    const F = flujos.filter(f => f.fecha > base.fecha && f.fecha <= b.fecha).reduce((s, f) => s + f.monto, 0);
     const neto = b.valor - F;
-    if (!(neto > 0)) { anomalias++; continue; }          // un retiro mayor al valor: no hay rendimiento definido, se saltea y se cuenta
-    // Tramo con un flujo grande y un retorno implícito extremo: casi seguro el valor grabado quedó desfasado del aporte (p. ej. el
-    // snapshot se tomó antes de acreditar la plata en Liquidez). Dibujarlo como pérdida/ganancia real falsearía el índice y la
-    // máxima caída; se omite y se cuenta como anomalía para avisarlo.
-    if (F !== 0 && Math.abs(F) > 0.1 * a.valor && Math.abs(neto / a.valor - 1) > 0.2) { anomalias++; continue; }
-    const prev = serie[serie.length - 1].indice;
-    serie.push({ fecha: b.fecha, indice: prev * (neto / a.valor) });
+    const absurdo = F !== 0 && Math.abs(F) > 0.1 * base.valor && Math.abs(neto / base.valor - 1) > 0.2;   // flujo grande + retorno extremo
+    if (!(neto > 0) || absurdo) { diferidos++; continue; }
+    serie.push({ fecha: b.fecha, indice: serie[serie.length - 1].indice * (neto / base.valor) });
+    base = b;
+    diferidos = 0;
   }
+  anomalias = diferidos;
   return { serie, anomalias };
 }
 
@@ -233,7 +237,15 @@ export function calcularDesempeno(p: {
   const costos = resumenCostos(p.ordenes);
 
   // TIR money-weighted desde el primer flujo, con el valor de hoy. Solo se anualiza con ≥ 1 año de historia.
-  const fl = p.flujos.filter(f => f.fecha <= p.hoy && f.monto !== 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  // VENTANA ÚNICA de medición: desde el primer valor diario registrado. Ese valor es el capital inicial (un flujo de entrada ese día) y
+  // solo cuentan los aportes/retiros POSTERIORES. Así rentabilidad, TIR, benchmark y máxima caída miden exactamente el mismo
+  // período; antes la TIR y el índice partían del primer aporte (importado de la planilla, sin valores diarios) y el acumulado del
+  // primer snapshot, y las cifras se contradecían.
+  const validos = puntos.filter(x => x && !Number.isNaN(Date.parse(x.fecha)) && x.valor > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const flujosVentana: FlujoFechado[] = validos.length
+    ? [{ fecha: validos[0].fecha, monto: validos[0].valor }, ...p.flujos.filter(f => f.fecha > validos[0].fecha && f.monto !== 0)]
+    : p.flujos;
+  const fl = flujosVentana.filter(f => f.fecha <= p.hoy && f.monto !== 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
   const invertido = fl.filter(f => f.monto > 0).reduce((s, f) => s + f.monto, 0);
   const retirado = -fl.filter(f => f.monto < 0).reduce((s, f) => s + f.monto, 0);
   const diasFlujos = fl.length ? dias(fl[0].fecha, p.hoy) : 0;
@@ -250,7 +262,7 @@ export function calcularDesempeno(p: {
   let benchmark: Desempeno['benchmark'] = null;
   const desde = calidad.desde, hasta = calidad.hasta;
   if (p.serieSp?.length && desde && hasta) {
-    const mf = benchmarkConMismosFlujos(p.serieSp, p.flujos, p.hoy);
+    const mf = benchmarkConMismosFlujos(p.serieSp, flujosVentana, p.hoy);
     if (mf) {
       const fechasSnap = serie.map(s => s.fecha);
       const pxIni = cierreAl(p.serieSp, desde), pxFin = cierreAl(p.serieSp, hasta);

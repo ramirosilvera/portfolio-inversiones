@@ -110,7 +110,7 @@ export function DesempenoPage() {
                   <Stat label="TIR del índice" value={benchmark.mismosFlujos.tir != null ? fmtPctSigno(benchmark.mismosFlujos.tir, 1) : '—'} hint="con tus mismos flujos" />
                 </div>
                 <p className="text-[11px] text-ink-600">
-                  Los aportes se cuentan desde el {fmtFecha(primerFlujo)}. SPY ya descuenta su costo de fondo (~0,09 %); tu cartera no descuenta costos que no estén registrados.
+                  Se mide desde el {fmtFecha(periodo.desde)} (primer valor diario registrado): ese valor es el capital inicial y cuentan tus aportes y retiros posteriores.{primerFlujo && primerFlujo < (periodo.desde ?? '') && <> Tu primer aporte es del {fmtFecha(primerFlujo)}, pero antes del {fmtFecha(periodo.desde)} no hay valores diarios y ese tramo no se compara.</>} SPY ya descuenta su costo de fondo (~0,09 %); tu cartera no descuenta costos que no estén registrados.
                 </p>
               </>
             ) : (
