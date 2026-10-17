@@ -3,10 +3,9 @@ import { useRendimientoAnual } from './useRendimientoAnual';
 import { useSp500 } from './useSp500';
 import { useOrdenesEjecutadas } from './useOrdenesEjecutadas';
 import { useCobros } from './useCobros';
-import { useMovimientos } from './usePosiciones';
 import { flujosFirmados } from '../engine/aportes';
-import { cobrosSinAcreditar, pnlTotal as calcularPnlTotal, realizedPnl } from '../engine/pnl';
-import { calcularDesempeno, puentePnl } from '../engine/desempeno';
+import { cobrosSinAcreditar } from '../engine/pnl';
+import { calcularDesempeno } from '../engine/desempeno';
 
 // Desempeño de un portfolio (rentabilidad, contra el S&P 500, máxima caída, costos): junta los datos reales y delega TODO el cálculo
 // en engine/desempeno.ts. La pantalla solo presenta lo que devuelve (regla de oro #1).
@@ -16,10 +15,6 @@ export function useDesempeno(portfolioId: string | undefined) {
   const { data: ordenes = [] } = useOrdenesEjecutadas(portfolioId);
   const { data: cobros = [] } = useCobros(portfolioId);
   const sinAcreditar = useMemo(() => cobrosSinAcreditar(cobros), [cobros]);
-
-  // El MISMO "P&L total" que muestra Inicio (engine/pnl.ts) y el puente que lo relaciona con la Ganancia de Desempeño.
-  const { data: movs = [] } = useMovimientos(portfolioId);
-  const pnlInicio = useMemo(() => calcularPnlTotal(r.pnl, realizedPnl(movs).total, cobros).total, [r.pnl, movs, cobros]);
 
   const flujos = useMemo(() => flujosFirmados(aportes.filter(a => a.fecha && !Number.isNaN(Date.parse(a.fecha)))), [aportes]);
   const listo = !cargando && valuacionDeMercado;
@@ -38,6 +33,5 @@ export function useDesempeno(portfolioId: string | undefined) {
 
   const primerFlujo = useMemo(() => flujos.filter(f => f.monto !== 0).map(f => f.fecha).sort()[0] ?? null, [flujos]);
 
-  return { d, listo, primerFlujo, spError, flujos, patrimonio, hoy, snaps, posiciones: r.posiciones, qSnaps: r.qSnaps, qPos: r.qPos, sinAcreditar, hayPuntos: puntos.length >= 2, porAnio: r.porAnio,
-    puente: puentePnl({ gananciaVentana: d.tir.gananciaUsd, valor: patrimonio, aportadoNeto: flujos.reduce((s, f) => s + f.monto, 0), pnlTotal: pnlInicio }) };
+  return { d, listo, primerFlujo, spError, flujos, patrimonio, hoy, snaps, posiciones: r.posiciones, qSnaps: r.qSnaps, qPos: r.qPos, sinAcreditar, hayPuntos: puntos.length >= 2, porAnio: r.porAnio };
 }

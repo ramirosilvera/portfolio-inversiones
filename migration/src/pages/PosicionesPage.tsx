@@ -133,7 +133,7 @@ export function PosicionesPage() {
         <Stat label="P&L no realizado" value={fmtUsdCompact(pnlNoReal)} delta={costoTotal > 0 ? pnlNoReal / costoTotal : undefined} hint="ganancia/pérdida de lo que tenés hoy" />
         <Stat label="P&L realizado" value={fmtUsdCompact(realized.total)} hint="resultado de las ventas (según historial)" />
         <Stat label="Renta cobrada" value={fmtUsdCompact(pnlDetalle.renta)} hint="dividendos + intereses confirmados (la amortización es capital, no suma)" />
-        <Stat label="P&L total" value={<span className={pnlDetalle.total >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnlDetalle.total)}</span>} delta={costoTotal > 0 ? pnlDetalle.total / costoTotal : undefined} hint="no realizado + realizado + renta" />
+        <Stat label="P&L de posiciones" value={<span className={pnlDetalle.total >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnlDetalle.total)}</span>} delta={costoTotal > 0 ? pnlDetalle.total / costoTotal : undefined} hint="no realizado + realizado + renta, contra el precio de compra de cada activo (sin comisiones). Sirve para comparar activos; la ganancia de la cartera, con comisiones, está en Desempeño." />
       </div>
 
       <Card>

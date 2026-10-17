@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   indiceTwr, twrAcumulado, anualizar, maxDrawdown, calidadSerie, cierreAl, benchmarkConMismosFlujos, indiceBenchmark,
-  resumenCostos, calcularDesempeno, MIN_DIAS_ANUALIZAR, evolucion, puentePnl,
+  resumenCostos, calcularDesempeno, MIN_DIAS_ANUALIZAR, evolucion,
 } from './desempeno';
 
 const v = (fecha: string, valor: number) => ({ fecha, valor });
@@ -331,20 +331,5 @@ describe('evolucion — cartera vs capital vs S&P 500', () => {
     const r = calcularDesempeno({ puntos: [v('2026-01-01', 1000), v('2026-03-01', 1200)], flujos: [f('2026-01-01', 1000)], valorActual: 1200, hoy: '2026-03-01', serieSp: sp, ordenes: [] });
     expect(r.evolucion).toHaveLength(2);
     expect(r.evolucion[1]).toMatchObject({ valor: 1200, capital: 1000 });
-  });
-});
-
-describe('puentePnl', () => {
-  it('Ahorros: ganancia 2026 + lo previo = desde el inicio; + diferencia de método = P&L total de Inicio', () => {
-    const b = puentePnl({ gananciaVentana: -508.54, valor: 16976.42, aportadoNeto: 14522.78, pnlTotal: 2730.54 });
-    expect(b.desdeInicio).toBe(2453.64);
-    expect(b.previa).toBe(2962.18);
-    expect(b.diferenciaMetodo).toBe(276.9);
-    expect(b.gananciaVentana + b.previa + b.diferenciaMetodo).toBeCloseTo(b.pnlTotal, 2);
-  });
-  it('Herencia: misma ventana (previa 0); solo queda la diferencia de método', () => {
-    const b = puentePnl({ gananciaVentana: 172.83, valor: 40182.83, aportadoNeto: 40010, pnlTotal: 261.55 });
-    expect(b.previa).toBe(0);
-    expect(b.diferenciaMetodo).toBe(88.72);
   });
 });
