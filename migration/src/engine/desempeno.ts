@@ -57,7 +57,10 @@ export function indiceTwr(puntos: PuntoValor[], flujos: FlujoFechado[]): { serie
     }
     const neto = b.valor - F;
     const absurdo = F !== 0 && Math.abs(F) > 0.1 * base.valor && Math.abs(neto / base.valor - 1) > 0.2;   // flujo grande + retorno extremo
-    if (!(neto > 0) || absurdo) { diferidos++; continue; }
+    // Valor IDÉNTICO al anterior con un flujo de por medio: el snapshot se grabó antes de acreditar el movimiento (un mercado no repite el
+    // valor al centavo el mismo día que entra o sale plata). Se difiere igual que un tramo absurdo.
+    const desfasado = F !== 0 && Math.abs(b.valor - base.valor) < 0.005;
+    if (!(neto > 0) || absurdo || desfasado) { diferidos++; continue; }
     serie.push({ fecha: b.fecha, indice: serie[serie.length - 1].indice * (neto / base.valor) });
     base = b;
     diferidos = 0;
