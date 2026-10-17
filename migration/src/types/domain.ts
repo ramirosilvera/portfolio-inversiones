@@ -63,6 +63,13 @@ export interface Broker {
   user_id: string;
   nombre: string;
   created_at: string;
+  // Costos editables (0056): fracciones (0,0072 = 0,72 %); null = usar la tasa general (engine/costosCobros.ts).
+  retencion_dividendo?: number | null;
+  comision_depositaria?: number | null;
+  comision_cobro_dividendo?: number | null;
+  comision_cobro_interes?: number | null;
+  comision_operacion?: number | null;
+  notas_costos?: string | null;
 }
 
 // Reparto de una posición entre brokers — reemplaza posiciones.broker_id (0016/0017): una posición
