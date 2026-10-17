@@ -57,18 +57,20 @@ export function resumenPorMes(ordenes: OrdenFila[]): FilaMes[] {
 // ── Controles ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 export type TipoControl =
   | 'sin_comision' | 'sin_mep' | 'monto_incoherente' | 'comision_alta'
-  | 'sin_movimiento' | 'movimiento_distinto' | 'compra_sin_orden';
+  | 'sin_movimiento' | 'movimiento_distinto' | 'compra_sin_orden' | 'anterior_al_historial';
 
 export interface Control { tipo: TipoControl; severidad: 'error' | 'aviso' | 'info'; texto: string; ordenId?: string }
 
 // Comisión total (USD) sobre lo operado por encima de esto es sospechosa: IOL cobra ~0,3–0,6 % en bonos/CEDEARs.
 export const MAX_PCT_COMISION = 0.01;
 
-// El CEDEAR en dólares ("MAD", "MELID") se asienta en la cartera con el ticker del CEDEAR ("MA", "MELI").
+// El CEDEAR en dólares ("MAD", "MELID") se asienta en la cartera con el ticker del CEDEAR ("MA", "MELI"); la ON en pesos con
+// cobertura en dólares ("CS51O") es la misma emisión que la línea en dólares de la cartera ("CS51D").
 export function tickerDePosicion(tickerOrden: string, tickersPosicion: Set<string>): string {
   const t = tickerOrden.toUpperCase();
   if (tickersPosicion.has(t)) return t;
   if (t.endsWith('D') && tickersPosicion.has(t.slice(0, -1))) return t.slice(0, -1);
+  if (t.endsWith('O') && tickersPosicion.has(`${t.slice(0, -1)}D`)) return `${t.slice(0, -1)}D`;
   return t;
 }
 
@@ -115,11 +117,18 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
     if (cash.has(t)) continue;
     const k = clave(m.fecha, t); movPorDia.set(k, (movPorDia.get(k) ?? 0) + n(m.cantidad));
   }
+  // Antes del primer movimiento de compra registrado la cartera se cargó como saldo (sin historial): esas órdenes no se pueden conciliar.
+  const desdeHistorial = [...movPorDia.keys()].map(k => k.split('|')[0]).sort()[0] ?? '9999-12-31';
+  let anteriores = 0;
   for (const [k, nom] of ordenPorDia) {
     const [f, t] = k.split('|');
     const mov = movPorDia.get(k);
+    if (mov == null && f < desdeHistorial) { anteriores++; continue; }
     if (mov == null) out.push({ tipo: 'sin_movimiento', severidad: 'error', texto: `${t} · ${fmtF(f)}: hay órdenes ejecutadas por ${nom} nominales pero ninguna compra registrada en Movimientos.` });
     else if (Math.abs(mov - nom) > 1e-6) out.push({ tipo: 'movimiento_distinto', severidad: 'error', texto: `${t} · ${fmtF(f)}: las órdenes suman ${nom} nominales y la compra registrada es de ${mov}.` });
+  }
+  if (anteriores > 0) {
+    out.push({ tipo: 'anterior_al_historial', severidad: 'info', texto: `${anteriores} ${anteriores === 1 ? 'orden anterior' : 'órdenes anteriores'} al historial de movimientos de la cartera (que arranca el ${desdeHistorial === '9999-12-31' ? 'sin fecha' : fmtF(desdeHistorial)}): no se concilian con compras.` });
   }
   // Compras sin orden: solo desde la primera orden registrada (antes de eso el portfolio no llevaba este registro).
   const primera = ejecutadas.map(o => o.fecha).sort()[0];

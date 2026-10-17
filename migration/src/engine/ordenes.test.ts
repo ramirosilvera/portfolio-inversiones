@@ -42,6 +42,7 @@ describe('tickerDePosicion', () => {
     expect(tickerDePosicion('MAD', s)).toBe('MA');
     expect(tickerDePosicion('DNC7D', s)).toBe('DNC7D');
   });
+  it('CS51O (ON en pesos) → CS51D', () => { expect(tickerDePosicion('CS51O', new Set(['CS51D']))).toBe('CS51D'); });
 });
 
 describe('controlarOrdenes', () => {
@@ -65,7 +66,9 @@ describe('controlarOrdenes', () => {
     expect(ok.filter(x => x.tipo === 'movimiento_distinto' || x.tipo === 'sin_movimiento')).toEqual([]);
     const mal = controlarOrdenes([o({})], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 10 }], pos);
     expect(mal.some(x => x.tipo === 'movimiento_distinto')).toBe(true);
-    expect(controlarOrdenes([o({})], [], pos).some(x => x.tipo === 'sin_movimiento')).toBe(true);
+    expect(controlarOrdenes([o({})], [{ fecha: '2026-10-01', ticker: 'MA', cantidad: 3 }], pos).some(x => x.tipo === 'sin_movimiento')).toBe(true);   // hay historial desde el 01/10 y ese día no hay compra
+    expect(controlarOrdenes([o({})], [{ fecha: '2026-10-01', ticker: 'DNC7D', cantidad: 3 }], pos).some(x => x.tipo === 'sin_movimiento')).toBe(true);
+    expect(controlarOrdenes([o({})], [], pos).some(x => x.tipo === 'anterior_al_historial')).toBe(true);   // sin historial de compras no se concilia
   });
   it('compra sin orden: solo desde la primera orden y sin contar la liquidez', () => {
     const c = controlarOrdenes([o({})], [
@@ -80,5 +83,23 @@ describe('controlarOrdenes', () => {
   });
   it('un portfolio sin órdenes no genera "compra sin orden" (no llevaba el registro)', () => {
     expect(controlarOrdenes([], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], pos)).toEqual([]);
+  });
+});
+
+describe('controlarOrdenes — antes del historial de movimientos', () => {
+  const pos = ['MELI', 'CS51D'];
+  it('las órdenes anteriores a la primera compra registrada no son error: se avisa una sola vez', () => {
+    const c = controlarOrdenes(
+      [o({ fecha: '2025-10-06', ticker: 'MELI', nominales: 7, precio_ejecutado: 18.34, monto_usd: 128.41 }),
+       o({ fecha: '2025-12-22', ticker: 'MELI', nominales: 14, precio_ejecutado: 17.05, monto_usd: 238.7 }),
+       o({ fecha: '2026-08-19', ticker: 'CS51O', nominales: 1914, precio_ejecutado: 1.0156, monto_usd: 1943.8, comision_usd: 5 })],
+      [{ fecha: '2026-08-19', ticker: 'CS51D', cantidad: 1914 }], pos);
+    expect(c.filter(x => x.tipo === 'sin_movimiento')).toEqual([]);
+    expect(c.filter(x => x.tipo === 'anterior_al_historial')).toHaveLength(1);
+    expect(c.filter(x => x.tipo === 'movimiento_distinto')).toEqual([]);
+  });
+  it('una orden POSTERIOR al inicio del historial sin compra sigue siendo error', () => {
+    const c = controlarOrdenes([o({ fecha: '2026-10-13', ticker: 'MELI', nominales: 5, precio_ejecutado: 20, monto_usd: 100 })], [{ fecha: '2026-08-19', ticker: 'CS51D', cantidad: 10 }], pos);
+    expect(c.some(x => x.tipo === 'sin_movimiento')).toBe(true);
   });
 });
