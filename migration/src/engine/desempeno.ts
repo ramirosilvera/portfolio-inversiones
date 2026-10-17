@@ -342,29 +342,3 @@ export function calcularDesempeno(p: {
     benchmark,
   };
 }
-
-// ── Puente entre la "Ganancia" de Desempeño y el "P&L total" de Inicio ──────────────────────────────────────────────────────────
-// Dos números que MIDEN COSAS DISTINTAS y por eso no coinciden:
-//   · Ganancia (Desempeño) = valor de hoy − capital aportado, desde el primer valor diario. Descuenta lo que pagaste en comisiones (el aporte es
-//     bruto) y solo cuenta lo que realmente está en la cartera.
-//   · P&L total (Inicio) = (valor − costo de las posiciones) + ganancia realizada + TODA la renta cobrada, desde siempre. El costo de las
-//     posiciones es el precio sin comisión, y la renta se suma aunque ese efectivo no esté en el valor de la cartera.
-// El puente separa la diferencia en tres pasos para que cierre al centavo.
-export interface PuentePnl {
-  gananciaVentana: number;   // Desempeño: desde el primer valor diario
-  previa: number;            // lo ganado antes de esa fecha (valor − aportado desde el inicio, menos lo anterior)
-  desdeInicio: number;       // valor − aportado neto, desde el inicio
-  diferenciaMetodo: number;  // P&L total − desdeInicio: comisiones no descontadas + renta que no está en el valor
-  pnlTotal: number;
-}
-
-export function puentePnl(p: { gananciaVentana: number; valor: number; aportadoNeto: number; pnlTotal: number }): PuentePnl {
-  const desdeInicio = +(p.valor - p.aportadoNeto).toFixed(2);
-  return {
-    gananciaVentana: +p.gananciaVentana.toFixed(2),
-    previa: +(desdeInicio - p.gananciaVentana).toFixed(2),
-    desdeInicio,
-    diferenciaMetodo: +(p.pnlTotal - desdeInicio).toFixed(2),
-    pnlTotal: +p.pnlTotal.toFixed(2),
-  };
-}

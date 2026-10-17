@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, Flame, LayoutGrid, Plus, Check, Star } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { useMacro, useDrawdowns, useBonosPrecios, useMovimientos } from '../hooks/usePosiciones';
-import { pnlTotal, realizedPnl } from '../engine/pnl';
+import { useMacro, useDrawdowns, useBonosPrecios } from '../hooks/usePosiciones';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { useBonosDestacados } from '../hooks/useBonosDestacados';
 import { calcularBonoReferencia } from '../engine/rentaFija';
@@ -56,7 +55,7 @@ export function DashboardPage() {
     qPos, qAportes, qSnaps,
     posiciones, quotes, aportes, snaps,
     sinPrecio, valuacionDeMercado,
-    patrimonio, costo, pnl, alloc,
+    patrimonio, costo, alloc,
     hoy, aportadoNeto,
   } = useRendimientoAnual(active?.id);
   // Tickers tenidos (sin efectivo) — para el aviso de precios viejos de <UpdatedAt>.
@@ -64,9 +63,9 @@ export function DashboardPage() {
   const { data: macro = {} } = useMacro();
   const { data: flujo = [] } = useFlujo();
   const { data: cobros = [] } = useCobros(active?.id);
-  // P&L total: lo no realizado (patrimonio − costo) + lo realizado en ventas + la renta cobrada (dividendos e intereses).
-  const { data: movsPnl = [] } = useMovimientos(active?.id);
-  const pnlDetalle = useMemo(() => pnlTotal(pnl, realizedPnl(movsPnl).total, cobros), [pnl, movsPnl, cobros]);
+  // Ganancia de la cartera: la MISMA que muestra Desempeño (valor + retiros − capital puesto, con comisiones y dividendos adentro), medida desde el primer valor
+  // diario. Antes acá había un «P&L total» contra el costo de las posiciones (sin comisiones y sumando renta no acreditada) que no coincidía con Desempeño.
+  const desemp = useDesempeno(active?.id);
   const resumenCobrado = useMemo(() => resumenCobros(cobros), [cobros]);
   // Forecast: el presupuesto congelado vive en proyeccion_inputs (se fija en /forecast). El resumen sale
   // de engine/presupuesto.calcularForecast — la MISMA función que usa la página, así los números no
@@ -232,8 +231,14 @@ export function DashboardPage() {
         {/* Rendimiento total / del año en curso vivían acá antes — se sacaron por redundantes: esa
             misma info (más completa, por año) ya está en la tarjeta "Rendimiento por año" de abajo.
             Solo queda P&L, que no se repite en ningún otro lado. */}
-        <Stat label="P&L total" value={<span className={pnlDetalle.total >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnlDetalle.total)}</span>} delta={costo > 0 ? pnlDetalle.total / costo : undefined}
-          hint={`Desde siempre, contra el costo de las posiciones (sin comisiones). No realizado ${fmtUsdCompact(pnlDetalle.noRealizado)} · realizado ${fmtUsdCompact(pnlDetalle.realizado)} · renta cobrada ${fmtUsdCompact(pnlDetalle.renta)}. La ganancia de Desempeño parte del primer valor diario y descuenta comisiones.`} />
+        <Stat label="Ganancia"
+          value={desemp.listo && desemp.hayPuntos
+            ? <span className={desemp.d.tir.gananciaUsd >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(desemp.d.tir.gananciaUsd)}</span>
+            : (desemp.listo ? <span className={patrimonio - aportadoNeto >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(patrimonio - aportadoNeto)}</span> : '—')}
+          delta={desemp.listo && desemp.hayPuntos && desemp.d.tir.acumulada != null ? desemp.d.tir.acumulada : undefined}
+          hint={desemp.listo && desemp.hayPuntos
+            ? `Desde el ${(desemp.d.periodo.desde ?? '').split('-').reverse().join('/')}: valor + retiros − capital puesto. Incluye comisiones, dividendos y ventas. Detalle en Desempeño.`
+            : 'Valor − capital aportado, desde el inicio. Detalle en Desempeño.'} />
       </div>
 
       {/* Cuerpo personalizable: agregar/quitar/reordenar tarjetas — ver components/dashboard/. El
