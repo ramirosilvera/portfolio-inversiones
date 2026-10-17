@@ -96,7 +96,8 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
   const set = new Set(tickersPosicion.map(t => t.toUpperCase()));
   const cash = new Set(tickersCash.map(t => t.toUpperCase()));
   const ejecutadas = ordenes.filter(esEjecutada);
-  const ejecutadasCompra = ejecutadas.filter(o => (o.lado ?? 'compra') === 'compra');
+  // Las órdenes 'transferida' son solo el REGISTRO del costo que viajó con una posición transferida: no tienen compra propia que conciliar.
+  const ejecutadasCompra = ejecutadas.filter(o => (o.lado ?? 'compra') === 'compra' && o.origen !== 'transferida');
   const ejecutadasVenta = ejecutadas.filter(o => o.lado === 'venta');
 
   for (const o of ejecutadas) {
