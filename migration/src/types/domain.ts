@@ -128,6 +128,11 @@ export interface Cobro {
   origen: CobroOrigen;
   movimiento_id: string | null;
   liquidez_mov_id?: string | null;   // crédito en LIQUIDEZ que generó este cobro (0050)
+  // Costos (0055): `monto` es lo ACREDITADO (neto) cuando hay costos; el detalle queda acá. null = monto declarado sin costos cargados.
+  monto_bruto?: number | null;
+  retencion_usd?: number | null;
+  comision_usd?: number | null;
+  costos_estimados?: boolean;
   nota: string | null;
   created_at: string;
 }
