@@ -1,15 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { calcularCostosCobro, estimarCostosCobro, netoEstimado, costosRegistrados, tasasPorDefecto, tasasParaCobro, TASA_RETENCION_EEUU, TASA_COMISION_DEPOSITARIA } from './costosCobros';
+import { calcularCostosCobro, estimarCostosCobro, netoEstimado, costosRegistrados, tasasPorDefecto, tasasParaCobro, TASA_RETENCION_EEUU, TASA_COMISION_DEPOSITARIA, TASA_IOL_COMISION_DIVIDENDO, TASA_IOL_COMISION_INTERES } from './costosCobros';
+
+const IOL_DIV = { retencion: TASA_RETENCION_EEUU, depositaria: TASA_COMISION_DEPOSITARIA, comision: TASA_IOL_COMISION_DIVIDENDO };
 
 describe('estimarCostosCobro', () => {
-  it('dividendo de CEDEAR: retención ~35,5 % y comisión ~0,72 % sobre lo que queda (reproduce lo que acreditó IOL)', () => {
-    // UNH: bruto 3,09 → IOL acreditó 2,00 (64,7 %); MSFT: 2,21 → 1,43.
-    expect(estimarCostosCobro('dividendo', 3.09).neto).toBeCloseTo(2.0, 1);
-    expect(estimarCostosCobro('dividendo', 2.21).neto).toBeCloseTo(1.43, 1);
-    expect(estimarCostosCobro('dividendo', 1.27).neto).toBeCloseTo(0.81, 1);
+  it('con las tasas de IOL reproduce lo que acreditó IOL (retención 30 % + depositario 5,5 % + comisión 0,72 %)', () => {
+    // UNH: bruto 3,09 → IOL acreditó 2,00 (64,7 %); MSFT: 2,21 → 1,43; MA: 1,27 → 0,81.
+    expect(calcularCostosCobro(3.09, IOL_DIV).neto).toBeCloseTo(2.0, 1);
+    expect(calcularCostosCobro(2.21, IOL_DIV).neto).toBeCloseTo(1.43, 1);
+    expect(calcularCostosCobro(1.27, IOL_DIV).neto).toBeCloseTo(0.81, 1);
   });
-  it('cupón de ON: sin retención, solo comisión chica', () => {
-    const c = estimarCostosCobro('interes', 1000);
+  it('un broker sin dato usa 1 % de comisión sobre el pago (dividendos y cupones)', () => {
+    expect(tasasPorDefecto('dividendo').comision).toBe(0.01);
+    expect(tasasPorDefecto('interes').comision).toBe(0.01);
+    expect(estimarCostosCobro('interes', 1000).comision).toBe(10);
+  });
+  it('cupón de ON: sin retención, solo la comisión del broker (IOL 0,45 %)', () => {
+    const c = calcularCostosCobro(1000, { retencion: 0, depositaria: 0, comision: TASA_IOL_COMISION_INTERES });
     expect(c.retencion).toBe(0);
     expect(c.comision).toBe(4.5);
     expect(c.neto).toBe(995.5);
@@ -35,7 +42,7 @@ describe('netoEstimado', () => {
   it('suma bruto, costos y neto de varios cobros proyectados', () => {
     const r = netoEstimado([{ tipo: 'dividendo', monto: 100 }, { tipo: 'interes', monto: 200 }]);
     expect(r.bruto).toBe(300);
-    expect(r.neto).toBeCloseTo(100 * (1 - TASA_RETENCION_EEUU - TASA_COMISION_DEPOSITARIA) * (1 - 0.0072) + 200 * (1 - 0.0045), 1);
+    expect(r.neto).toBeCloseTo(100 * (1 - TASA_RETENCION_EEUU - TASA_COMISION_DEPOSITARIA) * (1 - 0.01) + 200 * (1 - 0.01), 1);
     expect(r.costos).toBeCloseTo(300 - r.neto, 1);
   });
 });
@@ -56,12 +63,12 @@ describe('capas de costos: lo universal vs lo que cambia de broker', () => {
     const c = estimarCostosCobro('dividendo', 100);
     expect(c.retencion).toBe(30);
     expect(c.depositaria).toBe(5.5);
-    expect(c.comision).toBeCloseTo(64.5 * 0.0072, 2);
-    expect(c.comisiones).toBeCloseTo(5.5 + 0.46, 2);
+    expect(c.comision).toBe(0.65);                       // (100 − 30 − 5,5) × 1 % = 0,645 → redondeado a centavos
+    expect(c.comisiones).toBe(6.15);
   });
   it('una comisión de broker más alta baja el neto pero no toca la retención', () => {
-    const iol = calcularCostosCobro(100, tasasPorDefecto('dividendo'));
-    const caro = calcularCostosCobro(100, { ...tasasPorDefecto('dividendo'), comision: 0.01 });
+    const iol = calcularCostosCobro(100, IOL_DIV);
+    const caro = calcularCostosCobro(100, { ...IOL_DIV, comision: 0.02 });
     expect(caro.retencion).toBe(iol.retencion);
     expect(caro.neto).toBeLessThan(iol.neto);
   });

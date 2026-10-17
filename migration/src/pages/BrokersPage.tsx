@@ -186,7 +186,7 @@ export function BrokersPage() {
         )}
         <p className="px-4 pb-3 pt-1 text-[11px] text-ink-500 leading-relaxed">
           La retención de EE.UU. (30 %) y la comisión del banco depositario (la fija Caja de Valores en cada anuncio de dividendo; ≈ 5,5 % observado en tus pagos de IOL)
-          no dependen del broker, pero las dejo editables acá. Lo que sí cambia de broker es la comisión sobre el pago y el costo de operar.
+          no dependen del broker, pero se pueden editar acá. Lo que sí cambia de broker es la comisión sobre el pago y el costo de operar; los campos vacíos usan 1 % (tasa general para brokers sin dato).
         </p>
       </Card>
 
