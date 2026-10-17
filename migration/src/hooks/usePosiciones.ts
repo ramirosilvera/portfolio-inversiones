@@ -124,12 +124,20 @@ export async function borrarMovimiento(movId: string): Promise<void> {
   }
 }
 
+// Datos de la orden del broker que se pueden cargar al agregar una posición (todos opcionales).
+export interface OrdenAltaCostos {
+  broker?: string; numero_orden?: string | null; comision_usd?: number | null; comision_ars?: number | null; mep?: number | null;
+  descontarComision?: boolean;
+}
+
 export function usePosicionMutations(portfolioId: string | null | undefined) {
   const qc = useQueryClient();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['posiciones'] });
     qc.invalidateQueries({ queryKey: ['movimientos'] });
     qc.invalidateQueries({ queryKey: ['posicion_brokers'] });
+    qc.invalidateQueries({ queryKey: ['ordenes'] });
+    qc.invalidateQueries({ queryKey: ['ordenes_ejecutadas'] });
   };
   return {
     // Alta con CONSOLIDACIÓN: si el activo ya existe en el portfolio, suma la cantidad y
@@ -137,7 +145,9 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
     // registra el movimiento (compra) para dejar el historial completo.
     // `pagarConLiquidez`: el costo de la compra sale de la LIQUIDEZ del portfolio (si no, comprar con
     // plata que ya estaba en la cuenta duplicaba ese valor en el patrimonio sin ningún aporte nuevo).
-    add: async (p: Partial<Posicion>, pagarConLiquidez = false) => {
+    // `orden` (opcional): datos de la orden del broker. Si viene, la compra deja además un registro en ordenes_ejecutadas, vinculado al
+    // movimiento, con sus comisiones y el MEP; `descontarComision` resta la comisión en USD de la Liquidez junto con la compra.
+    add: async (p: Partial<Posicion>, pagarConLiquidez = false, orden?: OrdenAltaCostos) => {
       const ticker = (p.ticker ?? '').toUpperCase().trim();
       const addQty = Number(p.cantidad) || 0;
       const addPrice = Number(p.precio_compra) || 0;
@@ -147,13 +157,17 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
       if (!(addQty > 0)) throw new Error('La cantidad debe ser mayor a 0.');
       if (addPrice < 0) throw new Error('El precio no puede ser negativo.');
       if (pagarConLiquidez && p.tipo === 'cash') throw new Error('La liquidez no se paga con liquidez.');
+      const comUsd = Number(orden?.comision_usd) || 0;
+      if (orden && (comUsd < 0 || (Number(orden.comision_ars) || 0) < 0 || (Number(orden.mep) || 0) < 0)) throw new Error('Las comisiones y el MEP no pueden ser negativos.');
+      // Costo que sale de la Liquidez: la compra + (si se pidió) la comisión en USD.
+      const costoTotal = addQty * addPrice + (pagarConLiquidez && orden?.descontarComision ? comUsd : 0);
       if (pagarConLiquidez) {
         // Chequeo previo (el débito real valida de nuevo, atómico): no dejar la compra registrada y
         // recién después descubrir que no alcanzaba.
         const { data: liq } = await supabase.from('posiciones').select('cantidad')
           .eq('portfolio_id', portfolioId).eq('tipo', 'cash').eq('ticker', 'LIQUIDEZ').limit(1).maybeSingle();
         const saldo = Number(liq?.cantidad) || 0;
-        if (saldo + 0.005 < addQty * addPrice) throw new Error(`Liquidez insuficiente: hay USD ${saldo.toFixed(2)} y la compra cuesta USD ${(addQty * addPrice).toFixed(2)}.`);
+        if (saldo + 0.005 < costoTotal) throw new Error(`Liquidez insuficiente: hay USD ${saldo.toFixed(2)} y la compra cuesta USD ${costoTotal.toFixed(2)}.`);
       }
 
       const { data: existing, error: selErr } = await supabase.from('posiciones')
@@ -223,14 +237,25 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
         compraMovId = movIns?.id ?? null;
         if (movErr) { invalidate(); throw new Error(`Posición guardada, pero no se pudo registrar el movimiento: ${movErr.message}`); }
       }
-      if (pagarConLiquidez && addQty * addPrice > 0) {
+      if (pagarConLiquidez && costoTotal > 0) {
         const { data: liqMovId, error: liqErr } = await supabase.rpc('mover_liquidez', {
-          p_portfolio: portfolioId, p_monto: -(addQty * addPrice),
-          p_fecha: p.fecha_compra ?? new Date().toISOString().slice(0, 10), p_nota: `compra de ${addQty} ${ticker}`,
+          p_portfolio: portfolioId, p_monto: -costoTotal,
+          p_fecha: p.fecha_compra ?? new Date().toISOString().slice(0, 10), p_nota: `compra de ${addQty} ${ticker}${costoTotal > addQty * addPrice ? ` (incluye comisión USD ${comUsd.toFixed(2)})` : ''}`,
         });
         if (liqErr) { invalidate(); throw new Error(`Compra registrada, pero no se pudo debitar la liquidez: ${liqErr.message}`); }
         // Vínculo: borrar esta compra del historial devuelve la plata a la liquidez.
         if (compraMovId && liqMovId) await supabase.from('movimientos').update({ liquidez_mov_id: liqMovId }).eq('id', compraMovId);
+      }
+      if (orden) {
+        const { error: ordErr } = await supabase.from('ordenes_ejecutadas').insert({
+          portfolio_id: portfolioId, fecha: p.fecha_compra ?? new Date().toISOString().slice(0, 10), ticker,
+          broker: orden.broker || 'IOL', numero_orden: orden.numero_orden?.trim() || null,
+          nominales: addQty, precio_ejecutado: addPrice, monto_usd: +(addQty * addPrice).toFixed(2),
+          comision_usd: orden.comision_usd ?? null, comision_ars: orden.comision_ars ?? null,
+          mep: Number(orden.mep) > 0 ? Number(orden.mep) : null,
+          estado: 'terminada', origen: 'manual', nota: p.notas ?? 'Cargada al agregar la posición', movimiento_id: compraMovId,
+        });
+        if (ordErr) { invalidate(); throw new Error(`Compra registrada, pero no se pudo guardar la orden: ${ordErr.message}`); }
       }
       invalidate();
     },

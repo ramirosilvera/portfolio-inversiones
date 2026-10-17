@@ -11,7 +11,8 @@ export function useOrdenesEjecutadas(portfolioId: string | null | undefined) {
     staleTime: 10 * 60_000,
     queryFn: async (): Promise<OrdenCosto[]> => {
       const { data, error } = await supabase.from('ordenes_ejecutadas')
-        .select('monto_usd, comision_usd, comision_ars, mep').eq('portfolio_id', portfolioId);
+        .select('monto_usd, comision_usd, comision_ars, mep').eq('portfolio_id', portfolioId)
+        .eq('estado', 'terminada');   // las canceladas/rechazadas no operaron: no suman a lo operado ni a las comisiones
       if (error) throw error;
       return (data ?? []) as OrdenCosto[];
     },

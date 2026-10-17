@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff, Pencil, ShoppingCart, Target } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro } from '../hooks/usePosiciones';
+import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro, type OrdenAltaCostos } from '../hooks/usePosiciones';
 import { useCedearRatios } from '../hooks/useCedearRatios';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import type { BonoReferencia } from '../engine/rentaFija';
@@ -285,7 +285,7 @@ function enrichBono(ticker: string, catalogoBonos: BonoReferencia[]): Partial<Po
 // para la misma acción de fondo).
 function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onAdd, onSaveRatio, onAporte }: {
   cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; mep: number | null; liquidez: number | null; onClose: () => void;
-  onAdd: (p: Partial<Posicion>, pagarConLiquidez?: boolean) => Promise<void>;
+  onAdd: (p: Partial<Posicion>, pagarConLiquidez?: boolean, orden?: OrdenAltaCostos) => Promise<void>;
   onSaveRatio: (ticker: string, ratio: number) => void;
   onAporte: (a: { monto: number; fecha: string; tipo: 'recurrente'; descripcion: string }) => Promise<void>;
 }) {
@@ -327,6 +327,13 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
   // Pagar con la LIQUIDEZ del portfolio: por default sí si tiene saldo (la compra sale de esa plata).
   // Excluyente con "capital nuevo": o la plata entró recién (aporte) o ya estaba (liquidez).
   const [pagarLiq, setPagarLiq] = useState((liquidez ?? 0) > 0);
+  // Datos de la orden del broker (opcionales): si se completa algo, la compra deja además su registro en "Órdenes y costos".
+  const [ordNum, setOrdNum] = useState('');
+  const [ordComUsd, setOrdComUsd] = useState('');
+  const [ordComArs, setOrdComArs] = useState('');
+  const [ordMep, setOrdMep] = useState(mep ? String(Math.round(mep * 100) / 100) : '');
+  const [descontarCom, setDescontarCom] = useState(true);
+  const hayOrden = ordNum.trim() !== '' || ordComUsd !== '' || ordComArs !== '';
 
   // Pre-llena el ratio de un CEDEAR desde la base (si existe y el usuario no lo tipeó), o el cupón/
   // vencimiento/calificación de un bono (ver enrichBono). Nunca pisa un campo que el usuario ya
@@ -365,7 +372,14 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
     }
     setSaving(true); setFormErr(null);
     try {
-      await onAdd(form, pagarLiq && liquidez != null && form.tipo !== 'cash');
+      const pagar = pagarLiq && liquidez != null && form.tipo !== 'cash';
+      const orden: OrdenAltaCostos | undefined = hayOrden && form.tipo !== 'cash' ? {
+        numero_orden: ordNum.trim() || null,
+        comision_usd: ordComUsd !== '' ? Number(ordComUsd) : null, comision_ars: ordComArs !== '' ? Number(ordComArs) : null,
+        mep: Number(ordMep) > 0 ? Number(ordMep) : null, descontarComision: pagar && descontarCom,
+      } : undefined;
+      if (orden && ((orden.comision_usd ?? 0) < 0 || (orden.comision_ars ?? 0) < 0)) { setFormErr('Las comisiones no pueden ser negativas.'); setSaving(false); return; }
+      await onAdd(form, pagar, orden);
       // Si es CEDEAR y no estaba en la base, la enriquecemos con este ratio.
       if (form.tipo === 'cedear' && form.ticker && form.ratio_cedear && !cedearRatios[form.ticker]) {
         onSaveRatio(form.ticker, form.ratio_cedear);
@@ -506,6 +520,24 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
               </label>
             )}
           </div>
+          {form.tipo !== 'cash' && (
+            <details className="mx-4 mb-3 rounded-xl border border-line px-3 py-2 text-xs" open={hayOrden}>
+              <summary className="cursor-pointer font-semibold text-ink-800">Costos de la orden (opcional)</summary>
+              <p className="text-[11px] text-ink-600 mt-1.5">Si cargás la comisión, la compra queda registrada en Órdenes y costos y se descuenta del rendimiento neto.</p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <Field label="Nº de orden"><input className={inputCls} value={ordNum} onChange={e => setOrdNum(e.target.value)} inputMode="numeric" /></Field>
+                <Field label="MEP del día" hint="para pasar la comisión en pesos a USD"><input className={inputCls} value={ordMep} onChange={e => setOrdMep(e.target.value)} inputMode="decimal" /></Field>
+                <Field label="Comisión en USD"><input className={inputCls} value={ordComUsd} onChange={e => setOrdComUsd(e.target.value)} inputMode="decimal" /></Field>
+                <Field label="Comisión en $ (ARS)"><input className={inputCls} value={ordComArs} onChange={e => setOrdComArs(e.target.value)} inputMode="decimal" /></Field>
+              </div>
+              {hayOrden && pagarLiq && liquidez != null && (
+                <label className="flex items-start gap-2 text-ink-700 cursor-pointer mt-2">
+                  <input type="checkbox" checked={descontarCom} onChange={e => setDescontarCom(e.target.checked)} className="mt-0.5" />
+                  <span>Descontar también la comisión en USD de la Liquidez (si tu saldo ya la descontó, destildá para no contarla dos veces).</span>
+                </label>
+              )}
+            </details>
+          )}
           {formErr && <p className="px-4 pb-2 text-xs text-warn">{formErr}</p>}
           <div className="px-4 pb-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Button>
