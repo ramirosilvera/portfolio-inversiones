@@ -120,6 +120,7 @@ export function OrdenesPage() {
     movs.filter(m => m.tipo === 'compra').map(m => ({ fecha: m.fecha, ticker: m.ticker, cantidad: Number(m.cantidad) || 0, transferencia: /^transferencia/i.test(m.nota ?? '') })),
     posiciones.map(p => p.ticker), ['LIQUIDEZ'],
     movs.filter(m => m.tipo === 'venta').map(m => ({ fecha: m.fecha, ticker: m.ticker, cantidad: Number(m.cantidad) || 0 })),
+    movs.filter(m => m.tipo === 'ajuste' && Number(m.cantidad) < 0 && /^transferencia/i.test(m.nota ?? '')).map(m => ({ ticker: m.ticker, cantidad: Number(m.cantidad) || 0 })),
   ), [ordenes, movs, posiciones]);
   const porOrden = useMemo(() => { const m = new Map<string, Control[]>(); for (const c of controles) if (c.ordenId) (m.get(c.ordenId) ?? m.set(c.ordenId, []).get(c.ordenId)!).push(c); return m; }, [controles]);
   const filas = ordenes.filter(o => filtro === 'todas' || (filtro === 'terminada' ? o.estado === 'terminada' : o.estado !== 'terminada'));

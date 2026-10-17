@@ -90,7 +90,8 @@ export function montoCoherente(o: Pick<OrdenFila, 'nominales' | 'precio_ejecutad
 
 const fmtF = (iso: string) => iso.split('-').reverse().join('/');
 
-export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tickersPosicion: string[], tickersCash: string[] = ['LIQUIDEZ'], ventas?: MovCompra[]): Control[] {
+// `traspasosSalida`: posiciones que salieron por transferencia a otro portfolio (su orden viaja con ellas, así que la compra original no se marca como "sin orden").
+export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tickersPosicion: string[], tickersCash: string[] = ['LIQUIDEZ'], ventas?: MovCompra[], traspasosSalida: { ticker: string; cantidad: number }[] = []): Control[] {
   const out: Control[] = [];
   const set = new Set(tickersPosicion.map(t => t.toUpperCase()));
   const cash = new Set(tickersCash.map(t => t.toUpperCase()));
@@ -148,6 +149,7 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
     for (const [k, cant] of movPorDia) {
       const [f, t] = k.split('|');
       if (soloTransferencia.has(k) && !noTransf.has(k)) continue;
+      if (traspasosSalida.filter(x => x.ticker.toUpperCase() === t).reduce((a, x) => a + Math.abs(n(x.cantidad)), 0) >= cant - 1e-6) continue;
       if (f >= primera && !ordenPorDia.has(k)) out.push({ tipo: 'compra_sin_orden', severidad: 'info', texto: `${t} · ${fmtF(f)}: compra de ${cant} sin orden registrada (¿suscripción OTC o falta cargar la orden?).` });
     }
   }
