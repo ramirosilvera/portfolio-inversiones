@@ -6,6 +6,7 @@ export interface OrdenFila {
   nominales: number; precio_limite: number | null; precio_ejecutado: number | null; monto_usd: number;
   comision_usd: number | null; comision_ars: number | null; mep: number | null;
   estado: string; origen: string; nota: string | null; movimiento_id: string | null;
+  lado?: 'compra' | 'venta';          // 0057; ausente = compra
 }
 export interface MovCompra { fecha: string; ticker: string; cantidad: number }
 
@@ -85,11 +86,13 @@ export function montoCoherente(o: Pick<OrdenFila, 'nominales' | 'precio_ejecutad
 
 const fmtF = (iso: string) => iso.split('-').reverse().join('/');
 
-export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tickersPosicion: string[], tickersCash: string[] = ['LIQUIDEZ']): Control[] {
+export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tickersPosicion: string[], tickersCash: string[] = ['LIQUIDEZ'], ventas?: MovCompra[]): Control[] {
   const out: Control[] = [];
   const set = new Set(tickersPosicion.map(t => t.toUpperCase()));
   const cash = new Set(tickersCash.map(t => t.toUpperCase()));
   const ejecutadas = ordenes.filter(esEjecutada);
+  const ejecutadasCompra = ejecutadas.filter(o => (o.lado ?? 'compra') === 'compra');
+  const ejecutadasVenta = ejecutadas.filter(o => o.lado === 'venta');
 
   for (const o of ejecutadas) {
     const etiqueta = `${o.ticker} · ${fmtF(o.fecha)}${o.numero_orden ? ` · orden ${o.numero_orden}` : ''}`;
@@ -110,7 +113,7 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
   // Conciliación contra los movimientos de compra: por (fecha, ticker de la posición), nominales de las órdenes ejecutadas vs cantidad comprada.
   const clave = (f: string, t: string) => `${f}|${t}`;
   const ordenPorDia = new Map<string, number>();
-  for (const o of ejecutadas) { const k = clave(o.fecha, tickerDePosicion(o.ticker, set)); ordenPorDia.set(k, (ordenPorDia.get(k) ?? 0) + n(o.nominales)); }
+  for (const o of ejecutadasCompra) { const k = clave(o.fecha, tickerDePosicion(o.ticker, set)); ordenPorDia.set(k, (ordenPorDia.get(k) ?? 0) + n(o.nominales)); }
   const movPorDia = new Map<string, number>();
   for (const m of compras) {
     const t = m.ticker.toUpperCase();
@@ -131,11 +134,22 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
     out.push({ tipo: 'anterior_al_historial', severidad: 'info', texto: `${anteriores} ${anteriores === 1 ? 'orden anterior' : 'órdenes anteriores'} al historial de movimientos de la cartera (que arranca el ${desdeHistorial === '9999-12-31' ? 'sin fecha' : fmtF(desdeHistorial)}): no se concilian con compras.` });
   }
   // Compras sin orden: solo desde la primera orden registrada (antes de eso el portfolio no llevaba este registro).
-  const primera = ejecutadas.map(o => o.fecha).sort()[0];
+  const primera = ejecutadasCompra.map(o => o.fecha).sort()[0];
   if (primera) {
     for (const [k, cant] of movPorDia) {
       const [f, t] = k.split('|');
       if (f >= primera && !ordenPorDia.has(k)) out.push({ tipo: 'compra_sin_orden', severidad: 'info', texto: `${t} · ${fmtF(f)}: compra de ${cant} sin orden registrada (¿suscripción OTC o falta cargar la orden?).` });
+    }
+  }
+  // Ventas: se concilian contra los movimientos de venta (solo si se pasaron; sin ellos no hay contra qué comparar).
+  if (ventas) {
+    const ordV = new Map<string, number>(), movV = new Map<string, number>();
+    for (const o of ejecutadasVenta) { const k = clave(o.fecha, tickerDePosicion(o.ticker, set)); ordV.set(k, (ordV.get(k) ?? 0) + n(o.nominales)); }
+    for (const m of ventas) { const t = m.ticker.toUpperCase(); if (cash.has(t)) continue; const k = clave(m.fecha, t); movV.set(k, (movV.get(k) ?? 0) + n(m.cantidad)); }
+    for (const [k, nom] of ordV) {
+      const [f, t] = k.split('|'); const mov = movV.get(k);
+      if (mov == null) out.push({ tipo: 'sin_movimiento', severidad: 'error', texto: `${t} · ${fmtF(f)}: hay órdenes de VENTA por ${nom} nominales pero ninguna venta registrada en Movimientos.` });
+      else if (Math.abs(mov - nom) > 1e-6) out.push({ tipo: 'movimiento_distinto', severidad: 'error', texto: `${t} · ${fmtF(f)}: las órdenes de venta suman ${nom} nominales y la venta registrada es de ${mov}.` });
     }
   }
   const orden = { error: 0, aviso: 1, info: 2 } as const;

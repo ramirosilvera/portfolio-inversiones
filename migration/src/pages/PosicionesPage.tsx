@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff, Pencil, ShoppingCart, Target } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro, type OrdenAltaCostos } from '../hooks/usePosiciones';
+import { ComisionOperacionCampos, useComisionOperacion } from '../components/ComisionOperacion';
 import { useCedearRatios } from '../hooks/useCedearRatios';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import type { BonoReferencia } from '../engine/rentaFija';
@@ -230,10 +231,10 @@ export function PosicionesPage() {
       {histTicker && <MovimientosModal portfolioId={active.id} ticker={histTicker} onClose={() => setHistTicker(null)} />}
       {sellData && <SellModal pos={sellData.pos} sugerido={sellData.sugerido} mep={mep}
         onClose={() => setSellData(null)}
-        onSell={async (qty, precio, fecha, retiro) => {
+        onSell={async (qty, precio, fecha, retiro, orden) => {
           // Sin retiro, el efectivo se queda en el portfolio → se acredita en LIQUIDEZ (antes la venta
           // sacaba el valor del patrimonio sin que entrara la plata: el rendimiento lo leía como pérdida).
-          await sell(sellData.pos, qty, precio, fecha, !retiro);
+          await sell(sellData.pos, qty, precio, fecha, !retiro, orden);
           // Retiro SOLO si el usuario tildó "sacás esta plata del portfolio" — vender y dejar el
           // efectivo adentro para la próxima compra no es un movimiento externo, no toca aportes
           // (mismo criterio que el toggle de "capital nuevo" al comprar, ver más arriba).
@@ -250,7 +251,7 @@ export function PosicionesPage() {
         onSave={async (patch) => { await update(editPos.id, patch); setEditPos(null); }} />}
       {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep}
         initial={simular.pos} initialTicker={simular.ticker} onClose={() => setSimular(null)}
-        liquidez={liquidez} onEjecutar={async (payload, pagar) => { await add(payload, pagar); }} onAporte={addAporte} />}
+        liquidez={liquidez} onEjecutar={async (payload, pagar, orden) => { await add(payload, pagar, orden); }} onAporte={addAporte} />}
       {showForm && <AgregarModal cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep} onClose={() => setShowForm(false)}
         liquidez={liquidez} onAdd={add} onSaveRatio={saveRatio} onAporte={addAporte} />}
     </div>
@@ -327,13 +328,12 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
   // Pagar con la LIQUIDEZ del portfolio: por default sí si tiene saldo (la compra sale de esa plata).
   // Excluyente con "capital nuevo": o la plata entró recién (aporte) o ya estaba (liquidez).
   const [pagarLiq, setPagarLiq] = useState((liquidez ?? 0) > 0);
-  // Datos de la orden del broker (opcionales): si se completa algo, la compra deja además su registro en "Órdenes y costos".
+  // Costos de la orden: la comisión se estima sola (monto × tasa del broker) y queda a la vista, editable, antes de guardar. Nº de orden,
+  // comisión en pesos y MEP son opcionales (si tenés el boleto, cargá los reales).
+  const comis = useComisionOperacion((Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0), null);
   const [ordNum, setOrdNum] = useState('');
-  const [ordComUsd, setOrdComUsd] = useState('');
   const [ordComArs, setOrdComArs] = useState('');
   const [ordMep, setOrdMep] = useState(mep ? String(Math.round(mep * 100) / 100) : '');
-  const [descontarCom, setDescontarCom] = useState(true);
-  const hayOrden = ordNum.trim() !== '' || ordComUsd !== '' || ordComArs !== '';
 
   // Pre-llena el ratio de un CEDEAR desde la base (si existe y el usuario no lo tipeó), o el cupón/
   // vencimiento/calificación de un bono (ver enrichBono). Nunca pisa un campo que el usuario ya
@@ -373,10 +373,12 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
     setSaving(true); setFormErr(null);
     try {
       const pagar = pagarLiq && liquidez != null && form.tipo !== 'cash';
-      const orden: OrdenAltaCostos | undefined = hayOrden && form.tipo !== 'cash' ? {
-        numero_orden: ordNum.trim() || null,
-        comision_usd: ordComUsd !== '' ? Number(ordComUsd) : null, comision_ars: ordComArs !== '' ? Number(ordComArs) : null,
-        mep: Number(ordMep) > 0 ? Number(ordMep) : null, descontarComision: pagar && descontarCom,
+      const hayExtra = ordNum.trim() !== '' || ordComArs !== '';
+      const orden: OrdenAltaCostos | undefined = comis.registrar && form.tipo !== 'cash' && (comis.comision > 0 || hayExtra) ? {
+        broker: comis.broker?.nombre, numero_orden: ordNum.trim() || null,
+        comision_usd: comis.comision > 0 ? comis.comision : null, comision_ars: ordComArs !== '' ? Number(ordComArs) : null,
+        mep: Number(ordMep) > 0 ? Number(ordMep) : null, descontarComision: pagar && comis.descontar,
+        nota: comis.comision > 0 ? (comis.editadaPorUsuario ? 'Comisión cargada a mano' : `Comisión estimada (${(comis.tasa * 100).toFixed(2)} %)`) : null,
       } : undefined;
       if (orden && ((orden.comision_usd ?? 0) < 0 || (orden.comision_ars ?? 0) < 0)) { setFormErr('Las comisiones no pueden ser negativas.'); setSaving(false); return; }
       await onAdd(form, pagar, orden);
@@ -521,22 +523,21 @@ function AgregarModal({ cedearRatios, catalogoBonos, mep, liquidez, onClose, onA
             )}
           </div>
           {form.tipo !== 'cash' && (
-            <details className="mx-4 mb-3 rounded-xl border border-line px-3 py-2 text-xs" open={hayOrden}>
-              <summary className="cursor-pointer font-semibold text-ink-800">Costos de la orden (opcional)</summary>
-              <p className="text-[11px] text-ink-600 mt-1.5">Si cargás la comisión, la compra queda registrada en Órdenes y costos y se descuenta del rendimiento neto.</p>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <Field label="Nº de orden"><input className={inputCls} value={ordNum} onChange={e => setOrdNum(e.target.value)} inputMode="numeric" /></Field>
-                <Field label="MEP del día" hint="para pasar la comisión en pesos a USD"><input className={inputCls} value={ordMep} onChange={e => setOrdMep(e.target.value)} inputMode="decimal" /></Field>
-                <Field label="Comisión en USD"><input className={inputCls} value={ordComUsd} onChange={e => setOrdComUsd(e.target.value)} inputMode="decimal" /></Field>
-                <Field label="Comisión en $ (ARS)"><input className={inputCls} value={ordComArs} onChange={e => setOrdComArs(e.target.value)} inputMode="decimal" /></Field>
-              </div>
-              {hayOrden && pagarLiq && liquidez != null && (
-                <label className="flex items-start gap-2 text-ink-700 cursor-pointer mt-2">
-                  <input type="checkbox" checked={descontarCom} onChange={e => setDescontarCom(e.target.checked)} className="mt-0.5" />
-                  <span>Descontar también la comisión en USD de la Liquidez (si tu saldo ya la descontó, destildá para no contarla dos veces).</span>
-                </label>
+            <div className="px-4 pb-3">
+              <ComisionOperacionCampos c={comis} monto={(Number(form.cantidad) || 0) * (Number(form.precio_compra) || 0)} etiqueta="de la compra" disabled={saving}
+                puedeDescontar={pagarLiq && liquidez != null}
+                descontarTexto="Descontar también la comisión de la Liquidez (destildalo si tu saldo ya la descontó, para no contarla dos veces)." />
+              {comis.registrar && (
+                <details className="mt-2 text-[11px] text-ink-700">
+                  <summary className="cursor-pointer font-semibold">Datos del boleto (opcional)</summary>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <Field label="Nº de orden"><input className={inputCls} value={ordNum} onChange={e => setOrdNum(e.target.value)} inputMode="numeric" /></Field>
+                    <Field label="Comisión en $ (ARS)"><input className={inputCls} value={ordComArs} onChange={e => setOrdComArs(e.target.value)} inputMode="decimal" /></Field>
+                    <Field label="MEP del día" hint="para pasar el $ a USD"><input className={inputCls} value={ordMep} onChange={e => setOrdMep(e.target.value)} inputMode="decimal" /></Field>
+                  </div>
+                </details>
               )}
-            </details>
+            </div>
           )}
           {formErr && <p className="px-4 pb-2 text-xs text-warn">{formErr}</p>}
           <div className="px-4 pb-4 flex justify-end gap-2">
@@ -696,7 +697,7 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
 
 function SellModal({ pos, sugerido, mep, onClose, onSell }: {
   pos: Posicion; sugerido: number | null; mep: number | null; onClose: () => void;
-  onSell: (qty: number, precio: number, fecha: string, retiro: boolean) => Promise<void>;
+  onSell: (qty: number, precio: number, fecha: string, retiro: boolean, orden?: OrdenAltaCostos) => Promise<void>;
 }) {
   useEscapeClose(onClose);
   const [qty, setQty] = useState<string>(String(pos.cantidad));
@@ -748,6 +749,8 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
   const resultado = n > 0 ? (p - costoProm) * n : 0;
 
   const hoyISO = new Date().toISOString().slice(0, 10);
+  // Comisión estimada de la venta (monto × tasa del broker de la posición): a la vista y editable antes de confirmar.
+  const comis = useComisionOperacion(n * p, pos.id);
 
   const confirmar = async () => {
     if (!(n > 0)) { setErr('Ingresá una cantidad válida.'); return; }
@@ -761,7 +764,11 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
       setErr(`La fecha de venta no puede ser anterior a la de compra (${pos.fecha_compra}).`); return;
     }
     setBusy(true); setErr(null);
-    try { await onSell(n, p, fecha, retiro); }
+    const orden: OrdenAltaCostos | undefined = comis.registrar && comis.comision > 0 ? {
+      broker: comis.broker?.nombre, comision_usd: comis.comision, descontarComision: !retiro && comis.descontar,
+      nota: comis.editadaPorUsuario ? 'Comisión cargada a mano' : `Comisión estimada (${(comis.tasa * 100).toFixed(2)} %)`,
+    } : undefined;
+    try { await onSell(n, p, fecha, retiro, orden); }
     catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo vender'); setBusy(false); }
   };
 
@@ -799,6 +806,10 @@ function SellModal({ pos, sugerido, mep, onClose, onSell }: {
                 Destildado, el efectivo se acredita en la Liquidez del portfolio.
               </span>
             </label>
+          </div>
+          <div className="px-4 pb-2">
+            <ComisionOperacionCampos c={comis} monto={n * p} etiqueta="de la venta" disabled={busy} puedeDescontar={!retiro}
+              descontarTexto="Descontar también la comisión de lo acreditado en la Liquidez (destildalo si tu saldo ya la descontó)." />
           </div>
           {err && <p className="px-4 pb-2 text-xs text-warn">{err}</p>}
           <div className="px-4 pb-4 flex justify-end gap-2">
@@ -865,7 +876,7 @@ function nuevaSim(usadas: Set<string>, comprables: Row[], mep: number | null): S
 function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, mep, liquidez, initial, initialTicker, onClose, onEjecutar, onAporte }: {
   openRows: Row[]; totalMkt: number; cedearRatios: Record<string, number>; catalogoBonos: BonoReferencia[]; mep: number | null;
   liquidez: number | null;
-  initial?: Posicion; initialTicker?: string; onClose: () => void; onEjecutar: (payload: Partial<Posicion>, pagarConLiquidez: boolean) => Promise<void>;
+  initial?: Posicion; initialTicker?: string; onClose: () => void; onEjecutar: (payload: Partial<Posicion>, pagarConLiquidez: boolean, orden?: OrdenAltaCostos) => Promise<void>;
   onAporte: (a: { monto: number; fecha: string; tipo: 'recurrente'; descripcion: string }) => Promise<void>;
 }) {
   useEscapeClose(onClose);
@@ -1005,6 +1016,8 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
   }
   const totalInvertido = [...montoPorKey.values()].reduce((s, v) => s + Math.max(0, v), 0);
   const totalFinalCartera = totalMkt + totalInvertido;
+  // Comisión estimada de todas las compras juntas (monto × tasa del broker elegido): visible y editable antes de ejecutar.
+  const comis = useComisionOperacion(totalInvertido, null);
 
   const tickersActivos = derivadas.filter(d => d.ticker && (montoPorKey.get(d.key) ?? 0) > 0).map(d => d.ticker);
   const tickerDuplicado = new Set(tickersActivos).size !== tickersActivos.length;
@@ -1039,7 +1052,14 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
           const auto = enrichBono(d.ticker, catalogoBonos);
           if (auto) Object.assign(payload, auto);
         }
-        await onEjecutar(payload, pagarLiq && liquidez != null);
+        // Comisión de ESTA compra: el total estimado (o el que editaste) repartido en proporción al monto de cada fila.
+        const pagarEsta = pagarLiq && liquidez != null;
+        const comisionFila = totalInvertido > 0 ? +(comis.comision * costo / totalInvertido).toFixed(2) : 0;
+        const orden: OrdenAltaCostos | undefined = comis.registrar && comisionFila > 0 ? {
+          broker: comis.broker?.nombre, comision_usd: comisionFila, descontarComision: pagarEsta && comis.descontar,
+          nota: comis.editadaPorUsuario ? 'Comisión cargada a mano (repartida)' : `Comisión estimada (${(comis.tasa * 100).toFixed(2)} %)`,
+        } : undefined;
+        await onEjecutar(payload, pagarEsta, orden);
         // Aporte automático SOLO si el usuario tildó "es capital nuevo" — mismo criterio que
         // AgregarModal (antes esta ejecución nunca lo registraba, sin importar el checkbox porque
         // ni siquiera existía: la TIR quedaba subestimando el capital puesto).
@@ -1199,6 +1219,10 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
                 </span>
               </label>
             )}
+          </div>
+          <div className="px-4 pb-3">
+            <ComisionOperacionCampos c={comis} monto={totalInvertido} etiqueta="total de las compras" disabled={busy} puedeDescontar={pagarLiq && liquidez != null}
+              descontarTexto="Descontar también la comisión de la Liquidez (destildalo si tu saldo ya la descontó). Se reparte entre las compras según su monto." />
           </div>
           {objetivosInalcanzables && <p className="px-4 pb-2 text-xs text-warn">Los objetivos combinados no son alcanzables comprando. Bajá alguno.</p>}
           {tickerDuplicado && <p className="px-4 pb-2 text-xs text-warn">Hay un ticker repetido entre las simulaciones activas.</p>}

@@ -103,3 +103,17 @@ describe('controlarOrdenes — antes del historial de movimientos', () => {
     expect(c.some(x => x.tipo === 'sin_movimiento')).toBe(true);
   });
 });
+
+describe('controlarOrdenes — ventas', () => {
+  const pos = ['MA'];
+  it('una orden de venta se concilia contra las ventas, no contra las compras', () => {
+    const v = o({ lado: 'venta', nominales: 9 });
+    expect(controlarOrdenes([v], [], pos, ['LIQUIDEZ'], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }]).filter(x => x.tipo === 'sin_movimiento' || x.tipo === 'movimiento_distinto')).toEqual([]);
+    expect(controlarOrdenes([v], [], pos, ['LIQUIDEZ'], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 5 }]).some(x => x.tipo === 'movimiento_distinto')).toBe(true);
+    expect(controlarOrdenes([v], [], pos, ['LIQUIDEZ'], []).some(x => x.tipo === 'sin_movimiento')).toBe(true);
+  });
+  it('sin la lista de ventas no se concilian (y una venta no cuenta como "compra sin conciliar")', () => {
+    const c = controlarOrdenes([o({ lado: 'venta' })], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], pos);
+    expect(c.filter(x => x.tipo === 'sin_movimiento' || x.tipo === 'movimiento_distinto')).toEqual([]);
+  });
+});
