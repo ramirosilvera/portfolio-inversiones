@@ -9,6 +9,7 @@
 // =============================================================================
 
 import { xirr, type CashFlow } from './irr';
+import { RATIO_MIN_DIETZ } from './rendimiento';
 
 export interface PuntoValor { fecha: string; valor: number }
 export interface FlujoFechado { fecha: string; monto: number }      // firmado: aporte +, retiro −
@@ -41,11 +42,19 @@ export function indiceTwr(puntos: PuntoValor[], flujos: FlujoFechado[]): { serie
   // aporte se grabó ANTES de acreditar la plata (el valor no la incluye) y el siguiente sí → cada tramo por separado es absurdo
   // (−33 % y +31 %), pero juntos dan un retorno normal. Solo si nunca se resuelve queda como anomalía (y se avisa).
   let base = pts[0];
-  let diferidos = 0, anomalias = 0;
+  let diferidos = 0, reanclados = 0, anomalias = 0;
   for (let i = 1; i < pts.length; i++) {
     const b = pts[i];
     if (b.fecha === base.fecha) continue;
     const F = flujos.filter(f => f.fecha > base.fecha && f.fecha <= b.fecha).reduce((s, f) => s + f.monto, 0);
+    // Aporte MAYOR que el valor previo (el capital se duplica o más en un día): con valores diarios no se puede medir el rendimiento de
+    // ese tramo — el costo de ejecutar la compra (spread, comisiones, movimiento del día) caería sobre un capital previo diminuto y
+    // se leería como una caída enorme. Se RE-ANCLA el índice en este valor (sin inventar retorno) y se cuenta para avisarlo.
+    if (F > base.valor) {
+      serie.push({ fecha: b.fecha, indice: serie[serie.length - 1].indice });
+      base = b; diferidos = 0; reanclados++;
+      continue;
+    }
     const neto = b.valor - F;
     const absurdo = F !== 0 && Math.abs(F) > 0.1 * base.valor && Math.abs(neto / base.valor - 1) > 0.2;   // flujo grande + retorno extremo
     if (!(neto > 0) || absurdo) { diferidos++; continue; }
@@ -53,7 +62,7 @@ export function indiceTwr(puntos: PuntoValor[], flujos: FlujoFechado[]): { serie
     base = b;
     diferidos = 0;
   }
-  anomalias = diferidos;
+  anomalias = reanclados + diferidos;
   return { serie, anomalias };
 }
 
@@ -211,7 +220,9 @@ export function resumenCostos(ordenes: OrdenCosto[]): ResumenCostos {
 export interface Desempeno {
   periodo: { desde: string | null; hasta: string | null; dias: number; menorAUnAnio: boolean };
   calidad: CalidadSerie;
-  twr: { acumulado: number | null; anualizado: number | null; anomalias: number };
+  // `concentrado`: la mayor parte del capital entró hace pocos días (capital ponderado por tiempo < 1/3 del aportado, mismo criterio que
+  // rendimientoPorAnio): el % ponderado por tiempo queda dominado por un denominador diminuto y NO es representativo del dinero invertido.
+  twr: { acumulado: number | null; anualizado: number | null; anomalias: number; concentrado: boolean };
   tir: { anualizada: number | null; acumulada: number | null; neta: number | null; invertido: number; retirado: number };
   costos: ResumenCostos;
   cartera: { mdd: MaxDrawdown | null; rotuloMinimoConocido: boolean };
@@ -258,6 +269,12 @@ export function calcularDesempeno(p: {
   const tirNeta = anualOk && fl.length ? xirr(flows(p.valorActual - costos.comisionArsConvertidaUsd)) : null;
   const acumulada = invertido > 0 ? (p.valorActual + retirado - invertido) / invertido : null;
 
+  // Capital concentrado: Σ aporte × (fracción de la ventana que estuvo invertido) ÷ Σ aportes.
+  const ini = fl.length ? fl[0].fecha : null;
+  const T = ini ? dias(ini, p.hoy) : 0;
+  const capitalPonderado = T > 0 ? fl.filter(f => f.monto > 0).reduce((sum, f) => sum + f.monto * (dias(f.fecha, p.hoy) / T), 0) : 0;
+  const concentrado = invertido > 1e-9 && T > 0 && capitalPonderado / invertido < RATIO_MIN_DIETZ;
+
   const mddCartera = maxDrawdown(serie);
   let benchmark: Desempeno['benchmark'] = null;
   const desde = calidad.desde, hasta = calidad.hasta;
@@ -280,7 +297,7 @@ export function calcularDesempeno(p: {
   return {
     periodo: { desde, hasta, dias: diasPer, menorAUnAnio: diasPer < MIN_DIAS_ANUALIZAR },
     calidad,
-    twr: { acumulado: twrAc, anualizado: anualizar(twrAc, diasPer), anomalias },
+    twr: { acumulado: twrAc, anualizado: anualizar(twrAc, diasPer), anomalias, concentrado },
     tir: { anualizada: tirBruta, acumulada, neta: costos.comisionArsConvertidaUsd > 0 ? tirNeta : tirBruta, invertido, retirado },
     costos,
     cartera: { mdd: mddCartera, rotuloMinimoConocido: !calidad.confiable },
