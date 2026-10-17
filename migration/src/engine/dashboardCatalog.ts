@@ -47,6 +47,7 @@ export const SECCION_CATALOG: SeccionDef[] = [
   // — `aportes` sigue resolviendo acá vía ALIASES, así un layout guardado con la key vieja no
   // rompe ni duplica la tarjeta.
   { key: 'rendimiento_por_anio', titulo: 'Rendimiento por año / Aportes', descripcion: 'Cuánto rindió cada año calendario y/o cuánto capital aportaste — elegís qué ver desde la propia tarjeta.' },
+  { key: 'desempeno', titulo: 'Desempeño', descripcion: 'Ganancia en dólares, comparación con el S&P 500 y máxima caída desde el primer valor diario — el detalle y las tres preguntas están en Desempeño.' },
   { key: 'distribucion', titulo: 'Distribución', descripcion: 'Renta fija vs. variable, con objetivo editable y desvío por ticker.' },
   { key: 'cedears', titulo: 'CEDEARs', descripcion: 'Capital, concentración y diversificación sectorial.' },
   { key: 'bonos', titulo: 'Bonos', descripcion: 'Capital, TIR y duración promedio ponderada.' },
@@ -94,6 +95,7 @@ export const DEFAULT_LAYOUT: DashboardWidget[] = [
   // Forecast pegado al Objetivo: juntas cuentan "dónde estoy → voy según lo previsto → cuándo llego".
   { id: 'default-forecast', kind: 'seccion', seccion: 'forecast' },
   { id: 'default-rendimiento-por-anio', kind: 'seccion', seccion: 'rendimiento_por_anio' },
+  { id: 'default-desempeno', kind: 'seccion', seccion: 'desempeno' },
   { id: 'default-distribucion', kind: 'seccion', seccion: 'distribucion' },
   { id: 'default-cedears', kind: 'seccion', seccion: 'cedears' },
   { id: 'default-bonos', kind: 'seccion', seccion: 'bonos' },

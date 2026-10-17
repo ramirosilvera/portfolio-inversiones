@@ -21,6 +21,8 @@ const dias = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)
 // Un hueco mayor a esto entre dos valores consecutivos vuelve la serie "con huecos": la caída máxima observada puede ser menor
 // que la real (el mínimo pudo ocurrir entre dos puntos). Una semana cubre fines de semana y feriados largos.
 export const MAX_HUECO_CONFIABLE = 7;
+// Brecha máxima (días) entre el primer aporte y el primer valor diario para considerar que la cartera "recién arrancaba".
+export const MAX_BRECHA_INICIO = 14;
 // Por debajo de un año no se anualiza.
 export const MIN_DIAS_ANUALIZAR = 365;
 
@@ -228,7 +230,7 @@ export interface Desempeno {
   // `concentrado`: la mayor parte del capital entró hace pocos días (capital ponderado por tiempo < 1/3 del aportado, mismo criterio que
   // rendimientoPorAnio): el % ponderado por tiempo queda dominado por un denominador diminuto y NO es representativo del dinero invertido.
   twr: { acumulado: number | null; anualizado: number | null; anomalias: number; concentrado: boolean };
-  tir: { anualizada: number | null; acumulada: number | null; neta: number | null; invertido: number; retirado: number };
+  tir: { anualizada: number | null; acumulada: number | null; neta: number | null; invertido: number; retirado: number; gananciaUsd: number };
   costos: ResumenCostos;
   cartera: { mdd: MaxDrawdown | null; rotuloMinimoConocido: boolean };
   benchmark: null | {
@@ -258,9 +260,15 @@ export function calcularDesempeno(p: {
   // período; antes la TIR y el índice partían del primer aporte (importado de la planilla, sin valores diarios) y el acumulado del
   // primer snapshot, y las cifras se contradecían.
   const validos = puntos.filter(x => x && !Number.isNaN(Date.parse(x.fecha)) && x.valor > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
-  const flujosVentana: FlujoFechado[] = validos.length
-    ? [{ fecha: validos[0].fecha, monto: validos[0].valor }, ...p.flujos.filter(f => f.fecha > validos[0].fecha && f.monto !== 0)]
-    : p.flujos;
+  // Excepción: si el PRIMER aporte es de pocos días antes del primer valor diario (la cartera recién arrancaba: Herencia, aporte del 17/07 y primer
+  // valor del 24/07), esos aportes SON el capital inicial y entran tal cual — usar el valor del primer día perdería la primera semana (comisiones,
+  // spread) y la ganancia en dólares no coincidiría con la de "Rendimiento por año". Con una brecha grande (Ahorros: aporte de 06/2025, primer
+  // valor 31/12/2025) el valor del primer día reemplaza a los aportes anteriores.
+  const primerFlujoFecha = [...p.flujos].filter(f => f.monto > 0).map(f => f.fecha).sort()[0] ?? null;
+  const inicioReciente = validos.length > 0 && primerFlujoFecha != null && primerFlujoFecha <= validos[0].fecha && dias(primerFlujoFecha, validos[0].fecha) <= MAX_BRECHA_INICIO;
+  const flujosVentana: FlujoFechado[] = !validos.length ? p.flujos
+    : inicioReciente ? p.flujos.filter(f => f.monto !== 0)
+    : [{ fecha: validos[0].fecha, monto: validos[0].valor }, ...p.flujos.filter(f => f.fecha > validos[0].fecha && f.monto !== 0)];
   const fl = flujosVentana.filter(f => f.fecha <= p.hoy && f.monto !== 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
   const invertido = fl.filter(f => f.monto > 0).reduce((s, f) => s + f.monto, 0);
   const retirado = -fl.filter(f => f.monto < 0).reduce((s, f) => s + f.monto, 0);
@@ -303,7 +311,7 @@ export function calcularDesempeno(p: {
     periodo: { desde, hasta, dias: diasPer, menorAUnAnio: diasPer < MIN_DIAS_ANUALIZAR },
     calidad,
     twr: { acumulado: twrAc, anualizado: anualizar(twrAc, diasPer), anomalias, concentrado },
-    tir: { anualizada: tirBruta, acumulada, neta: costos.comisionArsConvertidaUsd > 0 ? tirNeta : tirBruta, invertido, retirado },
+    tir: { anualizada: tirBruta, acumulada, neta: costos.comisionArsConvertidaUsd > 0 ? tirNeta : tirBruta, invertido, retirado, gananciaUsd: +(p.valorActual + retirado - invertido).toFixed(2) },
     costos,
     cartera: { mdd: mddCartera, rotuloMinimoConocido: !calidad.confiable },
     benchmark,

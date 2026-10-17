@@ -87,6 +87,7 @@ export function DesempenoPage() {
               </p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <Stat label="Ganancia en USD" value={<span className={tir.gananciaUsd >= 0 ? 'text-pos' : 'text-neg'}>{tir.gananciaUsd >= 0 ? '+' : '−'}{fmtUsd(Math.abs(tir.gananciaUsd), 0)}</span>} hint="valor hoy + retiros − capital puesto; es la misma ganancia que ves por año en Aportes" />
               <Stat label="Sobre capital aportado" value={tir.acumulada != null ? fmtPctSigno(tir.acumulada, 1) : '—'} hint="ganancia ÷ capital invertido, sin anualizar" />
               <Stat label="Acumulado ponderado" value={twr.acumulado != null ? fmtPctSigno(twr.acumulado, 1) : '—'} hint={twr.concentrado ? 'no representativo: el capital entró hace poco' : 'ponderado por tiempo: no cuenta aportes ni retiros como ganancia'} />
               <Stat label="Anualizado" value={twr.anualizado != null ? fmtPctSigno(twr.anualizado, 1) : '—'} hint={twr.anualizado == null ? 'desde un año de historia' : 'ponderado por tiempo'} />
