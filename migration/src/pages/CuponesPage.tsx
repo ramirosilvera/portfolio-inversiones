@@ -10,6 +10,9 @@ import { useChartTheme } from '../hooks/usePrefs';
 import { couponCalendar, capitalCalendar, agruparCuotasPorPosicion, type CouponBond, type CapitalBond } from '../engine/coupons';
 import { dividendCalendar, dividendoAnualEstimado, type DividendPosicion } from '../engine/dividendProjection';
 import { resumenCobros, saldoInvertible, acreditadoEnLiquidez } from '../engine/cobros';
+import { costosRegistrados, netoEstimado } from '../engine/costosCobros';
+import { CostosCobroEditor, useCostosCobro } from '../components/CostosCobroEditor';
+import type { CostosAlta } from '../hooks/useCobros';
 import { Card, CardHeader, Button, Badge, Field, Stat, Empty, ViewToggle, inputCls, fmtUsd, fmtPct } from '../components/ui';
 import type { Cobro, CobroTipo, Posicion } from '../types/domain';
 
@@ -62,6 +65,8 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
   const [modoAmort, setModoAmort] = useState<'nominales' | 'valorResidual'>('nominales');
   const [valorResidualPct, setValorResidualPct] = useState('');
   const [nota, setNota] = useState('');
+  // Costos opcionales: si el monto cargado es BRUTO, se puede registrar por su neto estimado (retención + comisión).
+  const costosForm = useCostosCobro(tipo, Number(monto) || 0, false);
   // Acreditar el cobro en la LIQUIDEZ del portfolio: por default sí si el portfolio ya la tiene
   // (null = "seguir el default", que depende de posiciones, que carga async).
   const tieneLiquidez = posiciones.some(p => p.tipo === 'cash' && p.ticker === 'LIQUIDEZ');
@@ -106,7 +111,7 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
           await registrarAmortizacionVR({ posicionId: pos.id, ticker, fecha, monto: m, valorResidualPct: vr, nota: nota || null, acreditar });
         }
       } else {
-        await registrar({ posicionId: pos?.id ?? null, ticker, tipo, fecha, monto: m, nota: nota || null, acreditar });
+        await registrar({ posicionId: pos?.id ?? null, ticker, tipo, fecha, monto: costosForm.montoRegistrar, nota: nota || null, acreditar, costos: costosForm.alta });
       }
       setMonto(''); setNominales(''); setValorResidualPct(''); setNota('');
     } catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo registrar'); }
@@ -196,6 +201,7 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
           )}
 
           <Field label="Monto cobrado (USD)"><input type="number" value={monto} onChange={e => setMonto(e.target.value)} className={inputCls} placeholder="USD" /></Field>
+          {tipo !== 'amortizacion' && <div className="col-span-2 sm:col-span-4 -mt-1"><CostosCobroEditor c={costosForm} bruto={Number(monto) || 0} disabled={busy} etiquetaBruto="bruto: si ya es lo que te acreditaron, dejalo sin tildar" /></div>}
           {tipo === 'amortizacion' && (
             <>
               <Field label="¿Qué cambió en tu bróker?" className="col-span-2 sm:col-span-4">
@@ -290,7 +296,12 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
                     <td className="px-4 py-2 text-ink-700">{f.c.fecha}</td>
                     <td className="px-3 font-semibold text-ink-900">{f.c.ticker}</td>
                     <td className="px-3"><Badge tone={f.c.tipo === 'amortizacion' ? 'warn' : 'accent'}>{COBRO_TIPO_LABEL[f.c.tipo]}</Badge></td>
-                    <td className="text-right px-3 tnum font-semibold text-ink-900">{fmtUsd(f.c.monto, 0)}</td>
+                    <td className="text-right px-3 tnum font-semibold text-ink-900">{fmtUsd(f.c.monto, f.c.monto < 100 ? 2 : 0)}
+                      {(() => { const cr = costosRegistrados(f.c); return cr ? (
+                        <span className="block text-[10px] font-normal text-ink-500" title="El monto es el neto acreditado">
+                          bruto {fmtUsd(cr.bruto, 2)} · ret. {fmtUsd(cr.retencion, 2)} · com. {fmtUsd(cr.comision, 2)}{cr.estimados ? ' · est.' : ''}
+                        </span>) : null; })()}
+                    </td>
                     <td className="text-center px-3">
                       <button onClick={() => marcarEstado(f.c.id, f.c.estado === 'disponible' ? 'reinvertido' : 'disponible')}
                         className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${f.c.estado === 'reinvertido' ? 'bg-celeste-100 text-celeste-700 dark:bg-celeste-500/20 dark:text-celeste-300' : 'bg-warn/10 text-warn'}`}>
@@ -335,11 +346,11 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
 // que se acepten en lote sin mirar.
 function PendientesCard({ pendientes, acreditarDefault, onConfirmar, onDescartar }: {
   pendientes: Cobro[]; acreditarDefault: boolean;
-  onConfirmar: (id: string, monto: number, acreditar: boolean) => Promise<void>; onDescartar: (id: string) => Promise<void>;
+  onConfirmar: (id: string, monto: number, acreditar: boolean, costos?: CostosAlta) => Promise<void>; onDescartar: (id: string) => Promise<void>;
 }) {
   return (
     <Card className="ring-1 ring-inset ring-warn/30">
-      <CardHeader title="Por confirmar" sub="Sugeridos: revisá el monto (bruto, sin retención) y confirmá uno por uno."
+      <CardHeader title="Por confirmar" sub="Sugeridos: el monto es bruto. Podés registrarlo con costos estimados (retención y comisión) o tal cual; confirmá uno por uno."
         right={<Badge tone="warn">{pendientes.length}</Badge>} />
       <div className="divide-y divide-line">
         {pendientes.map(p => <PendienteRow key={p.id} p={p} acreditarDefault={acreditarDefault} onConfirmar={onConfirmar} onDescartar={onDescartar} />)}
@@ -350,9 +361,11 @@ function PendientesCard({ pendientes, acreditarDefault, onConfirmar, onDescartar
 
 function PendienteRow({ p, acreditarDefault, onConfirmar, onDescartar }: {
   p: Cobro; acreditarDefault: boolean;
-  onConfirmar: (id: string, monto: number, acreditar: boolean) => Promise<void>; onDescartar: (id: string) => Promise<void>;
+  onConfirmar: (id: string, monto: number, acreditar: boolean, costos?: CostosAlta) => Promise<void>; onDescartar: (id: string) => Promise<void>;
 }) {
   const [monto, setMonto] = useState(String(p.monto));
+  // Dividendos e intereses se sugieren BRUTOS: por defecto se registran por su neto estimado (se puede destildar). Amortización: sin costos.
+  const costos = useCostosCobro(p.tipo, Number(monto) || 0, p.tipo !== 'amortizacion');
   const [acreditarSel, setAcreditar] = useState<boolean | null>(null);  // null = seguir el default (posiciones carga async)
   const acreditar = acreditarSel ?? acreditarDefault;
   const [busy, setBusy] = useState(false);
@@ -361,10 +374,10 @@ function PendienteRow({ p, acreditarDefault, onConfirmar, onDescartar }: {
   // `finally` siempre libera `busy`, tanto si sale bien (la fila desaparece al refetch de todos
   // modos) como si falla (sin esto, un error dejaba el botón trabado en "confirmando…" para siempre).
   const confirmar = async () => {
-    const m = Number(monto) || 0;
+    const m = costos.montoRegistrar;
     if (!(m > 0)) { setErr('Monto inválido.'); return; }
     setBusy(true); setErr(null);
-    try { await onConfirmar(p.id, m, acreditar); }
+    try { await onConfirmar(p.id, m, acreditar, costos.alta); }
     catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo confirmar'); }
     finally { setBusy(false); }
   };
@@ -393,6 +406,7 @@ function PendienteRow({ p, acreditarDefault, onConfirmar, onDescartar }: {
           <input type="checkbox" checked={acreditar} onChange={e => setAcreditar(e.target.checked)} disabled={busy} />
           Acreditar en Liquidez al confirmar
         </label>
+        {p.tipo !== 'amortizacion' && <CostosCobroEditor c={costos} bruto={Number(monto) || 0} disabled={busy} etiquetaBruto="bruto, antes de retención y comisión" />}
       </div>
       <div className="flex items-center gap-2 w-full sm:w-auto">
         <div className="relative flex-1 sm:flex-none min-w-0">
@@ -486,6 +500,10 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
     posiciones.filter(p => p.tipo === 'bono').reduce((s, p) => s + p.precio_compra * p.cantidad, 0),
     [posiciones]);
   const capitalAnual = useMemo(() => capCal.reduce((s, m) => s + m.total, 0), [capCal]);
+  // Neto estimado de la renta proyectada (retención del exterior en dividendos + comisión del bróker): referencia al lado del bruto; al
+  // confirmar cada cobro se puede registrar por este neto (ver "Por confirmar").
+  const netoProy = useMemo(() => netoEstimado([{ tipo: 'interes', monto: anual }, { tipo: 'dividendo', monto: divAnual }]), [anual, divAnual]);
+  const netoDiv = useMemo(() => netoEstimado([{ tipo: 'dividendo', monto: divAnual }]), [divAnual]);
   const proximo = cal.find(m => m.total > 0);
   const proximoDiv = divCal.find(m => m.total > 0);
   const proximoCapital = capCal.find(m => m.total > 0);
@@ -519,10 +537,10 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
         <Stat label="Cargados (bonos)" value={`${conCupon}/${totalBonos}`} hint="bonos con datos de cupón / total de bonos" />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Stat label="Dividendos anual (estimado)" value={fmtUsd(divAnual, 0)} hint="CEDEARs/acciones — a confirmar contra el cobro real" />
+        <Stat label="Dividendos anual (estimado)" value={fmtUsd(divAnual, 0)} hint={`CEDEARs/acciones, bruto — neto estimado ${fmtUsd(netoDiv.neto, 0)} (retención ~35 %)`} />
         <Stat label="Próximo dividendo" value={proximoDiv ? `${MESES[proximoDiv.month - 1]} ${proximoDiv.year}` : '—'} hint={proximoDiv ? fmtUsd(proximoDiv.total, 0) : undefined} />
         <Stat label="Cargados (dividendos)" value={`${conDividendo}/${equities.length}`} hint="con dato del proveedor / total de CEDEARs-acciones" />
-        <Stat label="Total renta 12m" value={fmtUsd(anual + divAnual, 0)} hint="cupones + dividendos (declarados/estimados), sin capital" />
+        <Stat label="Total renta 12m" value={fmtUsd(anual + divAnual, 0)} hint={`bruto, sin capital — neto estimado ${fmtUsd(netoProy.neto, 0)} (costos ~${fmtUsd(netoProy.costos, 0)})`} />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <Stat label="Capital a cobrar 12m" value={fmtUsd(capitalAnual, 0)} hint="Amortización + rescate al vencimiento — NO es renta ni suma al total de arriba." />

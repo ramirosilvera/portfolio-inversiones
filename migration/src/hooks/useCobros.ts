@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase';
 import type { Cobro, CobroTipo } from '../types/domain';
 import { asegurarHistorial, borrarMovimiento } from './usePosiciones';
 
+// Detalle de costos de un cobro registrado por su neto (ver engine/costosCobros.ts y migración 0055).
+export interface CostosAlta { bruto: number; retencion: number; comision: number; estimados: boolean }
+const costosCols = (c: CostosAlta) => ({ monto_bruto: c.bruto, retencion_usd: c.retencion, comision_usd: c.comision, costos_estimados: c.estimados });
+
 export function useCobros(portfolioId: string | null | undefined) {
   const qc = useQueryClient();
   const invalidate = () => {
@@ -32,14 +36,21 @@ export function useCobros(portfolioId: string | null | undefined) {
     // rendimiento por año la perdía (y una amortización se veía como pérdida de capital).
 
     // Dividendo o interés: solo plata, no toca la posición (a diferencia de la amortización).
-    registrar: async (input: { posicionId: string | null; ticker: string; tipo: 'dividendo' | 'interes'; fecha: string; monto: number; nota?: string | null; acreditar?: boolean }) => {
+    // `costos`: si el cobro se registra por su NETO, el `monto` es el neto (lo que se acredita) y acá va el detalle (bruto, retención,
+    // comisión) para mostrarlo y auditarlo.
+    registrar: async (input: { posicionId: string | null; ticker: string; tipo: 'dividendo' | 'interes'; fecha: string; monto: number; nota?: string | null; acreditar?: boolean; costos?: CostosAlta }) => {
       if (!portfolioId) return;
       if (!(input.monto > 0)) throw new Error('El monto debe ser mayor a 0.');
-      const { error } = await supabase.rpc('registrar_cobro', {
+      const { data: cobroId, error } = await supabase.rpc('registrar_cobro', {
         p_portfolio: portfolioId, p_posicion_id: input.posicionId, p_ticker: input.ticker, p_tipo: input.tipo,
         p_fecha: input.fecha, p_monto: input.monto, p_nota: input.nota || null, p_acreditar: !!input.acreditar,
       });
-      if (error) throw error; invalidate();
+      if (error) throw error;
+      if (input.costos && cobroId) {
+        const { error: cErr } = await supabase.from('cobros').update(costosCols(input.costos)).eq('id', cobroId);
+        if (cErr) { invalidate(); throw new Error(`Cobro registrado, pero no se pudo guardar el detalle de costos: ${cErr.message}`); }
+      }
+      invalidate();
     },
 
     // Amortización — hay DOS convenciones posibles en el mercado argentino para lo que pasa con
@@ -92,9 +103,9 @@ export function useCobros(portfolioId: string | null | undefined) {
     // Confirmar un PENDIENTE (generado por el cron): pasa a 'disponible' y el usuario puede haber
     // corregido el monto antes de confirmar (dividendo real ≠ estimado por retención/redondeo/
     // dividendo especial). Nunca en lote — uno a la vez, a propósito, para que se revise cada uno.
-    confirmarPendiente: async (id: string, montoFinal: number, acreditar = false) => {
+    confirmarPendiente: async (id: string, montoFinal: number, acreditar = false, costos?: CostosAlta) => {
       if (!(montoFinal > 0)) throw new Error('El monto debe ser mayor a 0.');
-      const { data: c, error } = await supabase.from('cobros').update({ estado: 'disponible', monto: montoFinal })
+      const { data: c, error } = await supabase.from('cobros').update({ estado: 'disponible', monto: montoFinal, ...(costos ? costosCols(costos) : {}) })
         .eq('id', id).select('portfolio_id, ticker, tipo, fecha').single();
       if (error) throw error;
       if (acreditar) {
