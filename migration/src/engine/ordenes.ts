@@ -20,16 +20,19 @@ export interface ResumenOrdenes {
   comisionArsEnUsd: number;          // la parte en pesos que tiene tipo de cambio REGISTRADO, convertida
   comisionArsSinMepPesos: number;    // la parte sin tipo de cambio: no se estima, queda en pesos
   totalUsdConocido: number; pctSobreOperado: number | null;
+  estimadas: number;                 // órdenes ejecutadas cuyo origen es 'estimada' (sin boleto ni dato del broker)
+  comisionEstimadaUsd: number;       // comisión (USD) de esas órdenes: parte del total que NO es un dato real
 }
 
 export function resumenOrdenes(ordenes: OrdenFila[]): ResumenOrdenes {
-  let op = 0, cu = 0, ca = 0, caUsd = 0, caSin = 0, eje = 0, can = 0, rec = 0, pen = 0;
+  let op = 0, cu = 0, ca = 0, caUsd = 0, caSin = 0, eje = 0, can = 0, rec = 0, pen = 0, est = 0, comEst = 0;
   for (const o of ordenes) {
     if (o.estado === 'cancelada') { can++; continue; }
     if (o.estado === 'rechazada') { rec++; continue; }
     if (!esEjecutada(o)) { pen++; continue; }
     eje++;
     op += n(o.monto_usd); cu += n(o.comision_usd);
+    if (o.origen === 'estimada') { est++; comEst += n(o.comision_usd) + (n(o.mep) > 0 ? n(o.comision_ars) / n(o.mep) : 0); }
     const ars = n(o.comision_ars); ca += ars;
     if (ars > 0) { if (n(o.mep) > 0) caUsd += ars / n(o.mep); else caSin += ars; }
   }
@@ -39,6 +42,7 @@ export function resumenOrdenes(ordenes: OrdenFila[]): ResumenOrdenes {
     operadoUsd: +op.toFixed(2), comisionUsd: +cu.toFixed(2), comisionArsPesos: +ca.toFixed(2),
     comisionArsEnUsd: +caUsd.toFixed(2), comisionArsSinMepPesos: +caSin.toFixed(2),
     totalUsdConocido: +total.toFixed(2), pctSobreOperado: op > 0 ? total / op : null,
+    estimadas: est, comisionEstimadaUsd: +comEst.toFixed(2),
   };
 }
 
@@ -58,7 +62,7 @@ export function resumenPorMes(ordenes: OrdenFila[]): FilaMes[] {
 // ── Controles ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 export type TipoControl =
   | 'sin_comision' | 'sin_mep' | 'monto_incoherente' | 'comision_alta'
-  | 'sin_movimiento' | 'movimiento_distinto' | 'compra_sin_orden' | 'anterior_al_historial';
+  | 'sin_movimiento' | 'movimiento_distinto' | 'compra_sin_orden' | 'anterior_al_historial' | 'ordenes_estimadas';
 
 export interface Control { tipo: TipoControl; severidad: 'error' | 'aviso' | 'info'; texto: string; ordenId?: string }
 
@@ -151,6 +155,11 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
       if (mov == null) out.push({ tipo: 'sin_movimiento', severidad: 'error', texto: `${t} · ${fmtF(f)}: hay órdenes de VENTA por ${nom} nominales pero ninguna venta registrada en Movimientos.` });
       else if (Math.abs(mov - nom) > 1e-6) out.push({ tipo: 'movimiento_distinto', severidad: 'error', texto: `${t} · ${fmtF(f)}: las órdenes de venta suman ${nom} nominales y la venta registrada es de ${mov}.` });
     }
+  }
+  const estimadas = ejecutadas.filter(o => o.origen === 'estimada');
+  if (estimadas.length > 0) {
+    const com = estimadas.reduce((x, o) => x + n(o.comision_usd) + (n(o.mep) > 0 ? n(o.comision_ars) / n(o.mep) : 0), 0);
+    out.push({ tipo: 'ordenes_estimadas', severidad: 'info', texto: `${estimadas.length} ${estimadas.length === 1 ? 'orden es ESTIMADA' : 'órdenes son ESTIMADAS'} (sin boleto ni dato del broker; comisión ≈ US$ ${com.toFixed(2)} a la tasa general): reemplazalas por los datos reales cuando los tengas.` });
   }
   const orden = { error: 0, aviso: 1, info: 2 } as const;
   return out.sort((a, b) => orden[a.severidad] - orden[b.severidad]);
