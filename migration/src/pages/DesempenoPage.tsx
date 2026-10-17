@@ -31,7 +31,7 @@ function Kpi({ titulo, valor, sub, tonoValor }: { titulo: string; valor: React.R
 export function DesempenoPage() {
   const { active } = usePortfolios();
   const chart = useChartTheme();
-  const { d, listo, spError, patrimonio, hoy, snaps, posiciones, qSnaps, qPos, sinAcreditar, hayPuntos, porAnio } = useDesempeno(active?.id);
+  const { d, listo, spError, patrimonio, hoy, snaps, posiciones, qSnaps, qPos, sinAcreditar, hayPuntos, porAnio, puente } = useDesempeno(active?.id);
   if (!active) return null;
 
   const { calidad, twr, tir, costos, cartera, benchmark, periodo, evolucion } = d;
@@ -77,6 +77,28 @@ export function DesempenoPage() {
                 ? <>{fmtCorta(mdd.fechaPico!)} → {fmtCorta(mdd.fechaMinimo!)}{mdd.fechaRecuperacion ? ' · recuperada' : ' · sin recuperar'}{mddSp ? <> · S&amp;P en esas fechas {mddSp.mdd === 0 ? 'sin caídas' : fmtPct(Math.abs(mddSp.mdd), 1)}</> : null}</>
                 : undefined} />
           </div>
+
+          {/* ── Por qué no coincide con el P&L total de Inicio ── */}
+          <details className="rounded-2xl border border-line bg-surface shadow-soft">
+            <summary className="cursor-pointer select-none px-4 py-2.5 text-[12px] font-semibold text-ink-700">
+              ¿Por qué esta ganancia no coincide con el «P&amp;L total» de Inicio?
+            </summary>
+            <div className="px-4 pb-4 text-[12px] text-ink-700 space-y-2">
+              <table className="w-full tnum">
+                <tbody className="divide-y divide-line/60">
+                  <tr><td className="py-1.5">Ganancia desde el {fmtFecha(periodo.desde)} <span className="text-ink-500">(la de arriba)</span></td><td className={`text-right font-semibold ${tono(puente.gananciaVentana)}`}>{signo(puente.gananciaVentana)}{fmtUsd(Math.abs(puente.gananciaVentana), 2)}</td></tr>
+                  {Math.abs(puente.previa) >= 0.005 && <tr><td className="py-1.5">+ Lo ganado antes de esa fecha <span className="text-ink-500">(sin valores diarios; viene del aporte inicial)</span></td><td className={`text-right ${tono(puente.previa)}`}>{signo(puente.previa)}{fmtUsd(Math.abs(puente.previa), 2)}</td></tr>}
+                  <tr className="font-semibold"><td className="py-1.5">= Ganancia desde el inicio <span className="font-normal text-ink-500">(valor − capital aportado)</span></td><td className={`text-right ${tono(puente.desdeInicio)}`}>{signo(puente.desdeInicio)}{fmtUsd(Math.abs(puente.desdeInicio), 2)}</td></tr>
+                  <tr><td className="py-1.5">+ Diferencia de método <span className="text-ink-500">(abajo)</span></td><td className={`text-right ${tono(puente.diferenciaMetodo)}`}>{signo(puente.diferenciaMetodo)}{fmtUsd(Math.abs(puente.diferenciaMetodo), 2)}</td></tr>
+                  <tr className="font-semibold"><td className="py-1.5">= P&amp;L total de Inicio</td><td className={`text-right ${tono(puente.pnlTotal)}`}>{signo(puente.pnlTotal)}{fmtUsd(Math.abs(puente.pnlTotal), 2)}</td></tr>
+                </tbody>
+              </table>
+              <p className="text-[11px] text-ink-600 leading-relaxed">
+                <b>Diferencia de método:</b> el P&amp;L total mide contra el <i>costo de las posiciones</i> (el precio, sin comisiones) y suma <i>toda</i> la renta cobrada aunque ese efectivo no esté en la cartera.
+                La ganancia de acá mide contra lo que <i>pusiste</i> (aportes brutos, con comisiones) y sólo cuenta lo que realmente está en el valor. Por eso el P&amp;L total sale algo mayor: no descuenta las comisiones.
+              </p>
+            </div>
+          </details>
 
           {twr.concentrado && (
             <p className="text-[11px] text-warn">La mayor parte del capital entró hace pocos días: el rendimiento ponderado por tiempo no es representativo; por eso todo se mide sobre el capital aportado.</p>
