@@ -247,8 +247,8 @@ describe('calcularDesempeno — capital concentrado (caso Herencia)', () => {
       valorActual: 40183, hoy: '2026-10-17', serieSp: null, ordenes: [],
     });
     expect(r.twr.concentrado).toBe(true);
-    expect(r.tir.invertido).toBeCloseTo(2836 + 37000, 6);
-    expect(r.tir.acumulada).toBeCloseTo((40183 - 39836) / 39836, 6);
+    expect(r.tir.invertido).toBeCloseTo(3000 + 37000, 6);             // el aporte del 17/07 es el capital inicial (7 días antes del primer valor)
+    expect(r.tir.acumulada).toBeCloseTo((40183 - 40000) / 40000, 6);
   });
   it('capital estable en el tiempo no es concentrado', () => {
     const r = calcularDesempeno({
@@ -286,5 +286,25 @@ describe('resumenCostos — estimadas', () => {
     ]);
     expect(r.totalUsdConocido).toBe(15);
     expect(r.estimadasUsd).toBe(10);
+  });
+});
+
+describe('calcularDesempeno — inicio reciente y ganancia en USD', () => {
+  it('un aporte pocos días antes del primer valor es el capital inicial (Herencia): la ganancia en USD incluye la primera semana', () => {
+    const r = calcularDesempeno({
+      puntos: [v('2026-07-24', 2836.51), v('2026-09-28', 29777.29), v('2026-10-17', 40182.83)],
+      flujos: [f('2026-07-17', 3000), f('2026-09-28', 27010), f('2026-09-29', 10000)],
+      valorActual: 40182.83, hoy: '2026-10-17', serieSp: null, ordenes: [],
+    });
+    expect(r.tir.invertido).toBeCloseTo(40010, 6);
+    expect(r.tir.gananciaUsd).toBeCloseTo(172.83, 2);                // = valor − aportado, igual que "Rendimiento por año"
+  });
+  it('con una brecha grande entre el primer aporte y el primer valor, el valor reemplaza a los aportes anteriores (Ahorros)', () => {
+    const r = calcularDesempeno({
+      puntos: [v('2025-12-31', 9361.76), v('2026-10-17', 10000)], flujos: [f('2025-06-02', 6399.58), f('2026-03-02', 862.83)],
+      valorActual: 10000, hoy: '2026-10-17', serieSp: null, ordenes: [],
+    });
+    expect(r.tir.invertido).toBeCloseTo(9361.76 + 862.83, 6);
+    expect(r.tir.gananciaUsd).toBeCloseTo(10000 - 9361.76 - 862.83, 2);
   });
 });

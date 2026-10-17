@@ -300,7 +300,10 @@ export function AportesPage() {
               </>
             )}
           </Card>
-          <p className="text-[11px] text-ink-600">Rentabilidad anualizada, comparación con el S&amp;P 500 y máxima caída: ver <Link to="/desempeno" className="text-celeste-600 underline">Desempeño</Link>.</p>
+          <p className="text-[11px] text-ink-600 leading-relaxed">
+            El % por año de arriba es <b>Modified Dietz</b> sobre el capital de cada año calendario. <Link to="/desempeno" className="text-celeste-600 underline">Desempeño</Link> mide desde el primer valor diario con rendimiento ponderado por tiempo, TIR, S&amp;P 500 y máxima caída:
+            los % pueden diferir por el método, pero la <b>ganancia en dólares es la misma</b> cuando el período coincide.
+          </p>
         </div>
       )}
     </div>

@@ -42,6 +42,7 @@ import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
 import { AlertaSnapshotServidor } from '../components/AlertaSnapshotServidor';
+import { useDesempeno } from '../hooks/useDesempeno';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
 import type { Posicion, AssetType, SeccionKey, DashboardWidget, Aporte } from '../types/domain';
@@ -179,6 +180,7 @@ export function DashboardPage() {
     // elige qué mostrar (selector en el header, persistido por portfolio); por default solo
     // Rendimiento, para no duplicar de entrada lo que ya se ve completo en /aportes.
     rendimiento_por_anio: <CapitalResumen porAnio={porAnio} anioActual={anioActual} hayDatosRendimiento={hayDatos} aportes={aportes} personalizando={personalizando} tasaPresupuesto={presupuesto?.tasaAnual ?? null} />,
+    desempeno: <DesempenoResumen personalizando={personalizando} />,
     distribucion: <Distribucion alloc={alloc} total={patrimonio} isLoading={qPos.isLoading}
       objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct}
       setObjetivoFijaPct={objetivoDistribucion.setObjetivoPct} setToleranciaDistribucionPct={objetivoDistribucion.setToleranciaPct}
@@ -1223,6 +1225,35 @@ function MacroResumen({ resumen, personalizando }: { resumen: ResumenMacro; pers
         {personalizando
           ? <span className="text-[11px] text-celeste-600">Ver contexto macro completo →</span>
           : <Link to="/macro" className="text-[11px] text-celeste-600 hover:underline">Ver contexto macro completo →</Link>}
+      </div>
+    </Card>
+  );
+}
+
+// Resumen de Desempeño (el detalle y las tres preguntas viven en /desempeno, con el MISMO hook y motor: nunca se recalcula acá). Muestra lo que no
+// depende del método: la ganancia en dólares (igual a la de "Rendimiento por año" cuando el período coincide), contra el S&P 500 con tus mismos
+// flujos y la máxima caída. Sin datos suficientes no ocupa lugar.
+function DesempenoResumen({ personalizando }: { personalizando: boolean }) {
+  const { active } = usePortfolios();
+  const x = useDesempeno(active?.id);
+  if (!x.listo || !x.hayPuntos) return null;
+  const { d } = x;
+  const f = (iso: string | null) => (iso ? iso.split('-').reverse().join('/') : '—');
+  const gan = d.tir.gananciaUsd;
+  const b = d.benchmark;
+  const mdd = d.cartera.mdd;
+  const right = <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
+  return (
+    <Card>
+      <CardHeader title="Desempeño" sub={`Desde el ${f(d.periodo.desde)} · ${d.periodo.dias} días · en USD`}
+        right={personalizando ? right : <Link to="/desempeno" className="hover:underline">{right}</Link>} />
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Stat label="Ganancia" value={<span className={gan >= 0 ? 'text-pos' : 'text-neg'}>{gan >= 0 ? '+' : '−'}{fmtUsd(Math.abs(gan), 0)}</span>}
+          hint={d.tir.acumulada != null ? `${fmtPctSigno(d.tir.acumulada, 1)} sobre el capital aportado${d.twr.anualizado != null ? ` · ${fmtPctSigno(d.twr.anualizado, 1)} anual` : ''}` : undefined} />
+        <Stat label="Contra el S&P 500" value={b ? <span className={b.diferenciaValor >= 0 ? 'text-pos' : 'text-neg'}>{b.diferenciaValor >= 0 ? '+' : '−'}{fmtUsd(Math.abs(b.diferenciaValor), 0)}</span> : '—'}
+          hint={b ? 'con tus mismos aportes y retiros' : 'sin serie del índice'} />
+        <Stat label="Máxima caída" value={mdd ? (mdd.mdd === 0 ? 'sin caídas' : `${d.cartera.rotuloMinimoConocido ? '≥ ' : ''}${fmtPct(Math.abs(mdd.mdd), 1)}`) : '—'}
+          hint={mdd && mdd.mdd < 0 ? `${f(mdd.fechaPico)} → ${f(mdd.fechaMinimo)}` : undefined} />
       </div>
     </Card>
   );
