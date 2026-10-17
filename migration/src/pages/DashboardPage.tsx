@@ -233,7 +233,7 @@ export function DashboardPage() {
             misma info (más completa, por año) ya está en la tarjeta "Rendimiento por año" de abajo.
             Solo queda P&L, que no se repite en ningún otro lado. */}
         <Stat label="P&L total" value={<span className={pnlDetalle.total >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsdCompact(pnlDetalle.total)}</span>} delta={costo > 0 ? pnlDetalle.total / costo : undefined}
-          hint={`No realizado ${fmtUsdCompact(pnlDetalle.noRealizado)} · realizado ${fmtUsdCompact(pnlDetalle.realizado)} · renta cobrada ${fmtUsdCompact(pnlDetalle.renta)}`} />
+          hint={`Desde siempre, contra el costo de las posiciones (sin comisiones). No realizado ${fmtUsdCompact(pnlDetalle.noRealizado)} · realizado ${fmtUsdCompact(pnlDetalle.realizado)} · renta cobrada ${fmtUsdCompact(pnlDetalle.renta)}. La ganancia de Desempeño parte del primer valor diario y descuenta comisiones.`} />
       </div>
 
       {/* Cuerpo personalizable: agregar/quitar/reordenar tarjetas — ver components/dashboard/. El
