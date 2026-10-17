@@ -36,7 +36,7 @@ export function CostosCobroEditor({ c, bruto, disabled, etiquetaBruto = 'bruto',
       <label className="flex items-start gap-2 cursor-pointer">
         <input type="checkbox" checked={c.aplicar} onChange={e => c.setAplicar(e.target.checked)} disabled={disabled} className="mt-0.5" />
         <span>
-          <b>Registrar neto con costos estimados</b> (el monto de arriba es {etiquetaBruto}).
+          <b>Registrar neto con costos estimados</b> (el monto cargado es {etiquetaBruto}).
           {c.aplicar && c.hayCostos
             ? <> Se registra <b className="tnum">{fmtUsd(costos.neto, 2)}</b> = {fmtUsd(costos.bruto, 2)}{costos.retencion > 0 && <> − retención {fmtUsd(costos.retencion, 2)}</>}{costos.depositaria > 0 && <> − comisión del depositario {fmtUsd(costos.depositaria, 2)}</>} − comisión del broker {fmtUsd(costos.comision, 2)}, marcado como <i>estimado</i>.</>
             : !c.aplicar ? <> Si no, se registra el monto tal cual; si te acreditaron menos, cargá el neto real.</> : null}

@@ -189,7 +189,7 @@ export function indiceBenchmark(serie: PuntoSp[], desde: string, hasta: string, 
 }
 
 // ── Costos registrados ────────────────────────────────────────────────────────────────────────────────────────────────
-export interface OrdenCosto { monto_usd: number | null; comision_usd: number | null; comision_ars: number | null; mep: number | null }
+export interface OrdenCosto { monto_usd: number | null; comision_usd: number | null; comision_ars: number | null; mep: number | null; origen?: string | null }
 
 export interface ResumenCostos {
   ordenes: number;
@@ -199,23 +199,25 @@ export interface ResumenCostos {
   comisionArsConvertidaUsd: number;  // la parte de esas comisiones en pesos que tiene tipo de cambio REGISTRADO (mep)
   comisionArsSinConvertirPesos: number; // la parte SIN tipo de cambio: no se estima, queda en pesos
   totalUsdConocido: number;          // comisionUsd + comisionArsConvertidaUsd
+  estimadasUsd: number;              // parte de ese total que sale de órdenes ESTIMADAS (origen 'estimada'), no de un dato real
   pctSobreOperado: number | null;
 }
 
 export function resumenCostos(ordenes: OrdenCosto[]): ResumenCostos {
-  let operado = 0, cUsd = 0, cArs = 0, cArsConv = 0, cArsSin = 0;
+  let operado = 0, cUsd = 0, cArs = 0, cArsConv = 0, cArsSin = 0, est = 0;
   for (const o of ordenes) {
     operado += Number(o.monto_usd) || 0;
     cUsd += Number(o.comision_usd) || 0;
     const ars = Number(o.comision_ars) || 0;
     cArs += ars;
     if (ars > 0) { if (o.mep && o.mep > 0) cArsConv += ars / o.mep; else cArsSin += ars; }
+    if (o.origen === 'estimada') est += (Number(o.comision_usd) || 0) + (ars > 0 && o.mep && o.mep > 0 ? ars / o.mep : 0);
   }
   const total = cUsd + cArsConv;
   return {
     ordenes: ordenes.length, operadoUsd: +operado.toFixed(2), comisionUsd: +cUsd.toFixed(2), comisionArsPesos: +cArs.toFixed(2),
     comisionArsConvertidaUsd: +cArsConv.toFixed(2), comisionArsSinConvertirPesos: +cArsSin.toFixed(2),
-    totalUsdConocido: +total.toFixed(2), pctSobreOperado: operado > 0 ? total / operado : null,
+    totalUsdConocido: +total.toFixed(2), estimadasUsd: +est.toFixed(2), pctSobreOperado: operado > 0 ? total / operado : null,
   };
 }
 

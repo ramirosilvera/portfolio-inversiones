@@ -101,7 +101,7 @@ export function DesempenoPage() {
               <b>Costos</b> (<Link to="/ordenes" className="text-celeste-600 underline">ver órdenes y controles</Link>):{' '}
               {costos.ordenes === 0
                 ? 'no hay órdenes con comisiones registradas: el rendimiento no descuenta costos de operación.'
-                : <>{costos.ordenes} órdenes · comisiones {fmtUsd(costos.totalUsdConocido, 2)}{costos.pctSobreOperado != null && <> ({fmtPct(costos.pctSobreOperado, 2)} de lo operado)</>}
+                : <>{costos.ordenes} órdenes · comisiones {fmtUsd(costos.totalUsdConocido, 2)}{costos.estimadasUsd > 0 && <span className="text-warn"> (de las cuales ≈ {fmtUsd(costos.estimadasUsd, 2)} son estimadas, no datos reales)</span>}{costos.pctSobreOperado != null && <> ({fmtPct(costos.pctSobreOperado, 2)} de lo operado)</>}
                   {costos.comisionArsSinConvertirPesos > 0 && <span className="text-warn"> · y $ {costos.comisionArsSinConvertirPesos.toLocaleString('es-AR', { maximumFractionDigits: 0 })} en pesos sin tipo de cambio registrado (no descontados)</span>}.</>}
             </p>
           </Pregunta>

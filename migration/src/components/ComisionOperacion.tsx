@@ -11,7 +11,10 @@ export function useComisionOperacion(monto: number, posicionId?: string | null, 
   const { data: brokers } = useBrokers();
   const { data: asignaciones } = usePosicionBrokers();
   const [brokerSel, setBrokerSel] = useState<string | null>(null);            // null = automático (principal de la posición o general)
-  const [editada, setEditada] = useState<string | null>(null);
+  // El valor editado a mano vale para el monto con el que se editó: si cambia la cantidad o el precio vuelve a la estimación (un valor viejo
+  // sobre un monto nuevo es un costo equivocado, y en el simulador se acumulaba si fallaba una compra a mitad de camino).
+  const [edit, setEdit] = useState<{ valor: string; monto: number } | null>(null);
+  const editada = edit && Math.abs(edit.monto - monto) < 0.005 ? edit.valor : null;
   const [registrar, setRegistrar] = useState(registrarPorDefecto);
   const [descontar, setDescontar] = useState(true);
 
@@ -25,8 +28,8 @@ export function useComisionOperacion(monto: number, posicionId?: string | null, 
   const comision = Number(comisionStr) > 0 ? Number(comisionStr) : 0;
   return {
     brokers, brokerId, broker, tasa, estimada, comisionStr, comision, editadaPorUsuario: editada != null,
-    setBroker: (id: string) => { setBrokerSel(id); setEditada(null); },     // cambiar de broker vuelve a la estimación de ese broker
-    setComision: (s: string) => setEditada(s),
+    setBroker: (id: string) => { setBrokerSel(id); setEdit(null); },     // cambiar de broker vuelve a la estimación de ese broker
+    setComision: (s: string) => setEdit({ valor: s, monto }),
     registrar, setRegistrar, descontar, setDescontar,
   };
 }

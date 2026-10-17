@@ -109,7 +109,8 @@ export function controlarOrdenes(ordenes: OrdenFila[], compras: MovCompra[], tic
     if (montoCoherente(o) === false) {
       out.push({ tipo: 'monto_incoherente', severidad: 'error', ordenId: o.id, texto: `${etiqueta}: el monto (US$ ${n(o.monto_usd).toFixed(2)}) no coincide con nominales × precio.` });
     }
-    if (n(o.monto_usd) > 0 && n(o.comision_usd) / n(o.monto_usd) > MAX_PCT_COMISION) {
+    // Las ESTIMADAS salen de una tasa (típicamente 1 %): marcarlas "comisión alta" por un redondeo de centavos sería ruido.
+    if (o.origen !== 'estimada' && n(o.monto_usd) > 0 && n(o.comision_usd) / n(o.monto_usd) > MAX_PCT_COMISION) {
       out.push({ tipo: 'comision_alta', severidad: 'aviso', ordenId: o.id, texto: `${etiqueta}: la comisión en USD es ${(100 * n(o.comision_usd) / n(o.monto_usd)).toFixed(2)} % de lo operado (revisá si está bien cargada).` });
     }
   }

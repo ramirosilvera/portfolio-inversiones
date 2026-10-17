@@ -128,3 +128,13 @@ describe('órdenes estimadas', () => {
     expect(controlarOrdenes([o({})], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], ['MA']).some(x => x.tipo === 'ordenes_estimadas')).toBe(false);
   });
 });
+
+describe('comisión alta', () => {
+  it('una orden estimada al 1 % no dispara el aviso por redondeo de centavos', () => {
+    const est = o({ origen: 'estimada', ticker: 'GOOGL', monto_usd: 1480.77, comision_usd: 14.81, comision_ars: null, mep: null, precio_ejecutado: 2.8586, nominales: 518 });
+    expect(controlarOrdenes([est], [], ['GOOGL']).some(x => x.tipo === 'comision_alta')).toBe(false);
+  });
+  it('una orden real con comisión alta sí se marca', () => {
+    expect(controlarOrdenes([o({ comision_usd: 5 })], [{ fecha: '2026-10-13', ticker: 'MA', cantidad: 9 }], ['MA']).some(x => x.tipo === 'comision_alta')).toBe(true);
+  });
+});
