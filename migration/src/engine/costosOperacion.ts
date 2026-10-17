@@ -1,11 +1,12 @@
 // Costo estimado de COMPRAR o VENDER (comisión + derechos de mercado + IVA, todo incluido), a partir de la tasa configurada en el broker.
 // Puro y testeado (regla de oro #1). Sirve para tener el número ya calculado al registrar una operación; el dato real del boleto siempre lo pisa.
 //
-// Tasa general (cuando el broker no tiene la suya cargada): 0,67 % — lo observado en tus órdenes de IOL en pesos (CEDEARs y ON, 2025-2026;
-// la línea en dólares "D" sale ≈ 0,4 %). BBVA: 1,148 % real de tus boletos del 14/08/2026 (gastos de mercado 0,0605 % + comisión 0,8985 %
-// + IVA 21 % sobre la comisión). Ambas se pueden editar por broker (Brokers → Costos por broker).
+// Tasa general (cuando el broker NO tiene la suya cargada): 1 %, por decisión del usuario (conservadora: ningún tarifario encontrado para
+// Santander/BBVA plan Black). Los brokers con dato propio la pisan: IOL 0,67 % (observado en tus órdenes en pesos, 2025-2026; la línea en
+// dólares "D" sale ≈ 0,4 %) y BBVA 1,148 % (real de tus boletos del 14/08/2026: gastos de mercado 0,0605 % + comisión 0,8985 % + IVA 21 % sobre
+// la comisión). Todas se editan por broker (Brokers → Costos por broker).
 
-export const TASA_OPERACION_GENERAL = 0.0067;
+export const TASA_OPERACION_GENERAL = 0.01;
 
 export interface BrokerOperacion { id: string; nombre: string; comision_operacion?: number | null }
 

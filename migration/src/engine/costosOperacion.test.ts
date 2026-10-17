@@ -13,8 +13,12 @@ describe('costosOperacion', () => {
     expect(Math.abs(2_714_000 * tasa - 31_147.19)).toBeLessThan(1.5);          // diferencia = redondeo de los porcentajes del boleto
     expect(estimarComisionOperacion(1791.7, 0.01148)).toBeCloseTo(20.57, 2);
   });
-  it('reproduce lo observado en IOL en pesos (0,67 %)', () => {
-    expect(estimarComisionOperacion(193781.09 - 1281.09, TASA_OPERACION_GENERAL)).toBeCloseTo(1289.8, 1);
+  it('reproduce lo observado en IOL en pesos con su tasa propia (0,67 %)', () => {
+    expect(estimarComisionOperacion(193781.09 - 1281.09, 0.0067)).toBeCloseTo(1289.8, 1);
+  });
+  it('la tasa general (broker sin dato) es 1 %', () => {
+    expect(TASA_OPERACION_GENERAL).toBe(0.01);
+    expect(estimarComisionOperacion(1000, TASA_OPERACION_GENERAL)).toBe(10);
   });
   it('monto inválido o negativo → 0', () => {
     expect(estimarComisionOperacion(-10, 0.01)).toBe(0);

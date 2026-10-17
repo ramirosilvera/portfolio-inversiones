@@ -10,6 +10,7 @@ import { resumenPorBroker } from '../engine/brokers';
 import { unitValueUSD } from '../lib/valuation';
 import { Card, CardHeader, Button, Badge, NumField, inputCls, Empty, fmtUsdCompact, fmtPct, colorDeBroker } from '../components/ui';
 import type { Posicion, Broker } from '../types/domain';
+import { TASA_OPERACION_GENERAL } from '../engine/costosOperacion';
 import { TASA_RETENCION_EEUU, TASA_COMISION_DEPOSITARIA, TASA_COMISION_BROKER_DIVIDENDO, TASA_COMISION_BROKER_INTERES } from '../engine/costosCobros';
 
 // Brokers: dónde está físicamente cada posición. "Patrimonio por broker" es información MÍNIMA a
@@ -355,7 +356,7 @@ function BrokerCostosRow({ broker, onSave }: { broker: Broker; onSave: (p: Parti
         {campo('Com. depositario', 'dep', TASA_COMISION_DEPOSITARIA, 'La fija el banco depositario del CEDEAR (Caja de Valores), no el broker.')}
         {campo('Com. s/ dividendos', 'div', TASA_COMISION_BROKER_DIVIDENDO, 'Lo que cobra el broker sobre cada dividendo acreditado.')}
         {campo('Com. s/ cupones', 'cup', TASA_COMISION_BROKER_INTERES, 'Lo que cobra el broker sobre cada cupón de ON.')}
-        {campo('Operar (todo incluido)', 'ope', 0, 'Comisión + derechos + IVA por comprar o vender (referencia).')}
+        {campo('Operar (todo incluido)', 'ope', TASA_OPERACION_GENERAL, 'Comisión + derechos + IVA por comprar o vender. Vacío = 1 % (tasa general para brokers sin dato).')}
       </div>
       <label className="block">
         <span className="block text-[11px] font-semibold text-ink-600 mb-1">Notas (de dónde sale cada dato)</span>
