@@ -14,6 +14,7 @@
 
 import type { AssetType, Cobro } from '../types/domain';
 import type { Alerta } from './alertas';
+import { tasasPorDefecto } from './costosCobros';
 
 // ── Bienes Personales ────────────────────────────────────────────────────────
 export interface ParamsBP {
@@ -225,21 +226,34 @@ export function calcularBienesPersonales(patrimonioArs: number, params: Pick<Par
 // ── Ganancias: renta del exterior (dividendos de CEDEARs/ETFs) ───────────────
 export interface GananciasAnio {
   anio: number;
-  dividendosBruto: number;     // USD, antes de retención y comisiones
-  retencionExterior: number;   // USD retenidos en el exterior (EE.UU. 30 %)
+  dividendosBruto: number;     // USD, antes de retención y comisiones (incluye el bruto ESTIMADO de los cobros sin detalle)
+  retencionExterior: number;   // USD retenidos en el exterior (EE.UU. 30 %), real o estimada
   dividendosNeto: number;      // USD acreditados
   cobros: number;
-  sinDetalle: number;          // cobros sin bruto cargado (el bruto mostrado es el monto declarado)
+  sinDetalle: number;          // cobros sin bruto cargado: su bruto y su retención se ESTIMAN desde el neto
+  brutoEstimado: number;       // USD del bruto que es estimación (parte de dividendosBruto)
   intereses: number;           // USD de cupones (ON/bonos): informativo
+}
+
+/**
+ * Fracción del bruto que llega como neto con las tasas generales (retención EE.UU. 30 % + depositaria 5,5 % + comisión del broker 1 %
+ * sobre lo que queda ≈ 0,639). Sirve para recuperar el bruto de un cobro viejo cargado solo por su neto; el dato real del broker
+ * siempre lo pisa. Si un cobro se hubiera cargado ya por su bruto, esto lo SOBRESTIMA: por eso se marca como estimado.
+ */
+export function netoSobreBruto(): number {
+  const t = tasasPorDefecto('dividendo');
+  return (1 - t.retencion - t.depositaria) * (1 - t.comision);
 }
 
 export function gananciasPorAnio(cobros: Cobro[]): GananciasAnio[] {
   const m = new Map<number, GananciasAnio>();
   const get = (anio: number) => {
     let g = m.get(anio);
-    if (!g) { g = { anio, dividendosBruto: 0, retencionExterior: 0, dividendosNeto: 0, cobros: 0, sinDetalle: 0, intereses: 0 }; m.set(anio, g); }
+    if (!g) { g = { anio, dividendosBruto: 0, retencionExterior: 0, dividendosNeto: 0, cobros: 0, sinDetalle: 0, brutoEstimado: 0, intereses: 0 }; m.set(anio, g); }
     return g;
   };
+  const fraccion = netoSobreBruto();
+  const retencionGeneral = tasasPorDefecto('dividendo').retencion;
   for (const c of cobros) {
     // Solo plata confirmada (mismo criterio que engine/cobros.ts): pendientes y descartados no cuentan.
     if (c.estado !== 'disponible' && c.estado !== 'reinvertido') continue;
@@ -249,12 +263,18 @@ export function gananciasPorAnio(cobros: Cobro[]): GananciasAnio[] {
     if (c.tipo !== 'dividendo') continue;
     const g = get(anio);
     const neto = Number(c.monto) || 0;
-    const bruto = c.monto_bruto != null ? Number(c.monto_bruto) : neto;
     g.cobros += 1;
-    g.dividendosBruto += bruto;
     g.dividendosNeto += neto;
-    g.retencionExterior += Number(c.retencion_usd) || 0;
-    if (c.monto_bruto == null) g.sinDetalle += 1;
+    if (c.monto_bruto != null) {
+      g.dividendosBruto += Number(c.monto_bruto);
+      g.retencionExterior += Number(c.retencion_usd) || 0;
+    } else {
+      const bruto = neto / fraccion;
+      g.dividendosBruto += bruto;
+      g.brutoEstimado += bruto;
+      g.retencionExterior += bruto * retencionGeneral;
+      g.sinDetalle += 1;
+    }
   }
   return [...m.values()].sort((a, b) => b.anio - a.anio);
 }

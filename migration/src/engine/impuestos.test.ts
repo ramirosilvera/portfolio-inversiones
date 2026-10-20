@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   paramsBP, patrimonioImponible, evaluarBienesPersonales, gananciasPorAnio, proximaDDJJ, alertasImpuestos,
-  BIENES_PERSONALES, DDJJ_AVISO_DIAS, ESCALA_BP, escalaBP, calcularBienesPersonales, patrimonioOtrosArs, esProvisoria, parametrosDesdeFilas,
+  BIENES_PERSONALES, DDJJ_AVISO_DIAS, ESCALA_BP, escalaBP, calcularBienesPersonales, patrimonioOtrosArs, esProvisoria, parametrosDesdeFilas, netoSobreBruto,
 } from './impuestos';
 import type { Cobro } from '../types/domain';
 
@@ -62,18 +62,29 @@ describe('evaluarBienesPersonales', () => {
 });
 
 describe('gananciasPorAnio', () => {
-  it('suma bruto, retención y neto de dividendos confirmados por año', () => {
+  it('con detalle cargado usa el bruto y la retención reales', () => {
+    const r = gananciasPorAnio([cobro({ fecha: '2026-03-10', monto: 6.4, monto_bruto: 10, retencion_usd: 3, comision_usd: 0.6 })]);
+    expect(r[0]).toMatchObject({ anio: 2026, dividendosBruto: 10, retencionExterior: 3, dividendosNeto: 6.4, sinDetalle: 0, brutoEstimado: 0 });
+  });
+  it('sin detalle ESTIMA el bruto desde el neto (÷ ≈ 0,639) y la retención al 30 % de ese bruto, y lo declara', () => {
+    expect(netoSobreBruto()).toBeCloseTo(0.645 * 0.99, 6);
     const r = gananciasPorAnio([
-      cobro({ fecha: '2026-03-10', monto: 6.4, monto_bruto: 10, retencion_usd: 3, comision_usd: 0.6 }),
-      cobro({ fecha: '2026-06-10', monto: 20 }),   // sin detalle: el bruto es el monto declarado
+      cobro({ fecha: '2026-03-10', monto: 6.4, monto_bruto: 10, retencion_usd: 3 }),
+      cobro({ fecha: '2026-06-10', monto: 20 }),
       cobro({ fecha: '2025-12-10', monto: 5 }),
     ]);
     const a26 = r.find(x => x.anio === 2026)!;
-    expect(a26.dividendosBruto).toBeCloseTo(30, 6);
+    const estimado = 20 / (0.645 * 0.99);
+    expect(a26.brutoEstimado).toBeCloseTo(estimado, 6);
+    expect(a26.dividendosBruto).toBeCloseTo(10 + estimado, 6);
+    expect(a26.retencionExterior).toBeCloseTo(3 + estimado * 0.3, 6);
     expect(a26.dividendosNeto).toBeCloseTo(26.4, 6);
-    expect(a26.retencionExterior).toBeCloseTo(3, 6);
     expect(a26.sinDetalle).toBe(1);
     expect(r[0].anio).toBe(2026);   // más reciente primero
+  });
+  it('el neto estimado cierra: bruto estimado × 0,639 vuelve al neto cargado', () => {
+    const [g] = gananciasPorAnio([cobro({ monto: 94.22 })]);
+    expect(g.dividendosBruto * netoSobreBruto()).toBeCloseTo(94.22, 6);
   });
   it('excluye pendientes y descartados, y separa los cupones', () => {
     const r = gananciasPorAnio([
