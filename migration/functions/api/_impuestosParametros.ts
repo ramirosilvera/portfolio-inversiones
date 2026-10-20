@@ -66,9 +66,11 @@ const esEscala = (v: unknown): v is { tramos: TramoBase[] } => {
  * Qué filas escribir para `anio` (vacío = nada que hacer). Reglas: (1) si ya hay una fila de ese año —oficial o estimada— no se vuelve
  * a pedir nada (el IPC de octubre no cambia una vez publicado); (2) la base es SIEMPRE la fila oficial del año anterior, nunca una
  * estimada (no se acumulan estimaciones); (3) si INDEC todavía no publicó octubre, no se escribe nada.
- * `obtenerIPC` se llama como mucho una vez y solo si hace falta.
+ * `obtenerIPC` se llama como mucho una vez y solo si hace falta (a partir del 1/11, cuando INDEC está por publicar octubre).
  */
-export async function filasEstimadas(anio: number, existentes: FilaDB[], obtenerIPC: (desde: string) => Promise<unknown>): Promise<FilaParametro[]> {
+export async function filasEstimadas(anio: number, existentes: FilaDB[], obtenerIPC: (desde: string) => Promise<unknown>, hoy: string): Promise<FilaParametro[]> {
+  // Antes de noviembre el IPC de octubre no existe: no se le pide nada a INDEC (sin esto el cron lo consultaba todos los días del año).
+  if (hoy < `${anio}-11-01`) return [];
   if (existentes.some(f => f.anio === anio)) return [];
   const base = (clave: string) => existentes.find(f => f.anio === anio - 1 && f.clave === clave && !f.estimado)?.valor;
   const params = base('bp_params'), escala = base('bp_escala');

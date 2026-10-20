@@ -8,8 +8,9 @@ const VACIO: PatrimonioOtroInput = { nombre: '', tipo: 'vehiculo', valor_ars: 0,
 
 // Bienes fuera de los portfolios que suman al patrimonio de Bienes Personales (ver engine/impuestos.ts). Solo la valuación de ARCA al
 // 31/12 es el valor que cuenta; cualquier otra base se marca «provisorio» para que no se confunda con el dato oficial.
-export function OtrosBienes({ items, cargando, onAgregar, onActualizar, onEliminar }: {
+export function OtrosBienes({ items, cargando, umbralCasa, onAgregar, onActualizar, onEliminar }: {
   items: PatrimonioOtro[]; cargando: boolean;
+  umbralCasa?: number;   // umbral de exención de la casa-habitación del período (ARCA); sin dato no se marca exenta
   onAgregar: (i: PatrimonioOtroInput) => Promise<void>;
   onActualizar: (id: string, i: PatrimonioOtroInput) => Promise<void>;
   onEliminar: (id: string) => Promise<void>;
@@ -21,7 +22,7 @@ export function OtrosBienes({ items, cargando, onAgregar, onActualizar, onElimin
 
   const abrir = (b?: PatrimonioOtro) => {
     setError(null);
-    setForm(b ? { nombre: b.nombre, tipo: b.tipo, valor_ars: b.valor_ars, base: b.base, nota: b.nota } : VACIO);
+    setForm(b ? { nombre: b.nombre, tipo: b.tipo, valor_ars: b.valor_ars, base: b.base, nota: b.nota, fecha_valuacion: b.fecha_valuacion } : VACIO);
     setEditando(b ? b.id : 'nuevo');
   };
   const cerrar = () => { setEditando(null); setError(null); };
@@ -59,6 +60,9 @@ export function OtrosBienes({ items, cargando, onAgregar, onActualizar, onElimin
                 <p className="text-[11px] text-ink-600 flex flex-wrap items-center gap-1.5 mt-0.5">
                   <span>{TIPO_OTRO_LABEL[b.tipo]}</span>
                   <Badge tone={esProvisoria(b.base) ? 'warn' : 'pos'}>{esProvisoria(b.base) ? `provisorio · ${BASE_LABEL[b.base].toLowerCase()}` : BASE_LABEL[b.base]}</Badge>
+                  {b.tipo === 'casa_habitacion' && umbralCasa != null && (
+                    b.valor_ars <= umbralCasa ? <Badge tone="pos">exenta</Badge> : <Badge tone="warn">supera el umbral de exención</Badge>
+                  )}
                   <span>al {b.fecha_valuacion.split('-').reverse().join('/')}</span>
                 </p>
                 {b.nota && <p className="text-[11px] text-ink-500 mt-1">{b.nota}</p>}
@@ -95,7 +99,12 @@ export function OtrosBienes({ items, cargando, onAgregar, onActualizar, onElimin
               </select>
             </Field>
           </div>
-          <Field label="Nota (opcional)"><input className={inputCls} value={form.nota ?? ''} onChange={e => setForm({ ...form, nota: e.target.value })} /></Field>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Fecha de la valuación" hint="Para el impuesto, el 31/12 del período.">
+              <input type="date" className={inputCls} value={form.fecha_valuacion ?? ''} onChange={e => setForm({ ...form, fecha_valuacion: e.target.value || undefined })} />
+            </Field>
+            <Field label="Nota (opcional)"><input className={inputCls} value={form.nota ?? ''} onChange={e => setForm({ ...form, nota: e.target.value })} /></Field>
+          </div>
           {error && <p role="alert" className="text-xs text-neg">{error}</p>}
           <div className="flex gap-2">
             <button onClick={guardar} disabled={guardando} className="rounded-full bg-celeste-500 text-white px-4 py-2 text-sm font-semibold shadow-glow hover:bg-celeste-600 disabled:opacity-60">{guardando ? 'Guardando…' : 'Guardar'}</button>

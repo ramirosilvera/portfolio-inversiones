@@ -134,7 +134,7 @@ export function ImpuestosPage() {
 
       {params && escala && mep && <SimuladorBP params={params} escala={escala} mep={mep} patrimonioUsd={totalUsd} />}
 
-      <OtrosBienes items={otros.data} cargando={otros.isLoading}
+      <OtrosBienes items={otros.data} cargando={otros.isLoading} umbralCasa={params?.casaHabitacion}
         onAgregar={otros.agregar} onActualizar={otros.actualizar} onEliminar={otros.eliminar} />
 
       {/* ── Ganancias ─────────────────────────────────────────────────────── */}
@@ -156,11 +156,15 @@ export function ImpuestosPage() {
                 {ganancias.map(g => (
                   <tr key={g.anio}>
                     <td className="px-4 py-2 font-semibold text-ink-900">{g.anio}</td>
-                    <td className="text-right px-3 tnum" title={g.sinDetalle > 0 ? `${g.sinDetalle} cobro(s) sin bruto cargado: bruto y retención ESTIMADOS desde el neto (${fmtUsd(g.brutoEstimado)} del bruto)` : undefined}>
-                      {fmtUsd(g.dividendosBruto)}{g.sinDetalle > 0 && <span className="text-warn"> *</span>}
+                    <td className="text-right px-3 tnum" title={g.sinDetalle > 0 ? `${g.sinDetalle} cobro(s) cargados por el pago declarado (bruto) sin detalle de costos` : undefined}>
+                      {fmtUsd(g.dividendosBruto)}
                     </td>
-                    <td className="text-right px-3 tnum">{g.retencionExterior > 0 ? fmtUsd(g.retencionExterior) : '—'}</td>
-                    <td className="text-right px-3 tnum">{fmtUsd(g.dividendosNeto)}</td>
+                    <td className="text-right px-3 tnum" title={g.retencionEstimada > 0 ? `${fmtUsd(g.retencionEstimada)} son estimados` : undefined}>
+                      {g.retencionExterior > 0 ? fmtUsd(g.retencionExterior) : '—'}{g.retencionEstimada > 0 && <span className="text-warn"> *</span>}
+                    </td>
+                    <td className="text-right px-3 tnum" title={g.netoEstimado > 0 ? `${fmtUsd(g.netoEstimado)} son estimados` : undefined}>
+                      {fmtUsd(g.dividendosNeto)}{g.netoEstimado > 0 && <span className="text-warn"> *</span>}
+                    </td>
                     <td className="text-right px-3 tnum">{g.cobros}</td>
                     <td className="text-right px-4 tnum text-ink-600">{g.intereses > 0 ? fmtUsd(g.intereses) : '—'}</td>
                   </tr>
@@ -174,7 +178,7 @@ export function ImpuestosPage() {
           <li><b className="text-ink-800">Dividendos</b>: se declaran como renta del exterior. La alícuota (escala progresiva vs. 15 %) y cómo se computa como crédito la retención del 30 % de EE.UU. figuran con criterios distintos: a definir con tu contador.</li>
           <li><b className="text-ink-800">Cupones de ON y bonos locales</b>: suelen estar exentos para personas humanas; se muestran solo como dato.</li>
           <li>Ganancias es personal: si tenés otros ingresos (sueldo, alquileres), la obligación y el monto dependen del total, que la app no conoce.</li>
-          {ganancias.some(g => g.sinDetalle > 0) && <li><span className="text-warn">*</span> Hay cobros cargados solo por su neto (anteriores al detalle de costos): su bruto y su retención se ESTIMAN con las tasas generales (30 % EE.UU. + 5,5 % depositaria + 1 % broker). Si el monto cargado ya era el bruto, queda sobrestimado; el dato real del broker lo reemplaza.</li>}
+          {ganancias.some(g => g.sinDetalle > 0) && <li><span className="text-warn">*</span> Hay cobros anteriores al detalle de costos: se cargaron con el pago declarado por el proveedor (el bruto), así que la retención y lo acreditado se ESTIMAN con las tasas generales (30 % EE.UU. + 5,5 % depositaria + 1 % broker). El dato real del broker los reemplaza.</li>}
         </ul>
       </Card>
 
