@@ -15,6 +15,7 @@
 import type { AssetType, Cobro } from '../types/domain';
 import type { Alerta } from './alertas';
 import { tasasPorDefecto } from './costosCobros';
+import { sumarMeses, tasaMensual } from './presupuesto';
 
 // ── Bienes Personales ────────────────────────────────────────────────────────
 export interface ParamsBP {
@@ -312,6 +313,55 @@ export function proximaDDJJ(hoy: string): ProximaDDJJ {
   // Inalcanzable (anioHoy siempre vence después de hoy) — por las dudas.
   const anioFiscal = anioHoy;
   return { anioFiscal, fecha: `${anioFiscal + 1}-06-30`, estimado: true, dias: diasEntre(hoy, `${anioFiscal + 1}-06-30`), fuente: null };
+}
+
+// ── ¿Cuándo se llega al mínimo no imponible? (según el forecast, al dólar de hoy) ──────────────
+// Proyecta cada portfolio con SUS supuestos del Forecast (aporte comprometido y retorno presupuestado, 8 % en todos por decisión del
+// usuario) con la misma convención que engine/presupuesto.presupuestoMensual (retorno mensual equivalente y aporte A/12 al cierre de
+// cada mes), suma los portfolios y los otros bienes, y busca el primer mes en que el total alcanza el mínimo. El mínimo está en pesos y
+// se pasa a USD con el dólar de HOY: supone que el mínimo (que ARCA sube por IPC) y el dólar se mueven parejo, o sea umbral constante
+// en USD. Si el peso se aprecia en términos reales el umbral en USD sube y se llega más tarde, y al revés: por eso hay escenarios.
+export const MAX_ANIOS_LLEGADA = 80;
+
+export interface FuenteProyeccion { valorUsd: number; aporteAnual: number; tasaAnual: number }
+
+export interface LlegadaMinimo {
+  umbralUsd: number;        // mínimo no imponible en USD al dólar de hoy
+  yaSupera: boolean;
+  meses: number | null;     // meses desde hoy (0 = ya lo supera); null = no llega en MAX_ANIOS_LLEGADA años
+  fecha: string | null;     // 'YYYY-MM' del primer mes en que lo alcanza
+  anio: number | null;
+  anios: number | null;     // años desde hoy, un decimal
+}
+
+export function proyectarLlegadaMinimo(fuentes: FuenteProyeccion[], otrosUsd: number, minimoUsd: number, hoy: string): LlegadaMinimo {
+  const vacio: LlegadaMinimo = { umbralUsd: minimoUsd, yaSupera: false, meses: null, fecha: null, anio: null, anios: null };
+  if (!(minimoUsd > 0) || !Number.isFinite(minimoUsd)) return vacio;
+  const ym = hoy.slice(0, 7);
+  const otros = otrosUsd > 0 ? otrosUsd : 0;
+  const sim = fuentes.map(f => ({
+    v: f.valorUsd > 0 ? f.valorUsd : 0,
+    rm: f.tasaAnual > -1 && Number.isFinite(f.tasaAnual) ? tasaMensual(f.tasaAnual) : 0,
+    a: f.aporteAnual > 0 ? f.aporteAnual / 12 : 0,
+  }));
+  const hecho = (meses: number): LlegadaMinimo => ({
+    umbralUsd: minimoUsd, yaSupera: meses === 0, meses, fecha: sumarMeses(ym, meses),
+    anio: Number(sumarMeses(ym, meses).slice(0, 4)), anios: Math.round(meses / 12 * 10) / 10,
+  });
+  const total = () => sim.reduce((s, x) => s + x.v, 0) + otros;
+  if (total() >= minimoUsd) return hecho(0);
+  for (let k = 1; k <= MAX_ANIOS_LLEGADA * 12; k++) {
+    for (const x of sim) x.v = x.v * (1 + x.rm) + x.a;
+    if (total() >= minimoUsd) return hecho(k);
+  }
+  return vacio;
+}
+
+export interface EscenarioLlegada { factor: number; umbralUsd: number; llegada: LlegadaMinimo }
+
+/** El mismo cálculo con el mínimo en USD multiplicado por cada factor (0,75 = el mínimo en dólares 25 % más bajo). */
+export function escenariosLlegada(fuentes: FuenteProyeccion[], otrosUsd: number, minimoUsd: number, hoy: string, factores = [0.75, 1, 1.25]): EscenarioLlegada[] {
+  return factores.map(factor => ({ factor, umbralUsd: minimoUsd * factor, llegada: proyectarLlegadaMinimo(fuentes, otrosUsd, minimoUsd * factor, hoy) }));
 }
 
 // ── Alertas ──────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   paramsBP, patrimonioImponible, evaluarBienesPersonales, gananciasPorAnio, proximaDDJJ, alertasImpuestos,
-  BIENES_PERSONALES, DDJJ_AVISO_DIAS, ESCALA_BP, escalaBP, calcularBienesPersonales, patrimonioOtrosArs, esProvisoria, parametrosDesdeFilas, netoSobreBruto,
+  BIENES_PERSONALES, DDJJ_AVISO_DIAS, ESCALA_BP, escalaBP, calcularBienesPersonales, patrimonioOtrosArs, esProvisoria, parametrosDesdeFilas, netoSobreBruto, proyectarLlegadaMinimo, escenariosLlegada, MAX_ANIOS_LLEGADA,
 } from './impuestos';
 import type { Cobro } from '../types/domain';
 
@@ -266,5 +266,60 @@ describe('parámetros que vienen de la base', () => {
     expect(una.verificado[2025]).toBe(false);
     const ambas = parametrosDesdeFilas([fila({ anio: 2025, estimado: false, verificado: true }), fila({ anio: 2025, clave: 'bp_escala', valor: { tramos }, estimado: false, verificado: true })]);
     expect(ambas.verificado[2025]).toBe(true);
+  });
+});
+
+describe('proyectarLlegadaMinimo (forecast al dólar de hoy)', () => {
+  const HOY = '2026-10-20';
+  it('un portfolio sin aportes crece al retorno: 40.000 al 8 % llega a 100.000 en ≈ 11,9 años (ln 2,5 / ln 1,08)', () => {
+    const r = proyectarLlegadaMinimo([{ valorUsd: 40_000, aporteAnual: 0, tasaAnual: 0.08 }], 0, 100_000, HOY);
+    const esperado = Math.log(2.5) / Math.log(1.08);   // 11,905 años = 142,9 meses → el primer mes entero que lo alcanza es el 143
+    expect(r.meses).toBe(Math.ceil(esperado * 12));
+    expect(r.fecha).toBe('2038-09');
+    expect(r.anio).toBe(2038);
+    expect(r.anios).toBeCloseTo(11.9, 1);
+    expect(r.yaSupera).toBe(false);
+  });
+  it('suma portfolios con sus aportes y los otros bienes (constantes en USD)', () => {
+    const solo = proyectarLlegadaMinimo([{ valorUsd: 40_000, aporteAnual: 0, tasaAnual: 0.08 }, { valorUsd: 21_000, aporteAnual: 2400, tasaAnual: 0.08 }], 0, 236_000, HOY);
+    const conOtros = proyectarLlegadaMinimo([{ valorUsd: 40_000, aporteAnual: 0, tasaAnual: 0.08 }, { valorUsd: 21_000, aporteAnual: 2400, tasaAnual: 0.08 }], 13_000, 249_000, HOY);
+    expect(solo.meses).not.toBeNull();
+    expect(conOtros.meses).toBe(solo.meses);   // umbral − otros es el mismo: (249.000 − 13.000) = 236.000
+  });
+  it('más aporte o más retorno adelantan la fecha; menos la atrasan', () => {
+    const base = proyectarLlegadaMinimo([{ valorUsd: 50_000, aporteAnual: 2400, tasaAnual: 0.08 }], 0, 200_000, HOY).meses!;
+    expect(proyectarLlegadaMinimo([{ valorUsd: 50_000, aporteAnual: 6000, tasaAnual: 0.08 }], 0, 200_000, HOY).meses!).toBeLessThan(base);
+    expect(proyectarLlegadaMinimo([{ valorUsd: 50_000, aporteAnual: 2400, tasaAnual: 0.10 }], 0, 200_000, HOY).meses!).toBeLessThan(base);
+    expect(proyectarLlegadaMinimo([{ valorUsd: 50_000, aporteAnual: 2400, tasaAnual: 0.05 }], 0, 200_000, HOY).meses!).toBeGreaterThan(base);
+  });
+  it('si ya lo supera: 0 meses y fecha de hoy', () => {
+    const r = proyectarLlegadaMinimo([{ valorUsd: 300_000, aporteAnual: 0, tasaAnual: 0.08 }], 0, 250_000, HOY);
+    expect(r).toMatchObject({ yaSupera: true, meses: 0, fecha: '2026-10', anio: 2026, anios: 0 });
+  });
+  it('sin retorno ni aportes no llega nunca (dentro de 80 años): null, sin colgarse', () => {
+    const r = proyectarLlegadaMinimo([{ valorUsd: 1_000, aporteAnual: 0, tasaAnual: 0 }], 0, 250_000, HOY);
+    expect(r.meses).toBeNull();
+    expect(r.fecha).toBeNull();
+    expect(MAX_ANIOS_LLEGADA).toBe(80);
+  });
+  it('entradas inválidas no explotan: mínimo ≤ 0, valores negativos o tasa imposible', () => {
+    expect(proyectarLlegadaMinimo([{ valorUsd: 1, aporteAnual: 0, tasaAnual: 0.08 }], 0, 0, HOY).meses).toBeNull();
+    expect(proyectarLlegadaMinimo([{ valorUsd: -5, aporteAnual: -10, tasaAnual: -3 }], -1, 100, HOY).meses).toBeNull();
+  });
+  it('la convención coincide con el Forecast: el mes 12 de un portfolio vale lo que presupuestoMensual', () => {
+    // 10.000 al 8 % con 2.400/año: cierre del mes 12 según engine/presupuesto = 10.000·1,08 + 2.400·(≈1,0376) ≈ 13.290
+    let v = 10_000; const rm = Math.pow(1.08, 1 / 12) - 1;
+    for (let k = 0; k < 12; k++) v = v * (1 + rm) + 200;
+    const r = proyectarLlegadaMinimo([{ valorUsd: 10_000, aporteAnual: 2400, tasaAnual: 0.08 }], 0, v - 0.001, HOY);
+    expect(r.meses).toBe(12);
+    const antes = proyectarLlegadaMinimo([{ valorUsd: 10_000, aporteAnual: 2400, tasaAnual: 0.08 }], 0, v + 0.001, HOY);
+    expect(antes.meses).toBe(13);
+  });
+  it('escenarios: un mínimo en dólares más alto llega más tarde y uno más bajo antes', () => {
+    const e = escenariosLlegada([{ valorUsd: 60_000, aporteAnual: 2400, tasaAnual: 0.08 }], 0, 240_000, HOY);
+    expect(e.map(x => x.factor)).toEqual([0.75, 1, 1.25]);
+    expect(e[0].llegada.meses!).toBeLessThan(e[1].llegada.meses!);
+    expect(e[1].llegada.meses!).toBeLessThan(e[2].llegada.meses!);
+    expect(e[1].umbralUsd).toBe(240_000);
   });
 });
