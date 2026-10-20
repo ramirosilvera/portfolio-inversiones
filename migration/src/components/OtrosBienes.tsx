@@ -54,24 +54,25 @@ export function OtrosBienes({ items, cargando, umbralCasa, onAgregar, onActualiz
       ) : (
         <ul className="divide-y divide-line">
           {items.map(b => (
-            <li key={b.id} className="px-4 py-3 flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-ink-900 text-sm truncate">{b.nombre}</p>
-                <p className="text-[11px] text-ink-600 flex flex-wrap items-center gap-1.5 mt-0.5">
-                  <span>{TIPO_OTRO_LABEL[b.tipo]}</span>
-                  <Badge tone={esProvisoria(b.base) ? 'warn' : 'pos'}>{esProvisoria(b.base) ? `provisorio · ${BASE_LABEL[b.base].toLowerCase()}` : BASE_LABEL[b.base]}</Badge>
-                  {b.tipo === 'casa_habitacion' && umbralCasa != null && (
-                    b.valor_ars <= umbralCasa ? <Badge tone="pos">exenta</Badge> : <Badge tone="warn">supera el umbral de exención</Badge>
-                  )}
-                  <span>al {b.fecha_valuacion.split('-').reverse().join('/')}</span>
-                </p>
-                {b.nota && <p className="text-[11px] text-ink-500 mt-1">{b.nota}</p>}
+            <li key={b.id} className="px-4 py-3">
+              {/* Nombre y acciones arriba, valor debajo: en el celular el nombre se cortaba y la nota quedaba en una columna angosta. */}
+              <div className="flex items-start gap-2">
+                <p className="font-semibold text-ink-900 text-sm min-w-0 flex-1 break-words">{b.nombre}</p>
+                <div className="flex shrink-0 -mr-2 -mt-1.5">
+                  <button onClick={() => abrir(b)} title="Editar" aria-label={`Editar ${b.nombre}`} className="p-2 text-ink-600 hover:text-ink-900"><Pencil className="w-4 h-4" /></button>
+                  <button onClick={() => borrar(b)} title="Eliminar" aria-label={`Eliminar ${b.nombre}`} className="p-2 text-ink-600 hover:text-neg"><Trash2 className="w-4 h-4" /></button>
+                </div>
               </div>
-              <p className="tnum font-semibold text-ink-900 text-sm shrink-0">{fmtArs(b.valor_ars)}</p>
-              <div className="flex shrink-0">
-                <button onClick={() => abrir(b)} title="Editar" aria-label={`Editar ${b.nombre}`} className="p-2 text-ink-600 hover:text-ink-900"><Pencil className="w-4 h-4" /></button>
-                <button onClick={() => borrar(b)} title="Eliminar" aria-label={`Eliminar ${b.nombre}`} className="p-2 text-ink-600 hover:text-neg"><Trash2 className="w-4 h-4" /></button>
-              </div>
+              <p className="tnum font-bold text-ink-900 text-base">{fmtArs(b.valor_ars)}</p>
+              <p className="text-[11px] text-ink-600 flex flex-wrap items-center gap-1.5 mt-1">
+                <span>{TIPO_OTRO_LABEL[b.tipo]}</span>
+                <Badge tone={esProvisoria(b.base) ? 'warn' : 'pos'}>{esProvisoria(b.base) ? `provisorio · ${BASE_LABEL[b.base].toLowerCase()}` : BASE_LABEL[b.base]}</Badge>
+                {b.tipo === 'casa_habitacion' && umbralCasa != null && (
+                  b.valor_ars <= umbralCasa ? <Badge tone="pos">exenta</Badge> : <Badge tone="warn">supera el umbral de exención</Badge>
+                )}
+                <span>al {b.fecha_valuacion.split('-').reverse().join('/')}</span>
+              </p>
+              {b.nota && <p className="text-[11px] text-ink-500 mt-1.5 break-words">{b.nota}</p>}
             </li>
           ))}
         </ul>
