@@ -42,6 +42,8 @@ import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
 import { AlertaSnapshotServidor } from '../components/AlertaSnapshotServidor';
 import { AlertaImpuestos } from '../components/AlertaImpuestos';
+import { useImpuestos } from '../hooks/useImpuestos';
+import { textoLlegadaMinimo, mesAnio } from '../components/LlegadaMinimoCard';
 import { useDesempeno } from '../hooks/useDesempeno';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
@@ -182,6 +184,7 @@ export function DashboardPage() {
     // Rendimiento, para no duplicar de entrada lo que ya se ve completo en /aportes.
     rendimiento_por_anio: <CapitalResumen aportes={aportes} personalizando={personalizando} />,
     desempeno: <DesempenoResumen personalizando={personalizando} />,
+    impuestos: <ImpuestosResumen personalizando={personalizando} />,
     distribucion: <Distribucion alloc={alloc} total={patrimonio} isLoading={qPos.isLoading}
       objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct}
       setObjetivoFijaPct={objetivoDistribucion.setObjetivoPct} setToleranciaDistribucionPct={objetivoDistribucion.setToleranciaPct}
@@ -1085,6 +1088,33 @@ function MacroResumen({ resumen, personalizando }: { resumen: ResumenMacro; pers
         {personalizando
           ? <span className="text-[11px] text-celeste-600">Ver contexto macro completo →</span>
           : <Link to="/macro" className="text-[11px] text-celeste-600 hover:underline">Ver contexto macro completo →</Link>}
+      </div>
+    </Card>
+  );
+}
+
+// Resumen de Impuestos: dónde está el patrimonio (TODOS los portfolios + otros bienes, no solo el activo) frente al mínimo no imponible de
+// Bienes Personales, cuándo lo alcanzaría según el Forecast al dólar de hoy y cuánto pagaría hoy. Va aparte de la tarjeta Forecast a
+// propósito: esa es por portfolio y esta es de la persona, y con una sola base cada número tiene un solo significado. El detalle, los
+// escenarios y los supuestos viven en /impuestos con el MISMO hook y motor (engine/impuestos.ts): acá nunca se recalcula.
+function ImpuestosResumen({ personalizando }: { personalizando: boolean }) {
+  const t = useImpuestos();
+  const { bp, llegada, impuestoBP } = t;
+  if (t.cargando || !bp || !t.minimoUsd) return null;
+  const totalUsd = t.mep ? bp.patrimonioArs / t.mep : 0;
+  const right = <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
+  const nivelTone = bp.nivel === 'neg' ? 'text-neg' : bp.nivel === 'warn' ? 'text-warn' : 'text-pos';
+  return (
+    <Card>
+      <CardHeader title="Impuestos" sub="Bienes Personales · todos tus portfolios juntos · al MEP de hoy"
+        right={personalizando ? right : <Link to="/impuestos" className="hover:underline">{right}</Link>} />
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Stat label="Vs. el mínimo no imponible" value={<span className={nivelTone}>{fmtPct(bp.ratio, 0)}</span>}
+          hint={`${fmtUsd(totalUsd, 0)} de ${fmtUsd(t.minimoUsd, 0)} (mínimo ${fmtArsCompact(bp.minimoArs)})`} />
+        <Stat label="Lo alcanzarías" value={textoLlegadaMinimo(llegada)}
+          hint={llegada?.meses != null && !llegada.yaSupera ? `${mesAnio(llegada.fecha)} · en ≈ ${llegada.anios!.toLocaleString('es-AR')} años, según tu Forecast` : 'según tu Forecast, con el mínimo en dólares de hoy'} />
+        <Stat label="Pagarías hoy" value={impuestoBP ? fmtArs(impuestoBP.impuesto) : '—'}
+          hint={impuestoBP && impuestoBP.impuesto > 0 ? `Alícuota marginal ${fmtPct(impuestoBP.alicuotaMarginal ?? 0, 2)}` : 'No superás el mínimo: no corresponde pagar'} />
       </div>
     </Card>
   );

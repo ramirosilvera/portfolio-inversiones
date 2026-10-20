@@ -3,6 +3,7 @@ import { useImpuestos } from '../hooks/useImpuestos';
 import { Card, CardHeader, Stat, Badge, AlertasBanner, Empty, fmtUsd, fmtPct, fmtArs, fmtArsCompact } from '../components/ui';
 import { OtrosBienes } from '../components/OtrosBienes';
 import { SimuladorBP } from '../components/SimuladorBP';
+import { LlegadaMinimoCard } from '../components/LlegadaMinimoCard';
 import { BP_UMBRAL_INFO, BP_UMBRAL_WARN, type NivelBP } from '../engine/impuestos';
 
 const NIVEL_TXT: Record<NivelBP, { label: string; tone: 'pos' | 'gray' | 'warn' | 'neg'; barra: string }> = {
@@ -22,7 +23,7 @@ const fecha = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('e
 
 export function ImpuestosPage() {
   const t = useImpuestos();
-  const { bp, params, patrimonio, ddjj, ganancias, impuestoBP, escala, otros, otrosArs, mep } = t;
+  const { bp, params, patrimonio, ddjj, ganancias, impuestoBP, escala, otros, otrosArs, mep, llegada, escenarios, fuentes, sinPresupuesto, minimoUsd } = t;
   const nivel = bp ? NIVEL_TXT[bp.nivel] : null;
   const totalUsd = bp && mep ? bp.patrimonioArs / mep : patrimonio.total;
 
@@ -131,6 +132,11 @@ export function ImpuestosPage() {
           </div>
         )}
       </Card>
+
+      {params && mep && minimoUsd != null && (
+        <LlegadaMinimoCard llegada={llegada} escenarios={escenarios} fuentes={fuentes} sinPresupuesto={sinPresupuesto}
+          minimoArs={params.minimoNoImponible} minimoUsd={minimoUsd} mep={mep} patrimonioUsd={totalUsd} />
+      )}
 
       {params && escala && mep && <SimuladorBP params={params} escala={escala} mep={mep} patrimonioUsd={totalUsd} />}
 

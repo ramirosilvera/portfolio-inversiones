@@ -9,8 +9,9 @@ import { useAllPosiciones, useQuotes, useMacro } from './usePosiciones';
 import { unitValueUSD } from '../lib/valuation';
 import {
   paramsBP, escalaBP, patrimonioImponible, evaluarBienesPersonales, calcularBienesPersonales, patrimonioOtrosArs,
-  gananciasPorAnio, proximaDDJJ, alertasImpuestos,
+  gananciasPorAnio, proximaDDJJ, alertasImpuestos, proyectarLlegadaMinimo, escenariosLlegada, type FuenteProyeccion,
 } from '../engine/impuestos';
+import type { ProyeccionGuardado } from './useProyeccionInputs';
 import type { Cobro } from '../types/domain';
 
 // Impuestos de los portfolios activos, JUNTOS (la persona es una sola: Bienes Personales y Ganancias se miden sobre el total, no por portfolio).
@@ -44,6 +45,18 @@ export function useImpuestos() {
   });
   const cobros = useMemo(() => cobrosAll.filter(c => activeIds.has(c.portfolio_id)), [cobrosAll, activeIds]);
 
+  // Supuestos del Forecast de TODOS los portfolios (aporte comprometido y retorno presupuestado): con ellos se proyecta cuándo el
+  // patrimonio junto llega al mínimo no imponible. Misma fuente que la página Forecast (tabla proyeccion_inputs).
+  const { data: proyecciones = [] } = useQuery({
+    queryKey: ['proyeccion_inputs', 'all', session?.user.id ?? 'anon'],
+    enabled: !!session,
+    queryFn: async (): Promise<{ portfolio_id: string; inputs: ProyeccionGuardado | null }[]> => {
+      const { data, error } = await supabase.from('proyeccion_inputs').select('portfolio_id, inputs');
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const hoy = new Date().toISOString().slice(0, 10);
   const anioActual = Number(hoy.slice(0, 4));
   const m = macro as Record<string, number | null>;
@@ -71,11 +84,28 @@ export function useImpuestos() {
     const ddjj = proximaDDJJ(hoy);
     const dividendosAnioFiscal = ganancias.find(g => g.anio === ddjj.anioFiscal)?.dividendosBruto ?? 0;
     const alertas = alertasImpuestos({ bp, bpEstimado: params?.estimado ?? false, ddjj, dividendosAnioFiscal });
+
+    // ¿Cuándo llega al mínimo? Cada portfolio con SU presupuesto (aporte comprometido y retorno); sin presupuesto fijado, el supuesto de
+    // la página Forecast si lo hay; y si tampoco, 8 % (decisión del usuario) sin aportes — se avisa para que no parezca un dato propio.
+    const sinPresupuesto: string[] = [];
+    const fuentes: (FuenteProyeccion & { nombre: string })[] = portfolios.map(p => {
+      const g = proyecciones.find(x => x.portfolio_id === p.id)?.inputs ?? null;
+      const ppto = g?.presupuesto ?? null;
+      if (!ppto) sinPresupuesto.push(p.nombre);
+      return {
+        nombre: p.nombre, valorUsd: porPortfolio.get(p.id) ?? 0,
+        aporteAnual: ppto?.aporteAnual ?? g?.aporteAnual ?? 0, tasaAnual: ppto?.tasaAnual ?? g?.tasaAnual ?? 0.08,
+      };
+    });
+    const minimoUsd = params && mep ? params.minimoNoImponible / mep : null;
+    const otrosUsd = mep ? otrosArs / mep : 0;
+    const llegada = minimoUsd ? proyectarLlegadaMinimo(fuentes, otrosUsd, minimoUsd, hoy) : null;
+    const escenarios = minimoUsd ? escenariosLlegada(fuentes, otrosUsd, minimoUsd, hoy) : [];
     return {
       portfolios, porPortfolio, patrimonio, params, escala, parametrosVerificados: !!param.verificado[params?.anioParams ?? 0], otros, otrosArs, bp, bpProbable, impuestoBP, ganancias, ddjj, dividendosAnioFiscal, alertas,
-      mep, hoy, anioActual, sinPrecio,
+      mep, hoy, anioActual, sinPrecio, fuentes, sinPresupuesto, minimoUsd, otrosUsd, llegada, escenarios,
       cargando: cargandoPos || cargandoCobros || qQuotes.isLoading || otros.isLoading,
       preciosPendientes: qQuotes.isFetching && Object.keys(quotes).length === 0,
     };
-  }, [posiciones, quotes, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching, otros.data, otros.isLoading, param.params, param.escalas, param.verificado]);
+  }, [posiciones, quotes, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching, otros.data, otros.isLoading, param.params, param.escalas, param.verificado, proyecciones]);
 }

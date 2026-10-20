@@ -48,6 +48,7 @@ export const SECCION_CATALOG: SeccionDef[] = [
   // rompe ni duplica la tarjeta.
   { key: 'rendimiento_por_anio', titulo: 'Aportes', descripcion: 'Cuánto capital aportaste y retiraste. El rendimiento está en la tarjeta Desempeño.' },
   { key: 'desempeno', titulo: 'Desempeño', descripcion: 'Ganancia en dólares, comparación con el S&P 500 y máxima caída desde el primer valor diario — el detalle y las tres preguntas están en Desempeño.' },
+  { key: 'impuestos', titulo: 'Impuestos', descripcion: 'Dónde estás frente al mínimo no imponible de Bienes Personales y cuándo lo alcanzarías según tu Forecast — todos tus portfolios juntos.' },
   { key: 'distribucion', titulo: 'Distribución', descripcion: 'Renta fija vs. variable, con objetivo editable y desvío por ticker.' },
   { key: 'cedears', titulo: 'CEDEARs', descripcion: 'Capital, concentración y diversificación sectorial.' },
   { key: 'bonos', titulo: 'Bonos', descripcion: 'Capital, TIR y duración promedio ponderada.' },
@@ -96,6 +97,7 @@ export const DEFAULT_LAYOUT: DashboardWidget[] = [
   { id: 'default-forecast', kind: 'seccion', seccion: 'forecast' },
   { id: 'default-rendimiento-por-anio', kind: 'seccion', seccion: 'rendimiento_por_anio' },
   { id: 'default-desempeno', kind: 'seccion', seccion: 'desempeno' },
+  { id: 'default-impuestos', kind: 'seccion', seccion: 'impuestos' },
   { id: 'default-distribucion', kind: 'seccion', seccion: 'distribucion' },
   { id: 'default-cedears', kind: 'seccion', seccion: 'cedears' },
   { id: 'default-bonos', kind: 'seccion', seccion: 'bonos' },
