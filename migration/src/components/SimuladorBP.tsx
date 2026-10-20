@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Card, CardHeader, Field, NumField, inputCls, fmtArs, fmtUsd, fmtPct } from './ui';
-import { calcularBienesPersonales, type EscalaBP, type ParamsBP } from '../engine/impuestos';
+import { calcularBienesPersonales, type EscalaBPResuelta, type ParamsBP } from '../engine/impuestos';
 
 const ATAJOS = [250_000, 500_000, 1_000_000, 2_000_000];
 
 // «¿Y si mi patrimonio fuera…?» — para planificar: cuánto pagarías de Bienes Personales con un patrimonio mayor, con la escala vigente
 // (la última publicada; la ley baja las alícuotas en 2026 y 2027, así que es una cota alta). Todo el cálculo vive en engine/impuestos.ts.
 export function SimuladorBP({ params, escala, mep, patrimonioUsd }: {
-  params: ParamsBP; escala: EscalaBP; mep: number; patrimonioUsd: number;
+  params: ParamsBP; escala: EscalaBPResuelta; mep: number; patrimonioUsd: number;
 }) {
   const [usd, setUsd] = useState(500_000);
   const r = calcularBienesPersonales(usd * mep, params, escala);
@@ -38,7 +38,7 @@ export function SimuladorBP({ params, escala, mep, patrimonioUsd }: {
         </div>
         <p className="text-[11px] text-ink-600">
           {r.impuesto > 0
-            ? `Con la escala ${escala.fuente.includes('2025') ? '2025' : 'vigente'} y una alícuota marginal de ${fmtPct(r.alicuotaMarginal ?? 0, 2)}. `
+            ? `Con la escala ${escala.anioEscala}${escala.estimado ? ' (estimada)' : ''} y una alícuota marginal de ${fmtPct(r.alicuotaMarginal ?? 0, 2)}. `
             : `Empezás a pagar con un patrimonio de unos ${fmtUsd(umbralUsd, 0)} (hoy tenés ${fmtUsd(patrimonioUsd, 0)}). `}
           Referencia con los parámetros publicados: la ley prevé alícuotas menores en 2026 y 2027 y el mínimo se actualiza por IPC cada año.
         </p>

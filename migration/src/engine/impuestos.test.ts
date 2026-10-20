@@ -62,11 +62,11 @@ describe('evaluarBienesPersonales', () => {
 });
 
 describe('gananciasPorAnio', () => {
-  it('con detalle cargado usa el bruto y la retención reales', () => {
+  it('con detalle cargado: monto = acreditado; usa el bruto y la retención registrados', () => {
     const r = gananciasPorAnio([cobro({ fecha: '2026-03-10', monto: 6.4, monto_bruto: 10, retencion_usd: 3, comision_usd: 0.6 })]);
-    expect(r[0]).toMatchObject({ anio: 2026, dividendosBruto: 10, retencionExterior: 3, dividendosNeto: 6.4, sinDetalle: 0, brutoEstimado: 0 });
+    expect(r[0]).toMatchObject({ anio: 2026, dividendosBruto: 10, retencionExterior: 3, dividendosNeto: 6.4, sinDetalle: 0, retencionEstimada: 0, netoEstimado: 0 });
   });
-  it('sin detalle ESTIMA el bruto desde el neto (÷ ≈ 0,639) y la retención al 30 % de ese bruto, y lo declara', () => {
+  it('sin detalle: el monto ES el bruto declarado (nunca se infla); retención y acreditado se estiman y se declaran', () => {
     expect(netoSobreBruto()).toBeCloseTo(0.645 * 0.99, 6);
     const r = gananciasPorAnio([
       cobro({ fecha: '2026-03-10', monto: 6.4, monto_bruto: 10, retencion_usd: 3 }),
@@ -74,17 +74,18 @@ describe('gananciasPorAnio', () => {
       cobro({ fecha: '2025-12-10', monto: 5 }),
     ]);
     const a26 = r.find(x => x.anio === 2026)!;
-    const estimado = 20 / (0.645 * 0.99);
-    expect(a26.brutoEstimado).toBeCloseTo(estimado, 6);
-    expect(a26.dividendosBruto).toBeCloseTo(10 + estimado, 6);
-    expect(a26.retencionExterior).toBeCloseTo(3 + estimado * 0.3, 6);
-    expect(a26.dividendosNeto).toBeCloseTo(26.4, 6);
+    expect(a26.dividendosBruto).toBeCloseTo(30, 6);                         // 10 real + 20 declarado
+    expect(a26.retencionExterior).toBeCloseTo(3 + 20 * 0.3, 6);
+    expect(a26.retencionEstimada).toBeCloseTo(6, 6);
+    expect(a26.dividendosNeto).toBeCloseTo(6.4 + 20 * 0.645 * 0.99, 6);
+    expect(a26.netoEstimado).toBeCloseTo(20 * 0.645 * 0.99, 6);
     expect(a26.sinDetalle).toBe(1);
     expect(r[0].anio).toBe(2026);   // más reciente primero
   });
-  it('el neto estimado cierra: bruto estimado × 0,639 vuelve al neto cargado', () => {
+  it('regresión: los 15 dividendos de 2026 (US$ 94,22 declarados) dan bruto 94,22, no un bruto inflado', () => {
     const [g] = gananciasPorAnio([cobro({ monto: 94.22 })]);
-    expect(g.dividendosBruto * netoSobreBruto()).toBeCloseTo(94.22, 6);
+    expect(g.dividendosBruto).toBe(94.22);
+    expect(g.dividendosNeto).toBeCloseTo(94.22 * netoSobreBruto(), 6);
   });
   it('excluye pendientes y descartados, y separa los cupones', () => {
     const r = gananciasPorAnio([

@@ -83,8 +83,8 @@ export const BACKUP_TABLAS: TablaBackup[] = [
   { table: 'transferencias', label: 'transferencias', onConflict: null, userScoped: false, restaurable: false, desde: 6 },
 ];
 
-// Tablas de la base que a propósito NO entran (con el motivo): el test de consistencia exige que toda
-// tabla pública esté en BACKUP_TABLAS o acá.
+// Tablas de la base que a propósito NO entran (con el motivo): backupMigraciones.test.ts lee las migraciones y exige que toda
+// tabla creada esté en BACKUP_TABLAS o acá.
 export const TABLAS_EXCLUIDAS: Record<string, string> = {
   precios_cache: 'cache de mercado compartido y re-descargable',
   fundamentals_cache: 'cache de mercado compartido y re-descargable',

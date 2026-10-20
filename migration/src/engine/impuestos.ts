@@ -226,19 +226,21 @@ export function calcularBienesPersonales(patrimonioArs: number, params: Pick<Par
 // ── Ganancias: renta del exterior (dividendos de CEDEARs/ETFs) ───────────────
 export interface GananciasAnio {
   anio: number;
-  dividendosBruto: number;     // USD, antes de retención y comisiones (incluye el bruto ESTIMADO de los cobros sin detalle)
-  retencionExterior: number;   // USD retenidos en el exterior (EE.UU. 30 %), real o estimada
-  dividendosNeto: number;      // USD acreditados
+  dividendosBruto: number;     // USD, antes de retención y comisiones
+  retencionExterior: number;   // USD retenidos en el exterior (EE.UU. 30 %): real, o ESTIMADA en los cobros sin detalle
+  dividendosNeto: number;      // USD acreditados: real, o ESTIMADO en los cobros sin detalle
   cobros: number;
-  sinDetalle: number;          // cobros sin bruto cargado: su bruto y su retención se ESTIMAN desde el neto
-  brutoEstimado: number;       // USD del bruto que es estimación (parte de dividendosBruto)
+  sinDetalle: number;          // cobros sin costos cargados: su monto ya es el BRUTO declarado, retención y neto se estiman
+  retencionEstimada: number;   // USD de la retención que es estimación (parte de retencionExterior)
+  netoEstimado: number;        // USD del acreditado que es estimación (parte de dividendosNeto)
   intereses: number;           // USD de cupones (ON/bonos): informativo
 }
 
 /**
  * Fracción del bruto que llega como neto con las tasas generales (retención EE.UU. 30 % + depositaria 5,5 % + comisión del broker 1 %
- * sobre lo que queda ≈ 0,639). Sirve para recuperar el bruto de un cobro viejo cargado solo por su neto; el dato real del broker
- * siempre lo pisa. Si un cobro se hubiera cargado ya por su bruto, esto lo SOBRESTIMA: por eso se marca como estimado.
+ * sobre lo que queda ≈ 0,639). Los cobros anteriores al detalle de costos (migración 0055) se cargaron con el pago declarado por el
+ * proveedor, que es el BRUTO («Bruto: revisá retención…» en su nota), así que de ahí se estiman la retención y lo acreditado. El dato
+ * real del broker siempre lo reemplaza.
  */
 export function netoSobreBruto(): number {
   const t = tasasPorDefecto('dividendo');
@@ -249,7 +251,7 @@ export function gananciasPorAnio(cobros: Cobro[]): GananciasAnio[] {
   const m = new Map<number, GananciasAnio>();
   const get = (anio: number) => {
     let g = m.get(anio);
-    if (!g) { g = { anio, dividendosBruto: 0, retencionExterior: 0, dividendosNeto: 0, cobros: 0, sinDetalle: 0, brutoEstimado: 0, intereses: 0 }; m.set(anio, g); }
+    if (!g) { g = { anio, dividendosBruto: 0, retencionExterior: 0, dividendosNeto: 0, cobros: 0, sinDetalle: 0, retencionEstimada: 0, netoEstimado: 0, intereses: 0 }; m.set(anio, g); }
     return g;
   };
   const fraccion = netoSobreBruto();
@@ -262,17 +264,20 @@ export function gananciasPorAnio(cobros: Cobro[]): GananciasAnio[] {
     if (c.tipo === 'interes') { get(anio).intereses += Number(c.monto) || 0; continue; }
     if (c.tipo !== 'dividendo') continue;
     const g = get(anio);
-    const neto = Number(c.monto) || 0;
+    const monto = Number(c.monto) || 0;
     g.cobros += 1;
-    g.dividendosNeto += neto;
     if (c.monto_bruto != null) {
+      // Con detalle: `monto` es lo acreditado y el bruto/retención son los registrados.
       g.dividendosBruto += Number(c.monto_bruto);
+      g.dividendosNeto += monto;
       g.retencionExterior += Number(c.retencion_usd) || 0;
     } else {
-      const bruto = neto / fraccion;
-      g.dividendosBruto += bruto;
-      g.brutoEstimado += bruto;
-      g.retencionExterior += bruto * retencionGeneral;
+      // Sin detalle: `monto` es el bruto declarado; retención y acreditado se estiman con las tasas generales.
+      g.dividendosBruto += monto;
+      g.retencionExterior += monto * retencionGeneral;
+      g.dividendosNeto += monto * fraccion;
+      g.retencionEstimada += monto * retencionGeneral;
+      g.netoEstimado += monto * fraccion;
       g.sinDetalle += 1;
     }
   }

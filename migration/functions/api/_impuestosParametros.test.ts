@@ -15,6 +15,7 @@ const existentes2025 = [
   { anio: 2025, clave: 'bp_escala', valor: OFICIAL_2025.escala, estimado: false },
 ];
 const ipc2026 = respuesta([['2025-09-01', 7000], ['2025-10-01', 7100], ['2026-10-01', 9500]]);
+const HOY = '2026-11-20';
 
 describe('parsearIPC / factorIPC', () => {
   it('lee la respuesta de la API de series y calcula octubre contra octubre', () => {
@@ -56,7 +57,7 @@ describe('escalar', () => {
 describe('filasEstimadas', () => {
   it('con la base oficial del año anterior y el IPC publicado devuelve las dos filas, marcadas estimadas', async () => {
     const obtener = vi.fn().mockResolvedValue(ipc2026);
-    const filas = await filasEstimadas(2026, existentes2025, obtener);
+    const filas = await filasEstimadas(2026, existentes2025, obtener, HOY);
     expect(filas.map(f => f.clave)).toEqual(['bp_params', 'bp_escala']);
     expect(filas.every(f => f.estimado && !f.verificado && f.anio === 2026)).toBe(true);
     expect((filas[0].valor as { minimoNoImponible: number }).minimoNoImponible).toBeCloseTo(384_728_044.57 * 9500 / 7100, 1);
@@ -66,30 +67,38 @@ describe('filasEstimadas', () => {
   it('si ya hay una fila de ese año (oficial o estimada) no pide nada', async () => {
     const obtener = vi.fn();
     const ya = [...existentes2025, { anio: 2026, clave: 'bp_params', valor: OFICIAL_2025.params, estimado: true }];
-    expect(await filasEstimadas(2026, ya, obtener)).toEqual([]);
+    expect(await filasEstimadas(2026, ya, obtener, HOY)).toEqual([]);
     expect(obtener).not.toHaveBeenCalled();
   });
   it('no usa como base una fila estimada (no se acumulan estimaciones)', async () => {
     const obtener = vi.fn().mockResolvedValue(ipc2026);
     const soloEstimadas = existentes2025.map(f => ({ ...f, estimado: true }));
-    expect(await filasEstimadas(2026, soloEstimadas, obtener)).toEqual([]);
+    expect(await filasEstimadas(2026, soloEstimadas, obtener, HOY)).toEqual([]);
     expect(obtener).not.toHaveBeenCalled();
   });
   it('sin base cargada o con base rota no hace nada', async () => {
     const obtener = vi.fn();
-    expect(await filasEstimadas(2026, [], obtener)).toEqual([]);
-    expect(await filasEstimadas(2026, [{ anio: 2025, clave: 'bp_params', valor: { x: 1 }, estimado: false }, existentes2025[1]], obtener)).toEqual([]);
+    expect(await filasEstimadas(2026, [], obtener, HOY)).toEqual([]);
+    expect(await filasEstimadas(2026, [{ anio: 2025, clave: 'bp_params', valor: { x: 1 }, estimado: false }, existentes2025[1]], obtener, HOY)).toEqual([]);
     expect(obtener).not.toHaveBeenCalled();
   });
   it('si INDEC todavía no publicó octubre, no escribe nada', async () => {
     const aun = respuesta([['2025-10-01', 7100], ['2026-09-01', 9300]]);
-    expect(await filasEstimadas(2026, existentes2025, async () => aun)).toEqual([]);
+    expect(await filasEstimadas(2026, existentes2025, async () => aun, HOY)).toEqual([]);
   });
   it('un factor absurdo (dato roto) no se guarda', async () => {
     const roto = respuesta([['2025-10-01', 7100], ['2026-10-01', 7100 * 50]]);
-    expect(await filasEstimadas(2026, existentes2025, async () => roto)).toEqual([]);
+    expect(await filasEstimadas(2026, existentes2025, async () => roto, HOY)).toEqual([]);
   });
   it('si el fetch falla, la excepción sube (el cron la atrapa y reintenta mañana)', async () => {
-    await expect(filasEstimadas(2026, existentes2025, async () => { throw new Error('red'); })).rejects.toThrow('red');
+    await expect(filasEstimadas(2026, existentes2025, async () => { throw new Error('red'); }, HOY)).rejects.toThrow('red');
+  });
+
+  it('antes del 1/11 no consulta a INDEC aunque falte la fila (no hay IPC de octubre todavía)', async () => {
+    const obtener = vi.fn().mockResolvedValue(ipc2026);
+    expect(await filasEstimadas(2026, existentes2025, obtener, '2026-10-31')).toEqual([]);
+    expect(await filasEstimadas(2026, existentes2025, obtener, '2026-03-01')).toEqual([]);
+    expect(obtener).not.toHaveBeenCalled();
+    expect(await filasEstimadas(2026, existentes2025, obtener, '2026-11-01')).toHaveLength(2);
   });
 });

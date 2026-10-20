@@ -219,7 +219,7 @@ export const onRequestGet = guard(async ({ request, env }) => {
       const r = await fetch(urlIPC(desde), { headers: { Accept: 'application/json' } });
       if (!r.ok) throw new Error(`INDEC ${r.status}`);
       return r.json();
-    });
+    }, hoy);
     if (filasParam.length) await sbUpsert(env, 'impuestos_parametros', filasParam.map(f => ({ ...f, actualizado: new Date().toISOString() })), 'anio,clave');
   } catch { /* sin parámetros estimados hoy: mañana el cron reintenta */ }
 
