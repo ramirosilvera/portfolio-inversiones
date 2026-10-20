@@ -156,7 +156,7 @@ export function ImpuestosPage() {
                 {ganancias.map(g => (
                   <tr key={g.anio}>
                     <td className="px-4 py-2 font-semibold text-ink-900">{g.anio}</td>
-                    <td className="text-right px-3 tnum" title={g.sinDetalle > 0 ? `${g.sinDetalle} cobro(s) sin bruto cargado: se muestra el monto declarado` : undefined}>
+                    <td className="text-right px-3 tnum" title={g.sinDetalle > 0 ? `${g.sinDetalle} cobro(s) sin bruto cargado: bruto y retención ESTIMADOS desde el neto (${fmtUsd(g.brutoEstimado)} del bruto)` : undefined}>
                       {fmtUsd(g.dividendosBruto)}{g.sinDetalle > 0 && <span className="text-warn"> *</span>}
                     </td>
                     <td className="text-right px-3 tnum">{g.retencionExterior > 0 ? fmtUsd(g.retencionExterior) : '—'}</td>
@@ -174,7 +174,7 @@ export function ImpuestosPage() {
           <li><b className="text-ink-800">Dividendos</b>: se declaran como renta del exterior. La alícuota (escala progresiva vs. 15 %) y cómo se computa como crédito la retención del 30 % de EE.UU. figuran con criterios distintos: a definir con tu contador.</li>
           <li><b className="text-ink-800">Cupones de ON y bonos locales</b>: suelen estar exentos para personas humanas; se muestran solo como dato.</li>
           <li>Ganancias es personal: si tenés otros ingresos (sueldo, alquileres), la obligación y el monto dependen del total, que la app no conoce.</li>
-          {ganancias.some(g => g.sinDetalle > 0) && <li><span className="text-warn">*</span> Hay cobros sin bruto/retención cargados (anteriores al detalle de costos): ahí el bruto es el monto declarado.</li>}
+          {ganancias.some(g => g.sinDetalle > 0) && <li><span className="text-warn">*</span> Hay cobros cargados solo por su neto (anteriores al detalle de costos): su bruto y su retención se ESTIMAN con las tasas generales (30 % EE.UU. + 5,5 % depositaria + 1 % broker). Si el monto cargado ya era el bruto, queda sobrestimado; el dato real del broker lo reemplaza.</li>}
         </ul>
       </Card>
 
