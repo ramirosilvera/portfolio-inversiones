@@ -6,6 +6,7 @@ import {
 } from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
 import { armarSnapshots, type PosicionValuable, type PrecioCache, type AporteMin } from '../_snapshots';
+import { filasEstimadas, urlIPC } from '../_impuestosParametros';
 
 // GET /api/cron/refresh-all
 // Calienta TODAS las caches de mercado en una sola pasada server-side, para que la data se
@@ -208,6 +209,19 @@ export const onRequestGet = guard(async ({ request, env }) => {
     const mep = fx.find(f => f.clave === 'dolar_mep')?.valor ?? null, ccl = fx.find(f => f.clave === 'dolar_ccl')?.valor ?? null;
     if (mep != null || ccl != null) await sbUpsert(env, 'fx_historico', [{ fecha: hoy, mep, ccl, fuente: 'cron' }], 'fecha');
   } catch { /* sin snapshot hoy: la app lo graba al abrirse y mañana el cron reintenta */ }
+
+  // 4c) Parámetros de Bienes Personales del año en curso, estimados con el IPC de INDEC cuando ya publicó octubre (mediados de noviembre),
+  // antes de que ARCA publique la oficial. Solo escribe si NO hay fila de ese año (nunca pisa una oficial) y como mucho un fetch por
+  // corrida; falla aislada: la app cae a los parámetros del código (ver functions/api/_impuestosParametros.ts).
+  try {
+    const existentes = await sbSelect<{ anio: number; clave: string; valor: unknown; estimado: boolean }>(env, 'impuestos_parametros', 'select=anio,clave,valor,estimado');
+    const filasParam = await filasEstimadas(Number(hoy.slice(0, 4)), existentes, async desde => {
+      const r = await fetch(urlIPC(desde), { headers: { Accept: 'application/json' } });
+      if (!r.ok) throw new Error(`INDEC ${r.status}`);
+      return r.json();
+    });
+    if (filasParam.length) await sbUpsert(env, 'impuestos_parametros', filasParam.map(f => ({ ...f, actualizado: new Date().toISOString() })), 'anio,clave');
+  } catch { /* sin parámetros estimados hoy: mañana el cron reintenta */ }
 
   // 5) Fundamentals al final (ver orden arriba).
   for (const p of fund) if (await hit(p)) ok++;

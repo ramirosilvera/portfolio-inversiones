@@ -58,5 +58,6 @@ describe('registro de tablas del backup', () => {
 
   it('las tablas compartidas escritas por el cron se excluyen con motivo (no quedan sin declarar)', () => {
     expect(TABLAS_EXCLUIDAS.fx_historico).toMatch(/ordenes_ejecutadas\.mep/);
+    expect(TABLAS_EXCLUIDAS.impuestos_parametros).toBeTruthy();   // los parámetros los regenera el servidor: no son datos del usuario
   });
 });

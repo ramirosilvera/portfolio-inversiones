@@ -32,12 +32,32 @@ export const BIENES_PERSONALES: Record<number, ParamsBP> = {
 
 export interface ParamsBPResueltos extends ParamsBP { anioParams: number; estimado: boolean }
 
-export function paramsBP(anio: number): ParamsBPResueltos | null {
-  const exacto = BIENES_PERSONALES[anio];
-  if (exacto) return { ...exacto, anioParams: anio, estimado: false };
-  const previos = Object.keys(BIENES_PERSONALES).map(Number).filter(a => a < anio).sort((a, b) => b - a);
-  if (previos.length === 0) return null;
-  return { ...BIENES_PERSONALES[previos[0]], anioParams: previos[0], estimado: true };
+// Fila de parámetros que viene de la base (tabla impuestos_parametros, la mantiene el servidor): `estimado` = calculada con el IPC
+// mientras ARCA no publica la oficial. Una fila oficial (estimado = false) pisa a la del código; una estimada nunca pisa a la del código.
+export type Fila<T> = T & { estimado?: boolean };
+
+function resolver<T extends object>(codigo: Record<number, T>, extra: Record<number, Fila<T>>, anio: number): { fila: T; anio: number; estimado: boolean } | null {
+  const candidato = (a: number): { fila: T; estimado: boolean } | null => {
+    const e = extra[a];
+    if (e && !e.estimado) return { fila: e, estimado: false };
+    if (codigo[a]) return { fila: codigo[a], estimado: false };
+    if (e) return { fila: e, estimado: true };
+    return null;
+  };
+  const exacto = candidato(anio);
+  if (exacto) return { ...exacto, anio };
+  // Sin dato del año: el último conocido, siempre marcado estimado (el mínimo sube por IPC, así que el viejo es más bajo: cota conservadora).
+  const previos = [...new Set([...Object.keys(codigo), ...Object.keys(extra)].map(Number))].filter(a => a < anio).sort((a, b) => b - a);
+  for (const a of previos) {
+    const c = candidato(a);
+    if (c) return { fila: c.fila, anio: a, estimado: true };
+  }
+  return null;
+}
+
+export function paramsBP(anio: number, extra: Record<number, Fila<ParamsBP>> = {}): ParamsBPResueltos | null {
+  const r = resolver(BIENES_PERSONALES, extra, anio);
+  return r ? { ...r.fila, anioParams: r.anio, estimado: r.estimado } : null;
 }
 
 export interface ItemPatrimonio { tipo: AssetType; valorUsd: number }
@@ -92,6 +112,38 @@ export function evaluarBienesPersonales(patrimonioUsd: number, mep: number, para
   };
 }
 
+// ── Parámetros que mantiene el servidor (tabla impuestos_parametros) ─────────
+export interface FilaParametroDB { anio: number; clave: string; valor: unknown; estimado: boolean; verificado: boolean; fuente: string }
+export interface ParametrosImpuestos {
+  params: Record<number, Fila<ParamsBP>>;
+  escalas: Record<number, Fila<EscalaBP>>;
+  verificado: Record<number, boolean>;   // el año tiene ambas filas contrastadas con ARCA
+}
+
+const esNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const esTramo = (t: unknown): t is TramoBP => {
+  const x = t as TramoBP;
+  return !!x && esNum(x.fijo) && esNum(x.alicuota) && (x.hasta === null || esNum(x.hasta));
+};
+
+/** Filas de la base → mapas por año. Una fila mal formada se descarta (no rompe el cálculo: se cae a las constantes del código). */
+export function parametrosDesdeFilas(rows: FilaParametroDB[]): ParametrosImpuestos {
+  const params: ParametrosImpuestos['params'] = {};
+  const escalas: ParametrosImpuestos['escalas'] = {};
+  const ver: Record<number, { p: boolean; e: boolean }> = {};
+  for (const r of rows) {
+    const v = r.valor as Record<string, unknown> | null;
+    if (r.clave === 'bp_params' && v && esNum(v.minimoNoImponible) && esNum(v.casaHabitacion) && v.minimoNoImponible > 0) {
+      params[r.anio] = { minimoNoImponible: v.minimoNoImponible, casaHabitacion: v.casaHabitacion, fuente: r.fuente, estimado: !!r.estimado };
+      (ver[r.anio] ??= { p: false, e: false }).p = !!r.verificado;
+    } else if (r.clave === 'bp_escala' && v && Array.isArray(v.tramos) && v.tramos.length > 0 && v.tramos.every(esTramo)) {
+      escalas[r.anio] = { tramos: v.tramos as TramoBP[], fuente: r.fuente, estimado: !!r.estimado };
+      (ver[r.anio] ??= { p: false, e: false }).e = !!r.verificado;
+    }
+  }
+  return { params, escalas, verificado: Object.fromEntries(Object.entries(ver).map(([a, x]) => [a, x.p && x.e])) };
+}
+
 // ── Otros bienes (fuera de los portfolios) ───────────────────────────────────
 export type TipoOtroBien = 'vehiculo' | 'inmueble' | 'casa_habitacion' | 'efectivo' | 'exterior' | 'otro';
 export type BaseValuacion = 'valuacion_arca' | 'seguro' | 'mercado' | 'costo';
@@ -144,12 +196,9 @@ export const ESCALA_BP: Record<number, EscalaBP> = {
 
 export interface EscalaBPResuelta extends EscalaBP { anioEscala: number; estimado: boolean }
 
-export function escalaBP(anio: number): EscalaBPResuelta | null {
-  const exacta = ESCALA_BP[anio];
-  if (exacta) return { ...exacta, anioEscala: anio, estimado: false };
-  const previos = Object.keys(ESCALA_BP).map(Number).filter(a => a < anio).sort((a, b) => b - a);
-  if (previos.length === 0) return null;
-  return { ...ESCALA_BP[previos[0]], anioEscala: previos[0], estimado: true };
+export function escalaBP(anio: number, extra: Record<number, Fila<EscalaBP>> = {}): EscalaBPResuelta | null {
+  const r = resolver(ESCALA_BP, extra, anio);
+  return r ? { ...r.fila, anioEscala: r.anio, estimado: r.estimado } : null;
 }
 
 export interface ImpuestoBP {

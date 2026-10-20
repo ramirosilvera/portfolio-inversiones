@@ -90,6 +90,7 @@ export const TABLAS_EXCLUIDAS: Record<string, string> = {
   fundamentals_cache: 'cache de mercado compartido y re-descargable',
   macro_cache: 'cache de mercado compartido y re-descargable',
   dividendos_cache: 'cache de mercado compartido y re-descargable',
+  impuestos_parametros: 'parámetros de ARCA/INDEC que mantiene el servidor (compartidos, sin usuario); se regeneran con el cron y las constantes del código',
   fx_historico: 'dólar MEP/CCL diario que graba el cron (dato de mercado compartido, sin usuario); el MEP que importa de cada orden queda copiado en ordenes_ejecutadas.mep',
   beta_cache: 'cache de mercado compartido y re-descargable',
   precio_historico_cache: 'cache de mercado compartido y re-descargable',
