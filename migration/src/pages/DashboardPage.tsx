@@ -43,7 +43,7 @@ import { UpdatedAt } from '../components/UpdatedAt';
 import { AlertaSnapshotServidor } from '../components/AlertaSnapshotServidor';
 import { AlertaImpuestos } from '../components/AlertaImpuestos';
 import { useImpuestos } from '../hooks/useImpuestos';
-import { textoLlegadaMinimo, mesAnio } from '../components/LlegadaMinimoCard';
+import { ImpuestosResumenVista } from '../components/ImpuestosResumenCard';
 import { useDesempeno } from '../hooks/useDesempeno';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
@@ -1101,22 +1101,9 @@ function ImpuestosResumen({ personalizando }: { personalizando: boolean }) {
   const t = useImpuestos();
   const { bp, llegada, impuestoBP } = t;
   if (t.cargando || !bp || !t.minimoUsd) return null;
-  const totalUsd = t.mep ? bp.patrimonioArs / t.mep : 0;
-  const right = <span className="text-[11px] text-celeste-600">Ver detalle →</span>;
-  const nivelTone = bp.nivel === 'neg' ? 'text-neg' : bp.nivel === 'warn' ? 'text-warn' : 'text-pos';
   return (
-    <Card>
-      <CardHeader title="Impuestos" sub="Bienes Personales · todos tus portfolios juntos · al MEP de hoy"
-        right={personalizando ? right : <Link to="/impuestos" className="hover:underline">{right}</Link>} />
-      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <Stat label="Vs. el mínimo no imponible" value={<span className={nivelTone}>{fmtPct(bp.ratio, 0)}</span>}
-          hint={`${fmtUsd(totalUsd, 0)} de ${fmtUsd(t.minimoUsd, 0)} (mínimo ${fmtArsCompact(bp.minimoArs)})`} />
-        <Stat label="Lo alcanzarías" value={textoLlegadaMinimo(llegada)}
-          hint={llegada?.meses != null && !llegada.yaSupera ? `${mesAnio(llegada.fecha)} · en ≈ ${llegada.anios!.toLocaleString('es-AR')} años, según tu Forecast` : 'según tu Forecast, con el mínimo en dólares de hoy'} />
-        <Stat label="Pagarías hoy" value={impuestoBP ? fmtArs(impuestoBP.impuesto) : '—'}
-          hint={impuestoBP && impuestoBP.impuesto > 0 ? `Alícuota marginal ${fmtPct(impuestoBP.alicuotaMarginal ?? 0, 2)}` : 'No superás el mínimo: no corresponde pagar'} />
-      </div>
-    </Card>
+    <ImpuestosResumenVista ratio={bp.ratio} nivel={bp.nivel} totalUsd={t.mep ? bp.patrimonioArs / t.mep : 0} minimoUsd={t.minimoUsd}
+      llegada={llegada} impuesto={impuestoBP ? impuestoBP.impuesto : null} alicuotaMarginal={impuestoBP?.alicuotaMarginal ?? null} personalizando={personalizando} />
   );
 }
 
