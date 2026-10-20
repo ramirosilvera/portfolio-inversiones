@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { usePortfolios } from './usePortfolios';
 import { usePatrimonioOtros } from './usePatrimonioOtros';
+import { useParametrosImpuestos } from './useParametrosImpuestos';
 import { useAllPosiciones, useQuotes, useMacro } from './usePosiciones';
 import { unitValueUSD } from '../lib/valuation';
 import {
@@ -20,6 +21,7 @@ export function useImpuestos() {
   const { data: allPos = [], isLoading: cargandoPos } = useAllPosiciones(true);
   const { data: macro = {} } = useMacro();
   const otros = usePatrimonioOtros();
+  const param = useParametrosImpuestos();
 
   // RLS aísla por usuario, no por estado: se filtran los portfolios archivados (igual que Consolidado).
   const activeIds = useMemo(() => new Set(portfolios.map(p => p.id)), [portfolios]);
@@ -59,8 +61,8 @@ export function useImpuestos() {
       return { tipo: p.tipo, valorUsd };
     });
     const patrimonio = patrimonioImponible(items);
-    const params = paramsBP(anioActual);
-    const escala = escalaBP(anioActual);
+    const params = paramsBP(anioActual, param.params);
+    const escala = escalaBP(anioActual, param.escalas);
     const otrosArs = params ? patrimonioOtrosArs(otros.data, params) : 0;
     const bp = params && mep ? evaluarBienesPersonales(patrimonio.total, mep, params, otrosArs) : null;
     const bpProbable = params && mep ? evaluarBienesPersonales(patrimonio.probable, mep, params, otrosArs) : null;
@@ -70,10 +72,10 @@ export function useImpuestos() {
     const dividendosAnioFiscal = ganancias.find(g => g.anio === ddjj.anioFiscal)?.dividendosBruto ?? 0;
     const alertas = alertasImpuestos({ bp, bpEstimado: params?.estimado ?? false, ddjj, dividendosAnioFiscal });
     return {
-      portfolios, porPortfolio, patrimonio, params, escala, otros, otrosArs, bp, bpProbable, impuestoBP, ganancias, ddjj, dividendosAnioFiscal, alertas,
+      portfolios, porPortfolio, patrimonio, params, escala, parametrosVerificados: !!param.verificado[params?.anioParams ?? 0], otros, otrosArs, bp, bpProbable, impuestoBP, ganancias, ddjj, dividendosAnioFiscal, alertas,
       mep, hoy, anioActual, sinPrecio,
       cargando: cargandoPos || cargandoCobros || qQuotes.isLoading || otros.isLoading,
       preciosPendientes: qQuotes.isFetching && Object.keys(quotes).length === 0,
     };
-  }, [posiciones, quotes, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching, otros.data, otros.isLoading]);
+  }, [posiciones, quotes, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching, otros.data, otros.isLoading, param.params, param.escalas, param.verificado]);
 }

@@ -12,6 +12,12 @@ const NIVEL_TXT: Record<NivelBP, { label: string; tone: 'pos' | 'gray' | 'warn' 
   neg: { label: 'Supera el mínimo', tone: 'neg', barra: 'bg-neg' },
 };
 
+function textoParametros(anioParams: number, estimado: boolean, anioActual: number, verificado: boolean): string {
+  if (!estimado) return `Mínimo no imponible del período ${anioParams}${verificado ? ' (contrastado con ARCA)' : ' (según fuentes profesionales; falta contrastarlo con la tabla de ARCA)'}.`;
+  if (anioParams === anioActual) return `Mínimo no imponible ${anioParams} ESTIMADO con el IPC de INDEC; ARCA publica el oficial en ${anioActual + 1}.`;
+  return `Mínimo no imponible del período ${anioParams} (el de ${anioActual} se estima con el IPC de INDEC desde mediados de noviembre y ARCA lo publica en ${anioActual + 1}; el real será más alto).`;
+}
+
 const fecha = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
 
 export function ImpuestosPage() {
@@ -54,7 +60,7 @@ export function ImpuestosPage() {
       <Card>
         <CardHeader
           title="Bienes Personales"
-          sub={params ? `Mínimo no imponible del período ${params.anioParams}${params.estimado ? ` (el de ${t.anioActual} se publica en ${t.anioActual + 1}: se actualiza por IPC, así que el real será más alto)` : ''}.` : undefined}
+          sub={params ? textoParametros(params.anioParams, params.estimado, t.anioActual, t.parametrosVerificados) : undefined}
           right={nivel ? <Badge tone={nivel.tone}>{nivel.label}</Badge> : undefined}
         />
         {!bp ? (

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   paramsBP, patrimonioImponible, evaluarBienesPersonales, gananciasPorAnio, proximaDDJJ, alertasImpuestos,
-  BIENES_PERSONALES, DDJJ_AVISO_DIAS, ESCALA_BP, escalaBP, calcularBienesPersonales, patrimonioOtrosArs, esProvisoria,
+  BIENES_PERSONALES, DDJJ_AVISO_DIAS, ESCALA_BP, escalaBP, calcularBienesPersonales, patrimonioOtrosArs, esProvisoria, parametrosDesdeFilas,
 } from './impuestos';
 import type { Cobro } from '../types/domain';
 
@@ -201,5 +201,58 @@ describe('escala y cálculo de Bienes Personales', () => {
     expect(e.anioEscala).toBe(2025);
     expect(e.estimado).toBe(true);
     expect(escalaBP(2020)).toBeNull();
+  });
+});
+
+describe('parámetros que vienen de la base', () => {
+  const fila = (o: Record<string, unknown>) => ({ anio: 2026, clave: 'bp_params', valor: { minimoNoImponible: 500_000_000, casaHabitacion: 1_700_000_000 }, estimado: true, verificado: false, fuente: 'IPC', ...o });
+  const tramos = [{ hasta: 10, fijo: 0, alicuota: 0.005 }, { hasta: null, fijo: 5, alicuota: 0.01 }];
+
+  it('una fila ESTIMADA del año pedido se usa y queda marcada estimada', () => {
+    const { params } = parametrosDesdeFilas([fila({})]);
+    const p = paramsBP(2026, params)!;
+    expect(p.minimoNoImponible).toBe(500_000_000);
+    expect(p.estimado).toBe(true);
+    expect(p.anioParams).toBe(2026);
+  });
+  it('una fila OFICIAL de la base pisa a la del código para ese año', () => {
+    const { params } = parametrosDesdeFilas([fila({ anio: 2025, estimado: false, valor: { minimoNoImponible: 400_000_000, casaHabitacion: 1 } })]);
+    const p = paramsBP(2025, params)!;
+    expect(p.minimoNoImponible).toBe(400_000_000);
+    expect(p.estimado).toBe(false);
+  });
+  it('una fila ESTIMADA nunca pisa a la del código', () => {
+    const { params } = parametrosDesdeFilas([fila({ anio: 2025, estimado: true, valor: { minimoNoImponible: 1, casaHabitacion: 1 } })]);
+    expect(paramsBP(2025, params)!.minimoNoImponible).toBe(BIENES_PERSONALES[2025].minimoNoImponible);
+  });
+  it('sin fila de 2027, usa la última conocida (la estimada de 2026) y la marca estimada', () => {
+    const { params } = parametrosDesdeFilas([fila({})]);
+    const p = paramsBP(2027, params)!;
+    expect(p.anioParams).toBe(2026);
+    expect(p.estimado).toBe(true);
+  });
+  it('la escala de la base se usa igual que la del código', () => {
+    const { escalas } = parametrosDesdeFilas([fila({ clave: 'bp_escala', valor: { tramos } })]);
+    const e = escalaBP(2026, escalas)!;
+    expect(e.estimado).toBe(true);
+    expect(calcularBienesPersonales(20, { minimoNoImponible: 0 }, e).impuesto).toBeCloseTo(5 + 0.01 * 10, 6);
+  });
+  it('descarta filas mal formadas en vez de romper (se cae al código)', () => {
+    const r = parametrosDesdeFilas([
+      fila({ valor: { minimoNoImponible: 'x', casaHabitacion: 1 } }),
+      fila({ valor: { minimoNoImponible: 0, casaHabitacion: 1 } }),
+      fila({ clave: 'bp_escala', valor: { tramos: [{ hasta: 'a', fijo: 1, alicuota: 1 }] } }),
+      fila({ clave: 'bp_escala', valor: { tramos: [] } }),
+      fila({ clave: 'otra', valor: null }),
+    ]);
+    expect(r.params).toEqual({});
+    expect(r.escalas).toEqual({});
+    expect(paramsBP(2026, r.params)!.anioParams).toBe(2025);
+  });
+  it('verificado solo si el año tiene AMBAS filas contrastadas', () => {
+    const una = parametrosDesdeFilas([fila({ anio: 2025, estimado: false, verificado: true })]);
+    expect(una.verificado[2025]).toBe(false);
+    const ambas = parametrosDesdeFilas([fila({ anio: 2025, estimado: false, verificado: true }), fila({ anio: 2025, clave: 'bp_escala', valor: { tramos }, estimado: false, verificado: true })]);
+    expect(ambas.verificado[2025]).toBe(true);
   });
 });
