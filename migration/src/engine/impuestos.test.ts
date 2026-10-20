@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   paramsBP, patrimonioImponible, evaluarBienesPersonales, gananciasPorAnio, proximaDDJJ, alertasImpuestos,
-  BIENES_PERSONALES, DDJJ_AVISO_DIAS,
+  BIENES_PERSONALES, DDJJ_AVISO_DIAS, ESCALA_BP, escalaBP, calcularBienesPersonales, patrimonioOtrosArs, esProvisoria,
 } from './impuestos';
 import type { Cobro } from '../types/domain';
 
@@ -121,5 +121,85 @@ describe('alertasImpuestos', () => {
     expect(ddjjCerca.dias).toBeLessThanOrEqual(DDJJ_AVISO_DIAS);
     expect(alertasImpuestos({ bp: evalBp(60_000), bpEstimado: false, ddjj: ddjjCerca, dividendosAnioFiscal: 150 })).toHaveLength(1);
     expect(alertasImpuestos({ bp: evalBp(60_000), bpEstimado: false, ddjj: ddjjCerca, dividendosAnioFiscal: 0 })).toHaveLength(0);
+  });
+});
+
+describe('evaluarBienesPersonales con otros bienes', () => {
+  const params = { minimoNoImponible: 400_000_000, casaHabitacion: 0, fuente: 't' };
+  it('suma los bienes en pesos al patrimonio de los portfolios', () => {
+    const e = evaluarBienesPersonales(60_000, 1500, params, 27_000_000)!;   // 90 M + 27 M
+    expect(e.patrimonioArs).toBe(117_000_000);
+    expect(e.ratio).toBeCloseTo(0.2925, 4);
+    expect(e.margenUsd).toBeCloseTo((400_000_000 - 117_000_000) / 1500, 4);
+  });
+  it('un valor negativo de otros bienes no resta', () => {
+    expect(evaluarBienesPersonales(60_000, 1500, params, -5)!.patrimonioArs).toBe(90_000_000);
+  });
+});
+
+describe('patrimonioOtrosArs', () => {
+  const params = { casaHabitacion: 1_346_548_155.99 };
+  it('suma vehículos y demás; la casa-habitación exenta no entra', () => {
+    expect(patrimonioOtrosArs([
+      { tipo: 'vehiculo', valor_ars: 27_000_000, base: 'seguro' },
+      { tipo: 'casa_habitacion', valor_ars: 200_000_000, base: 'mercado' },
+    ], params)).toBe(27_000_000);
+  });
+  it('la casa-habitación que supera el umbral entra completa (el umbral no se resta)', () => {
+    expect(patrimonioOtrosArs([{ tipo: 'casa_habitacion', valor_ars: 1_500_000_000, base: 'mercado' }], params)).toBe(1_500_000_000);
+  });
+  it('ignora valores en cero o inválidos', () => {
+    expect(patrimonioOtrosArs([{ tipo: 'otro', valor_ars: 0, base: 'costo' }, { tipo: 'otro', valor_ars: NaN, base: 'costo' }], params)).toBe(0);
+  });
+  it('solo la valuación de ARCA no es provisoria', () => {
+    expect(esProvisoria('valuacion_arca')).toBe(false);
+    expect(esProvisoria('seguro')).toBe(true);
+  });
+});
+
+describe('escala y cálculo de Bienes Personales', () => {
+  const params = { minimoNoImponible: BIENES_PERSONALES[2025].minimoNoImponible };
+  const escala = ESCALA_BP[2025];
+
+  it('por debajo del mínimo no se paga nada', () => {
+    const r = calcularBienesPersonales(110_000_000, params, escala);
+    expect(r).toEqual({ excedente: 0, impuesto: 0, alicuotaMarginal: null, alicuotaEfectiva: 0 });
+  });
+  it('justo en el mínimo tampoco', () => {
+    expect(calcularBienesPersonales(params.minimoNoImponible, params, escala).impuesto).toBe(0);
+  });
+  it('tramo 1: 0,5 % del excedente', () => {
+    const r = calcularBienesPersonales(params.minimoNoImponible + 10_000_000, params, escala);
+    expect(r.impuesto).toBeCloseTo(50_000, 2);
+    expect(r.alicuotaMarginal).toBe(0.005);
+  });
+  it('la escala es continua: el fijo de cada tramo es el impuesto acumulado de los anteriores', () => {
+    const [t1, t2, t3] = escala.tramos;
+    expect(t2.fijo).toBeCloseTo(t1.alicuota * t1.hasta!, 1);
+    expect(t3.fijo).toBeCloseTo(t2.fijo + t2.alicuota * (t2.hasta! - t1.hasta!), 1);
+  });
+  it('tramo 2 y 3 con el fijo + alícuota sobre el piso del tramo', () => {
+    const e2 = 80_000_000;
+    const r2 = calcularBienesPersonales(params.minimoNoImponible + e2, params, escala);
+    expect(r2.impuesto).toBeCloseTo(263_321.42 + 0.0075 * (e2 - 52_664_283.73), 2);
+    expect(r2.alicuotaMarginal).toBe(0.0075);
+    const e3 = 200_000_000;
+    const r3 = calcularBienesPersonales(params.minimoNoImponible + e3, params, escala);
+    expect(r3.impuesto).toBeCloseTo(724_133.89 + 0.01 * (e3 - 114_105_948.16), 2);
+    expect(r3.alicuotaMarginal).toBe(0.01);
+    expect(r3.alicuotaEfectiva).toBeGreaterThan(0);
+  });
+  it('en el borde de un tramo ambos lados dan el mismo impuesto', () => {
+    const borde = escala.tramos[0].hasta!;
+    const dentro = calcularBienesPersonales(params.minimoNoImponible + borde, params, escala).impuesto;
+    const fuera = calcularBienesPersonales(params.minimoNoImponible + borde + 0.01, params, escala).impuesto;
+    expect(fuera - dentro).toBeLessThan(0.02);
+  });
+  it('escalaBP usa la del año o la última conocida (estimada)', () => {
+    expect(escalaBP(2025)!.estimado).toBe(false);
+    const e = escalaBP(2026)!;
+    expect(e.anioEscala).toBe(2025);
+    expect(e.estimado).toBe(true);
+    expect(escalaBP(2020)).toBeNull();
   });
 });

@@ -15,7 +15,10 @@
 // v11: registro único de tablas, checksum SHA-256 de `tables` (detecta archivo truncado/editado) y
 // lectura en orden hijos→padres (un registro creado mientras se exporta nunca queda huérfano);
 // agrega dcf_analisis.
-export const BACKUP_VERSION = 11;
+// v12: módulo de Impuestos → patrimonio_otros (bienes fuera de los portfolios para Bienes Personales); y se completa el registro del
+// módulo de Órdenes: ordenes_ejecutadas.movimiento_id entra en REFERENCIAS (detecta órdenes cuyo movimiento falta en el archivo) y
+// fx_historico queda declarada como excluida a propósito.
+export const BACKUP_VERSION = 12;
 
 export interface TablaBackup {
   table: string;
@@ -67,8 +70,14 @@ export const BACKUP_TABLAS: TablaBackup[] = [
   { table: 'watchlist', label: 'watchlist', onConflict: 'user_id,ticker', userScoped: true, restaurable: true, desde: 1 },
   { table: 'bonos_destacados', label: 'destacados renta fija', onConflict: 'user_id,ticker', userScoped: true, restaurable: true, desde: 9,
     avisoSiFalta: 'Backup anterior a Destacados de renta fija (bonos_destacados): no va a traer los tickers que hayas marcado como destacados en el Radar — volvé a marcarlos si querés.' },
+  // Módulo de Órdenes. Depende de portfolios y, opcionalmente, de movimientos (movimiento_id: la compra que generó la orden), así que va
+  // DESPUÉS de movimientos. Trae todos los orígenes (api/manual/estimada/transferida) y el MEP del día de cada orden.
   { table: 'ordenes_ejecutadas', label: 'órdenes ejecutadas', onConflict: 'id', userScoped: false, restaurable: true, desde: 10,
     avisoSiFalta: 'Backup anterior al registro de órdenes ejecutadas (ordenes_ejecutadas): no va a traer el detalle de órdenes cargadas en IOL — las posiciones y movimientos sí vuelven.' },
+  // Módulo de Impuestos. Es de la PERSONA (user_id, no portfolio_id): vehículo, inmuebles, efectivo… Lo calculado (Bienes Personales,
+  // dividendos por año) no se respalda porque sale de portfolios + cobros + estas filas; los parámetros de ARCA viven en el código.
+  { table: 'patrimonio_otros', label: 'otros bienes (impuestos)', onConflict: 'id', userScoped: true, restaurable: true, desde: 12,
+    avisoSiFalta: 'Backup anterior al módulo de Impuestos (patrimonio_otros): no va a traer los bienes fuera de los portfolios (vehículo, inmuebles, efectivo) — volvé a cargarlos en Impuestos > Otros bienes para que el cálculo de Bienes Personales los incluya.' },
   // Solo exportable: sin política de insert para el cliente a propósito (se escribe por la RPC
   // transferir_posicion, atómica). El estado de las posiciones sí vuelve por `posiciones`.
   { table: 'transferencias', label: 'transferencias', onConflict: null, userScoped: false, restaurable: false, desde: 6 },
@@ -81,6 +90,7 @@ export const TABLAS_EXCLUIDAS: Record<string, string> = {
   fundamentals_cache: 'cache de mercado compartido y re-descargable',
   macro_cache: 'cache de mercado compartido y re-descargable',
   dividendos_cache: 'cache de mercado compartido y re-descargable',
+  fx_historico: 'dólar MEP/CCL diario que graba el cron (dato de mercado compartido, sin usuario); el MEP que importa de cada orden queda copiado en ordenes_ejecutadas.mep',
   beta_cache: 'cache de mercado compartido y re-descargable',
   precio_historico_cache: 'cache de mercado compartido y re-descargable',
   edgar_ticker_cik: 'catálogo global (SEC), re-descargable',
@@ -122,4 +132,5 @@ export const REFERENCIAS: Referencia[] = [
   { tabla: 'dcf_analisis', campo: 'portfolio_id', padre: 'portfolios', campoPadre: 'id' },
   { tabla: 'analisis_ia', campo: 'portfolio_id', padre: 'portfolios', campoPadre: 'id', nullable: true },
   { tabla: 'ordenes_ejecutadas', campo: 'portfolio_id', padre: 'portfolios', campoPadre: 'id' },
+  { tabla: 'ordenes_ejecutadas', campo: 'movimiento_id', padre: 'movimientos', campoPadre: 'id', nullable: true },
 ];

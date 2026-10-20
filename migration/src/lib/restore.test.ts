@@ -25,7 +25,7 @@ vi.mock('./supabase', () => ({
 import { restoreBackup, verificarRestauracion } from './restore';
 import type { BackupFile } from './backupParse';
 
-const bk = (tables: Record<string, Record<string, unknown>[]>): BackupFile => ({ app: 'portfolio-inversiones', backup_version: 11, tables });
+const bk = (tables: Record<string, Record<string, unknown>[]>): BackupFile => ({ app: 'portfolio-inversiones', backup_version: 12, tables });
 const upserts = (t: string) => calls.filter(c => c.table === t && c.op === 'upsert');
 
 beforeEach(() => { calls.length = 0; upsertImpl = () => ({ error: null }); countImpl = () => ({ count: 999, error: null }); });
@@ -43,6 +43,23 @@ describe('restoreBackup', () => {
     await restoreBackup(bk({ portfolios: [{ id: 'p', user_id: 'otro' }], aportes: [{ id: 'a', portfolio_id: 'p' }] }), 'yo');
     expect((upserts('portfolios')[0].payload as { user_id: string }[])[0].user_id).toBe('yo');
     expect((upserts('aportes')[0].payload as Record<string, unknown>[])[0]).not.toHaveProperty('user_id');
+  });
+
+  it('módulo de Impuestos: otros bienes se restauran en la cuenta actual (user_id re-mapeado, sin depender de un portfolio)', async () => {
+    const r = await restoreBackup(bk({ patrimonio_otros: [{ id: 'v', user_id: 'otro', nombre: 'Auto', tipo: 'vehiculo', valor_ars: 27000000, base: 'seguro' }] }), 'yo');
+    expect(r.restaurados.patrimonio_otros).toBe(1);
+    expect((upserts('patrimonio_otros')[0].payload as { user_id: string }[])[0].user_id).toBe('yo');
+    expect(r.errores).toEqual([]);
+  });
+
+  it('módulo de Órdenes: la orden se restaura después de portfolios y movimientos (su FK opcional a la compra)', async () => {
+    await restoreBackup(bk({
+      portfolios: [{ id: 'p' }], movimientos: [{ id: 'm', portfolio_id: 'p' }],
+      ordenes_ejecutadas: [{ id: 'o', portfolio_id: 'p', movimiento_id: 'm', origen: 'api', lado: 'compra' }],
+    }), 'u1');
+    const orden = calls.filter(c => c.op === 'upsert').map(c => c.table);
+    expect(orden.indexOf('ordenes_ejecutadas')).toBeGreaterThan(orden.indexOf('movimientos'));
+    expect(orden.indexOf('movimientos')).toBeGreaterThan(orden.indexOf('portfolios'));
   });
 
   it('error de toda la tabla (RLS 42501): NO reintenta fila por fila y cuenta todas las filas como fallidas', async () => {

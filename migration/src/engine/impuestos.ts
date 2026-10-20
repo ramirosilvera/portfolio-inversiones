@@ -77,18 +77,100 @@ export interface EvaluacionBP {
 export const BP_UMBRAL_INFO = 0.5;
 export const BP_UMBRAL_WARN = 0.8;
 
-export function evaluarBienesPersonales(patrimonioUsd: number, mep: number, params: ParamsBP): EvaluacionBP | null {
+/** `otrosArs`: bienes fuera de los portfolios ya en pesos (ver patrimonioOtrosArs). El margen se expresa en USD al mismo MEP. */
+export function evaluarBienesPersonales(patrimonioUsd: number, mep: number, params: ParamsBP, otrosArs = 0): EvaluacionBP | null {
   if (!(mep > 0) || !(params.minimoNoImponible > 0)) return null;
-  const patrimonioArs = patrimonioUsd * mep;
+  const patrimonioArs = patrimonioUsd * mep + (otrosArs > 0 ? otrosArs : 0);
   const ratio = patrimonioArs / params.minimoNoImponible;
   const nivel: NivelBP = ratio >= 1 ? 'neg' : ratio >= BP_UMBRAL_WARN ? 'warn' : ratio >= BP_UMBRAL_INFO ? 'info' : 'ok';
   return {
     patrimonioArs,
     minimoArs: params.minimoNoImponible,
     ratio,
-    margenUsd: params.minimoNoImponible / mep - patrimonioUsd,
+    margenUsd: (params.minimoNoImponible - patrimonioArs) / mep,
     nivel,
   };
+}
+
+// ── Otros bienes (fuera de los portfolios) ───────────────────────────────────
+export type TipoOtroBien = 'vehiculo' | 'inmueble' | 'casa_habitacion' | 'efectivo' | 'exterior' | 'otro';
+export type BaseValuacion = 'valuacion_arca' | 'seguro' | 'mercado' | 'costo';
+
+export const TIPO_OTRO_LABEL: Record<TipoOtroBien, string> = {
+  vehiculo: 'Vehículo', inmueble: 'Inmueble', casa_habitacion: 'Casa-habitación', efectivo: 'Efectivo / cuentas',
+  exterior: 'Exterior', otro: 'Otro',
+};
+export const BASE_LABEL: Record<BaseValuacion, string> = {
+  valuacion_arca: 'Valuación ARCA', seguro: 'Valor del seguro', mercado: 'Valor de mercado', costo: 'Costo de compra',
+};
+/** Solo la tabla oficial de ARCA al 31/12 es el valor que cuenta para el impuesto; las demás son provisorias. */
+export const esProvisoria = (base: BaseValuacion) => base !== 'valuacion_arca';
+
+export interface OtroBien { tipo: TipoOtroBien; valor_ars: number; base: BaseValuacion }
+
+/**
+ * Suma en pesos de los bienes fuera de los portfolios que entran al impuesto. La casa-habitación queda afuera mientras no supere el
+ * umbral de exención; si lo supera, el umbral no es una deducción: la ley la deja de considerar exenta y entra completa.
+ */
+export function patrimonioOtrosArs(otros: OtroBien[], params: Pick<ParamsBP, 'casaHabitacion'>): number {
+  let total = 0;
+  for (const b of otros) {
+    const v = Number(b.valor_ars);
+    if (!(v > 0)) continue;
+    if (b.tipo === 'casa_habitacion' && v <= params.casaHabitacion) continue;
+    total += v;
+  }
+  return total;
+}
+
+// ── Cálculo del impuesto de Bienes Personales ────────────────────────────────
+// Escala sobre el EXCEDENTE del mínimo no imponible: cuota fija + alícuota × (excedente − piso del tramo). `hasta` es el tope del
+// excedente de cada tramo (null = sin tope). Período 2025: tres tramos (0,5 / 0,75 / 1 %); el 1,25 % de 2024 se eliminó. Las cifras
+// salen de la tabla de ARCA tal como la reproducen varias fuentes profesionales; cierran entre sí (263.321,42 = 0,5 % × 52.664.283,73).
+// Los tramos 2026 todavía no se publicaron: usar los de 2025 es CONSERVADOR (la ley baja las alícuotas a 0,5–0,75 % en 2026 y 0,25 % en 2027).
+export interface TramoBP { hasta: number | null; fijo: number; alicuota: number }
+export interface EscalaBP { tramos: TramoBP[]; fuente: string }
+
+export const ESCALA_BP: Record<number, EscalaBP> = {
+  2025: {
+    tramos: [
+      { hasta: 52_664_283.73, fijo: 0, alicuota: 0.005 },
+      { hasta: 114_105_948.16, fijo: 263_321.42, alicuota: 0.0075 },
+      { hasta: null, fijo: 724_133.89, alicuota: 0.01 },
+    ],
+    fuente: 'ARCA — escala general del período fiscal 2025 (iProfesional, Blog del Contador y otras fuentes coinciden)',
+  },
+};
+
+export interface EscalaBPResuelta extends EscalaBP { anioEscala: number; estimado: boolean }
+
+export function escalaBP(anio: number): EscalaBPResuelta | null {
+  const exacta = ESCALA_BP[anio];
+  if (exacta) return { ...exacta, anioEscala: anio, estimado: false };
+  const previos = Object.keys(ESCALA_BP).map(Number).filter(a => a < anio).sort((a, b) => b - a);
+  if (previos.length === 0) return null;
+  return { ...ESCALA_BP[previos[0]], anioEscala: previos[0], estimado: true };
+}
+
+export interface ImpuestoBP {
+  excedente: number;             // patrimonio − mínimo no imponible (0 si no lo supera)
+  impuesto: number;              // ARS
+  alicuotaMarginal: number | null;   // alícuota del tramo en que cae el excedente (null si no paga)
+  alicuotaEfectiva: number;      // impuesto / patrimonio
+}
+
+export function calcularBienesPersonales(patrimonioArs: number, params: Pick<ParamsBP, 'minimoNoImponible'>, escala: Pick<EscalaBP, 'tramos'>): ImpuestoBP {
+  const excedente = Math.max(0, patrimonioArs - params.minimoNoImponible);
+  if (!(excedente > 0)) return { excedente: 0, impuesto: 0, alicuotaMarginal: null, alicuotaEfectiva: 0 };
+  let piso = 0;
+  for (const t of escala.tramos) {
+    if (t.hasta == null || excedente <= t.hasta) {
+      const impuesto = t.fijo + t.alicuota * (excedente - piso);
+      return { excedente, impuesto, alicuotaMarginal: t.alicuota, alicuotaEfectiva: patrimonioArs > 0 ? impuesto / patrimonioArs : 0 };
+    }
+    piso = t.hasta;
+  }
+  return { excedente, impuesto: 0, alicuotaMarginal: null, alicuotaEfectiva: 0 };   // escala sin tramo final: no pasa con las tablas cargadas
 }
 
 // ── Ganancias: renta del exterior (dividendos de CEDEARs/ETFs) ───────────────

@@ -40,6 +40,23 @@ describe('registro de tablas del backup', () => {
 
   it('las tablas con user_id se re-mapean al usuario actual al restaurar (userScoped) y las de portfolio no', () => {
     const scoped = BACKUP_TABLAS.filter(t => t.userScoped).map(t => t.table).sort();
-    expect(scoped).toEqual(['bonos_destacados', 'brokers', 'cik_map', 'dashboard_layout', 'dcf_inputs', 'flujo_items', 'portfolios', 'profiles', 'watchlist']);
+    expect(scoped).toEqual(['bonos_destacados', 'brokers', 'cik_map', 'dashboard_layout', 'dcf_inputs', 'flujo_items', 'patrimonio_otros', 'portfolios', 'profiles', 'watchlist']);
+  });
+
+  it('módulo de Órdenes: va después de movimientos y su vínculo opcional a la compra está declarado', () => {
+    expect(idx('ordenes_ejecutadas')).toBeGreaterThan(idx('movimientos'));
+    const ref = REFERENCIAS.find(r => r.tabla === 'ordenes_ejecutadas' && r.campo === 'movimiento_id');
+    expect(ref).toMatchObject({ padre: 'movimientos', nullable: true });
+  });
+
+  it('módulo de Impuestos: otros bienes se respalda, es de la persona y avisa si el backup es anterior', () => {
+    const t = BACKUP_TABLAS.find(x => x.table === 'patrimonio_otros')!;
+    expect(t).toMatchObject({ userScoped: true, restaurable: true, onConflict: 'id', desde: 12 });
+    expect(t.avisoSiFalta).toBeTruthy();
+    expect(REFERENCIAS.some(r => r.tabla === 'patrimonio_otros')).toBe(false);   // sin portfolio_id: no depende de ningún portfolio
+  });
+
+  it('las tablas compartidas escritas por el cron se excluyen con motivo (no quedan sin declarar)', () => {
+    expect(TABLAS_EXCLUIDAS.fx_historico).toMatch(/ordenes_ejecutadas\.mep/);
   });
 });

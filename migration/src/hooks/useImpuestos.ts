@@ -3,10 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { usePortfolios } from './usePortfolios';
+import { usePatrimonioOtros } from './usePatrimonioOtros';
 import { useAllPosiciones, useQuotes, useMacro } from './usePosiciones';
 import { unitValueUSD } from '../lib/valuation';
 import {
-  paramsBP, patrimonioImponible, evaluarBienesPersonales, gananciasPorAnio, proximaDDJJ, alertasImpuestos,
+  paramsBP, escalaBP, patrimonioImponible, evaluarBienesPersonales, calcularBienesPersonales, patrimonioOtrosArs,
+  gananciasPorAnio, proximaDDJJ, alertasImpuestos,
 } from '../engine/impuestos';
 import type { Cobro } from '../types/domain';
 
@@ -17,6 +19,7 @@ export function useImpuestos() {
   const { portfolios } = usePortfolios();
   const { data: allPos = [], isLoading: cargandoPos } = useAllPosiciones(true);
   const { data: macro = {} } = useMacro();
+  const otros = usePatrimonioOtros();
 
   // RLS aísla por usuario, no por estado: se filtran los portfolios archivados (igual que Consolidado).
   const activeIds = useMemo(() => new Set(portfolios.map(p => p.id)), [portfolios]);
@@ -57,17 +60,20 @@ export function useImpuestos() {
     });
     const patrimonio = patrimonioImponible(items);
     const params = paramsBP(anioActual);
-    const bp = params && mep ? evaluarBienesPersonales(patrimonio.total, mep, params) : null;
-    const bpProbable = params && mep ? evaluarBienesPersonales(patrimonio.probable, mep, params) : null;
+    const escala = escalaBP(anioActual);
+    const otrosArs = params ? patrimonioOtrosArs(otros.data, params) : 0;
+    const bp = params && mep ? evaluarBienesPersonales(patrimonio.total, mep, params, otrosArs) : null;
+    const bpProbable = params && mep ? evaluarBienesPersonales(patrimonio.probable, mep, params, otrosArs) : null;
+    const impuestoBP = bp && params && escala ? calcularBienesPersonales(bp.patrimonioArs, params, escala) : null;
     const ganancias = gananciasPorAnio(cobros);
     const ddjj = proximaDDJJ(hoy);
     const dividendosAnioFiscal = ganancias.find(g => g.anio === ddjj.anioFiscal)?.dividendosBruto ?? 0;
     const alertas = alertasImpuestos({ bp, bpEstimado: params?.estimado ?? false, ddjj, dividendosAnioFiscal });
     return {
-      portfolios, porPortfolio, patrimonio, params, bp, bpProbable, ganancias, ddjj, dividendosAnioFiscal, alertas,
+      portfolios, porPortfolio, patrimonio, params, escala, otros, otrosArs, bp, bpProbable, impuestoBP, ganancias, ddjj, dividendosAnioFiscal, alertas,
       mep, hoy, anioActual, sinPrecio,
-      cargando: cargandoPos || cargandoCobros || qQuotes.isLoading,
+      cargando: cargandoPos || cargandoCobros || qQuotes.isLoading || otros.isLoading,
       preciosPendientes: qQuotes.isFetching && Object.keys(quotes).length === 0,
     };
-  }, [posiciones, quotes, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching]);
+  }, [posiciones, quotes, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching, otros.data, otros.isLoading]);
 }

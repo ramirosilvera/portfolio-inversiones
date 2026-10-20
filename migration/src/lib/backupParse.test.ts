@@ -37,8 +37,17 @@ describe('parseBackup — avisos por versión (cada tabla nueva debe avisar en l
     expect(r.avisos.some(a => a.includes('bonos_destacados'))).toBe(false);
   });
 
-  it('backup v11 (versión actual): sin avisos de tablas faltantes', () => {
+  it('backup v11: avisa que falta patrimonio_otros (Impuestos, v12) y nada más', () => {
     const r = parseBackup(backup(11));
+    expect(r.avisos.some(a => a.includes('patrimonio_otros'))).toBe(true);
+    expect(r.avisos.some(a => a.includes('ordenes_ejecutadas'))).toBe(false);
+    expect(r.avisos.some(a => a.includes('bonos_destacados'))).toBe(false);
+    expect(r.avisos.some(a => a.includes('más nueva'))).toBe(false);
+  });
+
+  it('backup v12 (versión actual): sin avisos de tablas faltantes', () => {
+    const r = parseBackup(backup(12));
+    expect(r.avisos.some(a => a.includes('patrimonio_otros'))).toBe(false);
     expect(r.avisos.some(a => a.includes('ordenes_ejecutadas'))).toBe(false);
     expect(r.avisos.some(a => a.includes('bonos_destacados'))).toBe(false);
     expect(r.avisos.some(a => a.includes('dashboard_layout'))).toBe(false);
@@ -46,7 +55,7 @@ describe('parseBackup — avisos por versión (cada tabla nueva debe avisar en l
   });
 
   it('backup de una versión futura no soportada: avisa en vez de fallar en silencio', () => {
-    const r = parseBackup(backup(12));
+    const r = parseBackup(backup(13));
     expect(r.avisos.some(a => a.includes('más nueva'))).toBe(true);
   });
 
@@ -58,10 +67,11 @@ describe('parseBackup — avisos por versión (cada tabla nueva debe avisar en l
 });
 
 describe('parseBackup — v10 sigue siendo restaurable sin avisos de más', () => {
-  it('un backup v10 no avisa por dcf_analisis (tabla legacy sin aviso) ni por tablas anteriores', () => {
+  it('un backup v10 no avisa por dcf_analisis (tabla legacy sin aviso) ni por tablas anteriores: solo por Impuestos (v12)', () => {
     const r = parseBackup(backup(10));
     expect(r.ok).toBe(true);
-    expect(r.avisos).toEqual([]);
+    expect(r.avisos).toHaveLength(1);
+    expect(r.avisos[0]).toContain('patrimonio_otros');
   });
   it('el aviso de transferencias (solo exportable) sale del registro', () => {
     const r = parseBackup(backup(11, { transferencias: [{ id: 't' }] }));
@@ -117,6 +127,23 @@ describe('referenciasHuerfanas', () => {
     expect(r).toContainEqual({ tabla: 'aportes', campo: 'portfolio_id', padre: 'portfolios', n: 1 });
     const aviso = parseBackup(JSON.stringify({ app: 'portfolio-inversiones', backup_version: 11, tables: t }));
     expect(aviso.avisos.some(a => a.includes('apuntan a portfolios'))).toBe(true);
+  });
+});
+
+describe('referenciasHuerfanas — módulo de Órdenes', () => {
+  it('una orden con movimiento_id nulo (histórica de IOL) o que apunta a una compra del archivo está bien', () => {
+    const t = {
+      portfolios: [{ id: 'p' }], movimientos: [{ id: 'm', portfolio_id: 'p', posicion_id: null }],
+      ordenes_ejecutadas: [{ id: 'o1', portfolio_id: 'p', movimiento_id: null }, { id: 'o2', portfolio_id: 'p', movimiento_id: 'm' }],
+    };
+    expect(referenciasHuerfanas(t)).toEqual([]);
+  });
+  it('una orden cuyo movimiento no está en el archivo se informa (backup incompleto o tocado a mano)', () => {
+    const t = {
+      portfolios: [{ id: 'p' }], movimientos: [],
+      ordenes_ejecutadas: [{ id: 'o', portfolio_id: 'p', movimiento_id: 'falta' }],
+    };
+    expect(referenciasHuerfanas(t)).toContainEqual({ tabla: 'ordenes_ejecutadas', campo: 'movimiento_id', padre: 'movimientos', n: 1 });
   });
 });
 
