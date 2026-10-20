@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard, Table2, Landmark, Wallet, Settings, Layers, TrendingUp, Percent,
   CalendarClock, Radar, Sparkles, LogOut, ChevronDown, Sun, Moon, Rows3, MoreHorizontal, PiggyBank,
-  Building2, Globe, ShieldCheck, ArrowRightLeft, PieChart, Gauge, Receipt,
+  Building2, Globe, ShieldCheck, ArrowRightLeft, PieChart, Gauge, Receipt, Scale,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { usePortfolios } from '../hooks/usePortfolios';
@@ -32,6 +32,7 @@ const NAV_MORE: NavItem[] = [
   { to: '/aportes', label: 'Aportes', icon: Wallet },
   { to: '/desempeno', label: 'Desempeño', icon: Gauge },
   { to: '/ordenes', label: 'Órdenes', icon: Receipt },
+  { to: '/impuestos', label: 'Impuestos', icon: Scale },
   { to: '/forecast', label: 'Forecast', icon: TrendingUp },
   { to: '/consolidado', label: 'Consolidado', icon: Layers },
   { to: '/brokers', label: 'Brokers', icon: Building2 },
