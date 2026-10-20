@@ -48,7 +48,7 @@ describe('buildBackup', () => {
     const orden = [...new Set(log.map(l => l.table))];
     expect(orden).toEqual([...BACKUP_TABLAS].reverse().map(t => t.table));
     const archivo = JSON.parse(r.json);
-    expect(archivo.backup_version).toBe(11);
+    expect(archivo.backup_version).toBe(12);
     expect(await verificarChecksum(archivo)).toBe('ok');
   });
 });

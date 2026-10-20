@@ -1,6 +1,8 @@
 import { Scale, Info, CalendarClock, CheckCircle2 } from 'lucide-react';
 import { useImpuestos } from '../hooks/useImpuestos';
-import { Card, CardHeader, Stat, Badge, AlertasBanner, Empty, fmtUsd, fmtPct, fmtArsCompact } from '../components/ui';
+import { Card, CardHeader, Stat, Badge, AlertasBanner, Empty, fmtUsd, fmtPct, fmtArs, fmtArsCompact } from '../components/ui';
+import { OtrosBienes } from '../components/OtrosBienes';
+import { SimuladorBP } from '../components/SimuladorBP';
 import { BP_UMBRAL_INFO, BP_UMBRAL_WARN, type NivelBP } from '../engine/impuestos';
 
 const NIVEL_TXT: Record<NivelBP, { label: string; tone: 'pos' | 'gray' | 'warn' | 'neg'; barra: string }> = {
@@ -14,8 +16,9 @@ const fecha = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('e
 
 export function ImpuestosPage() {
   const t = useImpuestos();
-  const { bp, params, patrimonio, ddjj, ganancias } = t;
+  const { bp, params, patrimonio, ddjj, ganancias, impuestoBP, escala, otros, otrosArs, mep } = t;
   const nivel = bp ? NIVEL_TXT[bp.nivel] : null;
+  const totalUsd = bp && mep ? bp.patrimonioArs / mep : patrimonio.total;
 
   return (
     <div className="space-y-4">
@@ -29,8 +32,8 @@ export function ImpuestosPage() {
       <div className="flex items-start gap-2 rounded-xl bg-surface border border-line px-3 py-2 text-[11px] text-ink-600">
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
         <p>
-          Avisa <b className="text-ink-800">cuándo mirar</b>, no cuánto pagás: la app solo ve el patrimonio y los cobros de tus portfolios, no el resto de tus bienes ni tus ingresos.
-          Los números son una referencia para llevarle a tu contador; las normas y los mínimos los fija ARCA cada año.
+          Calcula <b className="text-ink-800">Bienes Personales</b> con tus portfolios y los «Otros bienes» que cargues, y avisa cuándo mirar Ganancias (todavía no estima ese monto: depende de tus ingresos).
+          Es una referencia para llevarle a tu contador; las normas y los mínimos los fija ARCA cada año.
         </p>
       </div>
 
@@ -58,11 +61,13 @@ export function ImpuestosPage() {
           <p className="p-4 text-sm text-ink-600">{t.cargando ? 'Cargando…' : !t.mep ? 'No hay cotización del dólar para convertir a pesos.' : 'No hay mínimo publicado para este año.'}</p>
         ) : (
           <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <Stat label="Patrimonio" value={fmtUsd(patrimonio.total, 0)} hint={`≈ ${fmtArsCompact(bp.patrimonioArs)} al MEP de hoy`} />
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <Stat label="Patrimonio" value={fmtUsd(totalUsd, 0)} hint={`≈ ${fmtArsCompact(bp.patrimonioArs)} al MEP de hoy (portfolios + otros bienes)`} />
               <Stat label="En pesos (MEP)" value={fmtArsCompact(bp.patrimonioArs)} />
               <Stat label="Mínimo no imponible" value={fmtArsCompact(bp.minimoArs)} />
               <Stat label={bp.margenUsd >= 0 ? 'Margen' : 'Excedente'} value={fmtUsd(Math.abs(bp.margenUsd), 0)} hint="En dólares, hasta llegar al mínimo (o lo que lo supera)" />
+              <Stat label="Pagarías (estim.)" value={impuestoBP ? fmtArs(impuestoBP.impuesto) : '—'}
+                hint={impuestoBP && impuestoBP.impuesto > 0 ? `Alícuota marginal ${fmtPct(impuestoBP.alicuotaMarginal ?? 0, 2)}` : 'No superás el mínimo no imponible: no corresponde pagar'} />
             </div>
 
             <div>
@@ -89,11 +94,18 @@ export function ImpuestosPage() {
                       <tr key={p.id}>
                         <td className="py-2 font-semibold text-ink-900">{p.nombre}</td>
                         <td className="text-right px-3 tnum">{fmtUsd(v, 0)}</td>
-                        <td className="text-right tnum">{fmtPct(patrimonio.total > 0 ? v / patrimonio.total : 0, 0)}</td>
+                        <td className="text-right tnum">{fmtPct(totalUsd > 0 ? v / totalUsd : 0, 0)}</td>
                       </tr>
                     );
                   })}
-                  <tr className="font-bold"><td className="py-2">Total</td><td className="text-right px-3 tnum">{fmtUsd(patrimonio.total, 0)}</td><td /></tr>
+                  {otrosArs > 0 && mep && (
+                    <tr>
+                      <td className="py-2 font-semibold text-ink-900">Otros bienes</td>
+                      <td className="text-right px-3 tnum">{fmtUsd(otrosArs / mep, 0)}</td>
+                      <td className="text-right tnum">{fmtPct(totalUsd > 0 ? otrosArs / mep / totalUsd : 0, 0)}</td>
+                    </tr>
+                  )}
+                  <tr className="font-bold"><td className="py-2">Total</td><td className="text-right px-3 tnum">{fmtUsd(totalUsd, 0)}</td><td /></tr>
                 </tbody>
               </table>
             </div>
@@ -107,11 +119,17 @@ export function ImpuestosPage() {
               )}
               {patrimonio.accionesLocales > 0 && <li>Acciones argentinas: {fmtUsd(patrimonio.accionesLocales, 0)}. Tributan a través de la sociedad (responsable sustituto), no en tu declaración.</li>}
               <li>El impuesto se mide al <b className="text-ink-800">31/12</b>: ARCA valúa con la cotización de ese día y el dólar BNA, no con el MEP de hoy. Es una aproximación.</li>
-              <li>Cuenta TODO tu patrimonio (casa, auto, cuentas fuera de la app). Acá solo ves lo que cargaste.</li>
+              <li>El impuesto cuenta TODO tu patrimonio: además de los portfolios suma lo que cargues en «Otros bienes». {otros.data.some(b => b.base !== 'valuacion_arca') && <span className="text-warn">Hay bienes con valor provisorio: para el impuesto vale la valuación de ARCA al 31/12.</span>}</li>
+              {escala?.estimado && <li>El cálculo usa la escala {escala.anioEscala} (la última publicada): para {t.anioActual} la ley baja las alícuotas, así que es una cota alta.</li>}
             </ul>
           </div>
         )}
       </Card>
+
+      {params && escala && mep && <SimuladorBP params={params} escala={escala} mep={mep} patrimonioUsd={totalUsd} />}
+
+      <OtrosBienes items={otros.data} cargando={otros.isLoading}
+        onAgregar={otros.agregar} onActualizar={otros.actualizar} onEliminar={otros.eliminar} />
 
       {/* ── Ganancias ─────────────────────────────────────────────────────── */}
       <Card>
