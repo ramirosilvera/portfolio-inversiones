@@ -41,6 +41,7 @@ import { AddWidgetModal } from '../components/dashboard/AddWidgetModal';
 import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
 import { AlertaSnapshotServidor } from '../components/AlertaSnapshotServidor';
+import { AlertaImpuestos } from '../components/AlertaImpuestos';
 import { useDesempeno } from '../hooks/useDesempeno';
 import { DistanciaMaximo } from '../components/DistanciaMaximo';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
@@ -218,6 +219,7 @@ export function DashboardPage() {
       )}
 
       <AlertaSnapshotServidor snaps={snaps} posiciones={posiciones} hoy={hoy} listo={qSnaps.isSuccess && qPos.isSuccess} />
+      <AlertaImpuestos />
 
       <AlertasResumen alloc={alloc} patrimonio={patrimonio}
         objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct} />
