@@ -50,7 +50,7 @@ export function SimuladorBP({ params, escala, mep, patrimonioUsd }: {
 function Dato({ label, valor, fuerte }: { label: string; valor: string; fuerte?: boolean }) {
   return (
     <div className="rounded-xl border border-line px-3 py-2 min-w-0">
-      <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">{label}</p>
+      <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold leading-tight">{label}</p>
       <p className={`tnum mt-0.5 truncate ${fuerte ? 'font-bold text-ink-900' : 'text-ink-800'}`} title={valor}>{valor}</p>
     </div>
   );

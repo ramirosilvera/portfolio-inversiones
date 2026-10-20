@@ -4,6 +4,7 @@ import { Card, CardHeader, Stat, Badge, AlertasBanner, Empty, fmtUsd, fmtPct, fm
 import { OtrosBienes } from '../components/OtrosBienes';
 import { SimuladorBP } from '../components/SimuladorBP';
 import { LlegadaMinimoCard } from '../components/LlegadaMinimoCard';
+import { GananciasTabla } from '../components/GananciasTabla';
 import { BP_UMBRAL_INFO, BP_UMBRAL_WARN, type NivelBP } from '../engine/impuestos';
 
 const NIVEL_TXT: Record<NivelBP, { label: string; tone: 'pos' | 'gray' | 'warn' | 'neg'; barra: string }> = {
@@ -90,7 +91,7 @@ export function ImpuestosPage() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[360px]">
+              <table className="w-full text-sm">
                 <thead className="text-[11px] text-ink-600 border-b border-line">
                   <tr><th className="text-left py-2">Portfolio</th><th className="text-right px-3">Valor</th><th className="text-right">% del total</th></tr>
                 </thead>
@@ -149,35 +150,7 @@ export function ImpuestosPage() {
         {ganancias.length === 0 ? (
           <Empty icon={Scale} title="Sin cobros registrados">Cuando confirmes dividendos en Cobros, aparecen acá por año.</Empty>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[520px]">
-              <thead className="text-[11px] text-ink-600 border-b border-line">
-                <tr>
-                  <th className="text-left px-4 py-2">Año</th><th className="text-right px-3">Dividendos brutos</th>
-                  <th className="text-right px-3">Retención EE.UU.</th><th className="text-right px-3">Acreditado</th>
-                  <th className="text-right px-3">Cobros</th><th className="text-right px-4">Cupones ON</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {ganancias.map(g => (
-                  <tr key={g.anio}>
-                    <td className="px-4 py-2 font-semibold text-ink-900">{g.anio}</td>
-                    <td className="text-right px-3 tnum" title={g.sinDetalle > 0 ? `${g.sinDetalle} cobro(s) cargados por el pago declarado (bruto) sin detalle de costos` : undefined}>
-                      {fmtUsd(g.dividendosBruto)}
-                    </td>
-                    <td className="text-right px-3 tnum" title={g.retencionEstimada > 0 ? `${fmtUsd(g.retencionEstimada)} son estimados` : undefined}>
-                      {g.retencionExterior > 0 ? fmtUsd(g.retencionExterior) : '—'}{g.retencionEstimada > 0 && <span className="text-warn"> *</span>}
-                    </td>
-                    <td className="text-right px-3 tnum" title={g.netoEstimado > 0 ? `${fmtUsd(g.netoEstimado)} son estimados` : undefined}>
-                      {fmtUsd(g.dividendosNeto)}{g.netoEstimado > 0 && <span className="text-warn"> *</span>}
-                    </td>
-                    <td className="text-right px-3 tnum">{g.cobros}</td>
-                    <td className="text-right px-4 tnum text-ink-600">{g.intereses > 0 ? fmtUsd(g.intereses) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <GananciasTabla ganancias={ganancias} />
         )}
         <ul className="px-4 pb-4 pt-2 text-[11px] text-ink-600 space-y-1 list-disc pl-8">
           <li><b className="text-ink-800">Compraventa de CEDEARs</b>: según la mayoría de las fuentes está exenta para personas humanas, por eso la app no descuenta impuesto por vender. Pendiente de confirmar con tu contador.</li>

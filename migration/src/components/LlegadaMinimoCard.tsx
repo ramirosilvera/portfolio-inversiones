@@ -45,16 +45,18 @@ export function LlegadaMinimoCard({ llegada, escenarios, fuentes, sinPresupuesto
 
         {escenarios.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[360px]">
+            <table className="w-full text-xs sm:text-sm">
               <thead className="text-[11px] text-ink-600 border-b border-line">
-                <tr><th className="text-left py-2">Si el mínimo en dólares fuera…</th><th className="text-right px-3">Mínimo</th><th className="text-right">Llegás</th></tr>
+                <tr><th className="text-left py-2">Si el mínimo fuera…</th><th className="text-right px-2">Mínimo</th><th className="text-right">Llegás</th></tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {escenarios.map(e => (
                   <tr key={e.factor} className={e.factor === 1 ? 'font-semibold' : ''}>
                     <td className="py-2 text-ink-800">{e.factor === 1 ? 'El de hoy (base)' : e.factor < 1 ? `${Math.round((1 - e.factor) * 100)} % más bajo` : `${Math.round((e.factor - 1) * 100)} % más alto`}</td>
-                    <td className="text-right px-3 tnum">{fmtUsd(e.umbralUsd, 0)}</td>
-                    <td className="text-right tnum">{e.llegada.yaSupera ? 'ya' : e.llegada.meses == null ? '> 80 años' : `${e.llegada.anio} (${e.llegada.anios!.toLocaleString('es-AR')} años)`}</td>
+                    <td className="text-right px-2 tnum">{fmtUsd(e.umbralUsd, 0)}</td>
+                    <td className="text-right tnum">
+                      {e.llegada.yaSupera ? 'ya' : e.llegada.meses == null ? '> 80 años' : <>{e.llegada.anio}<span className="block text-[10px] font-normal text-ink-600">≈ {e.llegada.anios!.toLocaleString('es-AR')} años</span></>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
