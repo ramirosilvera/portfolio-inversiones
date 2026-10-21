@@ -77,6 +77,11 @@ La app vive en `migration/` (React+Vite+Tailwind+react-query). Deploy: Cloudflar
 - El cron (`refresh-all`) sugiere los cupones con la **fecha exacta del cronograma** cuando está vigente; si no hay cronograma,
   cae al cálculo por mes (día 1) con los campos cargados en la posición.
 
+## Notas de datos (indicadores macro de FRED)
+
+- **Incidente 2026-10-21**: las cinco series de FRED (`dgs10`, `dgs3mo`, `hy_spread`, `vix`, `dollar_index`) quedaron en `macro_cache` con **400,0** exacto, escritas en la misma pasada (15:43 UTC). Causa: `lastValue()` tomaba la segunda columna de la última línea de CUALQUIER respuesta HTTP 200 —una página que no era el CSV, leída con `parseFloat`— y lo guardaba como dato. Efectos: semáforos en «estrés» y, peor, el `dgs10` es la **tasa libre de riesgo** del DCF/Radar/bonos (400 → 400 % de costo del capital). No se pudo ver qué devolvió FRED (el sandbox no abre ese sitio).
+- **Defensa en capas**: (1) `functions/api/_fred.ts` valida que sea el CSV pedido (encabezado `observation_date|DATE,SERIE`, todas las filas `AAAA-MM-DD,valor`) y descarta todo si una línea no cumple; (2) `src/engine/macroRangos.ts` fija rangos plausibles por serie (muy anchos: solo atrapan lo imposible) que usan el servidor —no guarda ni sirve un valor fuera de rango, ni como caché fresca ni como «último bueno»— y el cliente (`useMacro` → `sanearMacro`: un valor imposible es «sin dato», y el DCF cae a su 4,3 % por defecto); (3) la respuesta inválida queda en el log (`console.warn` con los primeros 120 caracteres). Las filas dañadas se envejecieron a mano (el DELETE se colgaba en el conector). Si vuelve a pasar, mirar ese log: dirá qué devolvió FRED.
+
 ## Medición de desempeño a 10 años (migración 0053)
 
 Objetivo: poder responder con datos reales (1) rentabilidad anualizada en USD con dividendos y neta de costos, (2) comparación contra
