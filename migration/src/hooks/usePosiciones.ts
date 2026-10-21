@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { useAuth } from './useAuth';
+import { sanearMacro } from '../engine/macroRangos';
 import { consolidarCompra, reconstruirTenencia, movimientoConciliacion } from '../engine/tenencia';
 import type { DividendoInfo } from '../engine/dividendProjection';
 import { leerObjetivos, reajustarObjetivosTrasCierre } from '../lib/objetivos';
@@ -446,7 +447,8 @@ export function useMacro() {
       if (rp.status === 'fulfilled') out.riesgo_pais = rp.value.riesgo_pais;
       if (fred.status === 'fulfilled') Object.assign(out, fred.value);
       if (ind.status === 'fulfilled') Object.assign(out, ind.value);
-      return out;
+      // Defensa en el cliente: un valor imposible (dato corrupto en la cache) se muestra como «sin dato», no como estrés ni entra al DCF.
+      return sanearMacro(out);
     },
   });
 }
