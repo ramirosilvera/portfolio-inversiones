@@ -17,3 +17,23 @@ export function parsearFredCsv(csv: string, serie: string, clave: string): numbe
   }
   return ultimo != null && valorPlausible(clave, ultimo) ? ultimo : null;
 }
+
+export interface RespuestaFred { status: number; contentType: string; texto: string }
+
+// Pide el CSV de una serie. Se identifica con un User-Agent (el fetch por defecto de un Worker no manda uno propio y varios sitios sirven una página
+// de bloqueo/verificación a los clientes sin identificar). A diferencia de fetchText NO descarta las respuestas no-2xx: el diagnóstico necesita verlas.
+export async function pedirFred(serie: string, timeoutMs = 20_000): Promise<RespuestaFred> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(serie)}`, {
+      signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; portfolio-inversiones)', Accept: 'text/csv,*/*;q=0.8' },
+    });
+    return { status: res.status, contentType: res.headers.get('content-type') ?? '', texto: await res.text() };
+  } finally { clearTimeout(t); }
+}
+
+/** Resumen corto y sin saltos de línea de una respuesta que no era el CSV, para dejarlo en el log / en el JSON del cron. */
+export function resumenDiag(serie: string, r: RespuestaFred, maxCaracteres = 140): string {
+  return `${serie} http ${r.status} ${r.contentType.split(';')[0] || 's/ct'} len ${r.texto.length}: ${r.texto.replace(/\s+/g, ' ').trim().slice(0, maxCaracteres)}`;
+}

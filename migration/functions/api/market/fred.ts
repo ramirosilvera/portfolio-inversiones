@@ -1,5 +1,5 @@
-import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchText } from '../_shared';
-import { parsearFredCsv } from '../_fred';
+import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert } from '../_shared';
+import { parsearFredCsv, pedirFred, resumenDiag } from '../_fred';
 import { valorPlausible } from '../../../src/engine/macroRangos';
 
 const TTL = 6 * 60 * 60 * 1000; // 6h
@@ -15,8 +15,9 @@ const SERIES: Record<string, string> = {
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
 // GET /api/market/fred → { dgs10, dgs3mo, hy_spread, vix, dollar_index }  (tasas en %). Solo valores validados (ver _fred.ts).
-export const onRequestGet = guardAuth(async ({ env }) => {
-  const out: Record<string, number | null> = {};
+export const onRequestGet = guardAuth(async ({ env, request }) => {
+  const out: Record<string, unknown> = {};
+  const diag: string[] = [];
   const rows: unknown[] = [];
   await Promise.all(Object.entries(SERIES).map(async ([serie, clave]) => {
     // Un valor cacheado fuera de rango plausible (dato corrupto de una corrida anterior) NO se sirve ni cuenta como fresco: se vuelve a pedir.
@@ -28,18 +29,23 @@ export const onRequestGet = guardAuth(async ({ env }) => {
       return last && valorPlausible(clave, last.valor) ? last.valor : null;
     };
     try {
-      const csv = await fetchText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${serie}`);
-      const val = parsearFredCsv(csv, serie, clave);
+      const resp = await pedirFred(serie);
+      const val = resp.status >= 200 && resp.status < 300 ? parsearFredCsv(resp.texto, serie, clave) : null;
       if (val != null) { out[clave] = val; rows.push({ clave, valor: val, updated_at: new Date().toISOString() }); }
       else {
-        console.warn(`FRED ${serie}: respuesta inválida (no es el CSV esperado o valor imposible): ${csv.slice(0, 120).replace(/\s+/g, ' ')}`);
+        const d = resumenDiag(serie, resp);
+        console.warn(`FRED respuesta inválida (no es el CSV esperado o valor imposible): ${d}`);
+        diag.push(d);
         out[clave] = await ultimoBueno();
       }
-    } catch {
+    } catch (e) {
       // Proveedor caído: servimos el último valor bueno conocido en vez de vaciar.
+      diag.push(`${serie} error de red: ${String(e).slice(0, 80)}`);
       out[clave] = await ultimoBueno();
     }
   }));
   if (rows.length) await sbUpsert(env, 'macro_cache', rows, 'clave');
-  return json(out);
+  // Diagnóstico SOLO para el cron (lleva su secret): lo que devolvió FRED cuando no era el CSV. La app no lo recibe.
+  const esCron = !!env.CRON_SECRET && request.headers.get('X-Cron-Secret') === env.CRON_SECRET;
+  return json(esCron && diag.length ? { ...out, _diag: diag.slice(0, 2) } : out);
 });
