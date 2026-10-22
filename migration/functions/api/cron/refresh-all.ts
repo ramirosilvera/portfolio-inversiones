@@ -26,9 +26,15 @@ export const onRequestGet = guard(async ({ request, env }) => {
   const origin = new URL(request.url).origin;
 
   const headers: Record<string, string> = { 'X-Internal-Refresh': await tokenInterno(env), 'X-Cron-Secret': env.CRON_SECRET! };
+  // Diagnóstico de FRED: si el endpoint no pudo leer el CSV devuelve (solo al cron) qué recibió; queda en la respuesta de este cron, que el workflow imprime.
+  let fredDiag: string | null = null;
   const hit = async (path: string) => {
     try {
       const r = await fetch(`${origin}${path}`, { headers });
+      if (path === '/api/market/fred' && r.ok) {
+        const j = await r.clone().json().catch(() => null) as { _diag?: string[] } | null;
+        if (j?._diag?.length) fredDiag = j._diag.join(' | ').slice(0, 260);
+      }
       return r.ok;
     } catch { return false; }
   };
@@ -227,5 +233,5 @@ export const onRequestGet = guard(async ({ request, env }) => {
   for (const p of fund) if (await hit(p)) ok++;
 
   // Solo conteos agregados — sin tickers ni montos (no filtrar composición del portfolio).
-  return json({ ok, total: prioritarios.length + fund.length, pendientes, snapshots });
+  return json({ ok, total: prioritarios.length + fund.length, pendientes, snapshots, ...(fredDiag ? { fredDiag } : {}) });
 });

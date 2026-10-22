@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsearFredCsv } from './_fred';
+import { parsearFredCsv, resumenDiag } from './_fred';
 
 const csv = (serie: string, filas: string[], cab = 'observation_date') => [`${cab},${serie}`, ...filas].join('\n');
 
@@ -30,5 +30,17 @@ describe('parsearFredCsv', () => {
     expect(parsearFredCsv('', 'VIXCLS', 'vix')).toBeNull();
     expect(parsearFredCsv('observation_date,VIXCLS', 'VIXCLS', 'vix')).toBeNull();
     expect(parsearFredCsv(csv('VIXCLS', ['2026-10-20,.']), 'VIXCLS', 'vix')).toBeNull();
+  });
+});
+
+describe('resumenDiag', () => {
+  it('resume en una línea: serie, estado, tipo de contenido, largo y el comienzo del cuerpo sin saltos de línea', () => {
+    const d = resumenDiag('VIXCLS', { status: 200, contentType: 'text/html; charset=utf-8', texto: '<!DOCTYPE html>\n<html>\n  <head>  <title>Just a moment...</title>' });
+    expect(d).toBe('VIXCLS http 200 text/html len 64: <!DOCTYPE html> <html> <head> <title>Just a moment...</title>');
+    expect(d).not.toMatch(/\n/);
+  });
+  it('acota el cuerpo y tolera una respuesta sin content-type', () => {
+    const d = resumenDiag('DGS10', { status: 403, contentType: '', texto: 'x'.repeat(1000) }, 20);
+    expect(d).toBe(`DGS10 http 403 s/ct len 1000: ${'x'.repeat(20)}`);
   });
 });
