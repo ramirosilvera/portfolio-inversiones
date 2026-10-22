@@ -46,26 +46,3 @@ export const SERIES_FRED: Record<string, string> = {
   VIXCLS: 'vix',             // CBOE VIX (nivel) — gratis en FRED (Finnhub free no da ^VIX)
   DTWEXBGS: 'dollar_index',  // Índice dólar amplio (nominal broad, base ene-2006=100)
 };
-
-const MAX_CSV = 200_000;   // un CSV de unas semanas pesa < 2 KB: algo mucho más grande no es lo que se pidió
-
-/**
- * Ingesta de series de FRED bajadas FUERA de Cloudflare (workflow de GitHub Actions) y enviadas a la app: FRED responde 520 a los pedidos que
- * salen de un Worker (2026-10-22), así que el servidor no puede bajarlas él mismo. NO se confía en lo recibido: cada CSV pasa por la misma
- * validación estricta (parsearFredCsv: encabezado de la serie, todas las filas fecha,valor, rango plausible) y una serie desconocida se ignora.
- */
-export function procesarIngesta(body: unknown, ahoraIso: string): { rows: { clave: string; valor: number; updated_at: string }[]; guardados: Record<string, number>; rechazados: string[] } {
-  const rows: { clave: string; valor: number; updated_at: string }[] = [];
-  const guardados: Record<string, number> = {};
-  const rechazados: string[] = [];
-  const series = (body as { series?: unknown })?.series;
-  if (!series || typeof series !== 'object' || Array.isArray(series)) return { rows, guardados, rechazados: Object.keys(SERIES_FRED) };
-  for (const [serie, clave] of Object.entries(SERIES_FRED)) {
-    const csv = (series as Record<string, unknown>)[serie];
-    const valor = typeof csv === 'string' && csv.length <= MAX_CSV ? parsearFredCsv(csv, serie, clave) : null;
-    if (valor == null) { rechazados.push(serie); continue; }
-    rows.push({ clave, valor, updated_at: ahoraIso });
-    guardados[clave] = valor;
-  }
-  return { rows, guardados, rechazados };
-}

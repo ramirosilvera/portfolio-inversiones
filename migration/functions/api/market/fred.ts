@@ -1,14 +1,19 @@
 import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert } from '../_shared';
 import { parsearFredCsv, pedirFred, resumenDiag, SERIES_FRED as SERIES } from '../_fred';
+import { yahooPrice } from '../_yahoo';
 import { valorPlausible } from '../../../src/engine/macroRangos';
 
-// Las series las trae un workflow de GitHub (cron/fred-ingest, cada 6 h) porque FRED responde 520 desde los Workers. Este endpoint solo intenta bajarlas
-// él mismo si la ingesta lleva más de 13 h sin renovar el dato (el scheduler de GitHub se retrasa de a horas): normalmente sirve la cache.
-const TTL = 13 * 60 * 60 * 1000; // 13h
+const TTL = 6 * 60 * 60 * 1000; // 6h
+// FRED no responde (2026-10-22: HTTP 520 desde el Worker y timeouts/INTERNAL_ERROR también desde un runner de GitHub: caída o bloqueo del proveedor, no un cambio
+// nuestro). Las tres series que tienen un equivalente gratuito y estable se piden PRIMERO a Yahoo, que sí responde (el mismo proveedor que ya usa
+// indicadores.ts): VIX → ^VIX, Treasury 10Y → ^TNX y T-Bills 3M → ^IRX (ambos ya en %). Si Yahoo falla se prueba FRED. El spread HY y el dólar amplio solo
+// existen en FRED: quedan «sin dato» mientras FRED no vuelva (no se reemplazan por un índice distinto: los umbrales de los semáforos son de esas series).
+const YAHOO: Record<string, string> = { vix: '^VIX', dgs10: '^TNX', dgs3mo: '^IRX' };
+const FRED_TIMEOUT_MS = 8_000;   // con el proveedor caído cada intento esperaba 20 s: no demorar la respuesta
 
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 
-// GET /api/market/fred → { dgs10, dgs3mo, hy_spread, vix, dollar_index }  (tasas en %). Solo valores validados (ver _fred.ts).
+// GET /api/market/fred → { dgs10, dgs3mo, hy_spread, vix, dollar_index }  (tasas en %). Solo valores validados (ver _fred.ts y macroRangos.ts).
 export const onRequestGet = guardAuth(async ({ env, request }) => {
   const out: Record<string, unknown> = {};
   const diag: string[] = [];
@@ -22,8 +27,16 @@ export const onRequestGet = guardAuth(async ({ env, request }) => {
       const last = await cacheLast<{ valor: number }>(env, 'macro_cache', 'clave', clave);
       return last && valorPlausible(clave, last.valor) ? last.valor : null;
     };
+    // 1) Yahoo (si la serie tiene equivalente): un valor fuera de rango plausible se descarta igual que uno de FRED.
+    const ySym = YAHOO[clave];
+    if (ySym) {
+      const v = await yahooPrice(ySym);
+      if (v != null && valorPlausible(clave, v)) { out[clave] = v; rows.push({ clave, valor: v, updated_at: new Date().toISOString() }); return; }
+      diag.push(`${clave}: Yahoo ${ySym} sin dato válido (${v})`);
+    }
+    // 2) FRED.
     try {
-      const resp = await pedirFred(serie);
+      const resp = await pedirFred(serie, FRED_TIMEOUT_MS);
       const val = resp.status >= 200 && resp.status < 300 ? parsearFredCsv(resp.texto, serie, clave) : null;
       if (val != null) { out[clave] = val; rows.push({ clave, valor: val, updated_at: new Date().toISOString() }); }
       else {

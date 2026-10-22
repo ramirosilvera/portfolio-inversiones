@@ -1,4 +1,5 @@
 import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert, fetchJson } from '../_shared';
+import { yahooPrice } from '../_yahoo';
 
 const TTL = 20 * 60 * 1000; // 20 min
 
@@ -13,18 +14,6 @@ async function finnhub(env: Env, symbol: string): Promise<number | null> {
     const q = await fetchJson<{ c?: number }>(
       `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${env.FINNHUB_API_KEY}`);
     return q.c && q.c > 0 ? q.c : null;
-  } catch { return null; }
-}
-
-// Precio actual de un símbolo vía el chart de Yahoo Finance (gratis, sin auth). Server-side no hay
-// CORS. Se manda User-Agent porque Yahoo rechaza requests sin él.
-async function yahooPrice(symbol: string): Promise<number | null> {
-  try {
-    const j = await fetchJson<{ chart?: { result?: { meta?: { regularMarketPrice?: number } }[] } }>(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const p = j.chart?.result?.[0]?.meta?.regularMarketPrice;
-    return typeof p === 'number' && p > 0 ? p : null;
   } catch { return null; }
 }
 
