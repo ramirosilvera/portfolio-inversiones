@@ -5,22 +5,16 @@ jobs:
   probar:
     runs-on: ubuntu-latest
     steps:
-      - name: Probar fuentes desde un runner
+      - name: Probar FRED con otros clientes
         run: |
-          UA="Mozilla/5.0 (compatible; portfolio-inversiones)"
-          probar() { # etiqueta, url, [opciones curl]
-            local E="$1" U="$2"; shift 2
-            local OUT; OUT=$(curl -sS --max-time 25 -A "$UA" -w '\n__HTTP %{http_code} %{content_type} %{size_download}B' "$@" "$U" 2>&1 | tail -c 1500)
-            echo "── $E"; echo "$OUT" | head -c 160 | tr '\n' ' '; echo; echo "   …$(echo "$OUT" | tail -n 3 | tr '\n' ' ' | tail -c 200)"
-          }
-          probar "FRED csv h2"            "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS"
-          probar "FRED csv http1.1"       "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS" --http1.1
-          probar "FRED csv cosd http1.1"  "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS&cosd=2026-09-01" --http1.1
-          probar "FRED data txt"          "https://fred.stlouisfed.org/data/VIXCLS.txt" --http1.1
-          probar "FRED series page"       "https://fred.stlouisfed.org/series/VIXCLS" --http1.1
-          probar "Cboe VIX history"       "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"
-          probar "Treasury yield curve"   "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv"
-          probar "Yahoo ^VIX"             "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d"
-          probar "Yahoo ^TNX"             "https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX?interval=1d&range=5d"
-          probar "Yahoo ^IRX"             "https://query1.finance.yahoo.com/v8/finance/chart/%5EIRX?interval=1d&range=5d"
-          probar "Stooq ^vix"             "https://stooq.com/q/l/?s=%5Evix&f=sd2t2ohlcv&h&e=csv"
+          BR="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+          p() { E="$1"; U="$2"; shift 2; R=$(curl -sS --max-time 12 -o /tmp/o -w '%{http_code} %{content_type} %{size_download}B' "$@" "$U" 2>&1 | tail -c 200); echo "── $E → $R | $(head -c 120 /tmp/o 2>/dev/null | tr '\n' ' ')"; }
+          p "FRED home (UA browser)"        "https://fred.stlouisfed.org/" -A "$BR"
+          p "FRED csv VIX (UA browser)"     "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS" -A "$BR"
+          p "FRED csv VIX (curl default)"   "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS"
+          p "FRED csv HY (UA browser)"      "https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2" -A "$BR"
+          p "FRED csv DTWEXBGS (browser)"   "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DTWEXBGS" -A "$BR"
+          p "FRED api sin clave"            "https://api.stlouisfed.org/fred/series/observations?series_id=VIXCLS&file_type=json" -A "$BR"
+          p "ALFRED csv"                    "https://alfred.stlouisfed.org/graph/alfredgraph.csv?id=VIXCLS" -A "$BR"
+          p "Yahoo DX-Y.NYB"                "https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1d&range=5d" -A "$BR"
+          p "Yahoo HYG"                     "https://query1.finance.yahoo.com/v8/finance/chart/HYG?interval=1d&range=5d" -A "$BR"
