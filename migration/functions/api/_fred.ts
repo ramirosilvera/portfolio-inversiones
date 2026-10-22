@@ -37,3 +37,35 @@ export async function pedirFred(serie: string, timeoutMs = 20_000): Promise<Resp
 export function resumenDiag(serie: string, r: RespuestaFred, maxCaracteres = 140): string {
   return `${serie} http ${r.status} ${r.contentType.split(';')[0] || 's/ct'} len ${r.texto.length}: ${r.texto.replace(/\s+/g, ' ').trim().slice(0, maxCaracteres)}`;
 }
+
+// FRED serie → clave en macro_cache (tasas en %; vix y dollar_index en nivel). Una sola definición para el endpoint y para la ingesta.
+export const SERIES_FRED: Record<string, string> = {
+  DGS10: 'dgs10',            // Treasury 10Y (%)
+  DGS3MO: 'dgs3mo',          // T-Bills 3M (%)
+  BAMLH0A0HYM2: 'hy_spread', // High Yield OAS (%)
+  VIXCLS: 'vix',             // CBOE VIX (nivel) — gratis en FRED (Finnhub free no da ^VIX)
+  DTWEXBGS: 'dollar_index',  // Índice dólar amplio (nominal broad, base ene-2006=100)
+};
+
+const MAX_CSV = 200_000;   // un CSV de unas semanas pesa < 2 KB: algo mucho más grande no es lo que se pidió
+
+/**
+ * Ingesta de series de FRED bajadas FUERA de Cloudflare (workflow de GitHub Actions) y enviadas a la app: FRED responde 520 a los pedidos que
+ * salen de un Worker (2026-10-22), así que el servidor no puede bajarlas él mismo. NO se confía en lo recibido: cada CSV pasa por la misma
+ * validación estricta (parsearFredCsv: encabezado de la serie, todas las filas fecha,valor, rango plausible) y una serie desconocida se ignora.
+ */
+export function procesarIngesta(body: unknown, ahoraIso: string): { rows: { clave: string; valor: number; updated_at: string }[]; guardados: Record<string, number>; rechazados: string[] } {
+  const rows: { clave: string; valor: number; updated_at: string }[] = [];
+  const guardados: Record<string, number> = {};
+  const rechazados: string[] = [];
+  const series = (body as { series?: unknown })?.series;
+  if (!series || typeof series !== 'object' || Array.isArray(series)) return { rows, guardados, rechazados: Object.keys(SERIES_FRED) };
+  for (const [serie, clave] of Object.entries(SERIES_FRED)) {
+    const csv = (series as Record<string, unknown>)[serie];
+    const valor = typeof csv === 'string' && csv.length <= MAX_CSV ? parsearFredCsv(csv, serie, clave) : null;
+    if (valor == null) { rechazados.push(serie); continue; }
+    rows.push({ clave, valor, updated_at: ahoraIso });
+    guardados[clave] = valor;
+  }
+  return { rows, guardados, rechazados };
+}

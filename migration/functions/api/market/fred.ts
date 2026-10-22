@@ -1,16 +1,10 @@
 import { type Env, json, preflight, guardAuth, cacheFresh, cacheLast, sbUpsert } from '../_shared';
-import { parsearFredCsv, pedirFred, resumenDiag } from '../_fred';
+import { parsearFredCsv, pedirFred, resumenDiag, SERIES_FRED as SERIES } from '../_fred';
 import { valorPlausible } from '../../../src/engine/macroRangos';
 
-const TTL = 6 * 60 * 60 * 1000; // 6h
-// FRED series → clave en macro_cache. Valores en % (ej. DGS10 = 4.3 → guardamos 4.3).
-const SERIES: Record<string, string> = {
-  DGS10: 'dgs10',            // Treasury 10Y (%)
-  DGS3MO: 'dgs3mo',          // T-Bills 3M (%)
-  BAMLH0A0HYM2: 'hy_spread', // High Yield OAS (%)
-  VIXCLS: 'vix',             // CBOE VIX (nivel) — gratis en FRED (Finnhub free no da ^VIX)
-  DTWEXBGS: 'dollar_index',  // Índice dólar amplio (nominal broad, base ene-2006=100)
-};
+// Las series las trae un workflow de GitHub (cron/fred-ingest, cada 6 h) porque FRED responde 520 desde los Workers. Este endpoint solo intenta bajarlas
+// él mismo si la ingesta lleva más de 13 h sin renovar el dato (el scheduler de GitHub se retrasa de a horas): normalmente sirve la cache.
+const TTL = 13 * 60 * 60 * 1000; // 13h
 
 export const onRequestOptions: PagesFunction<Env> = async () => preflight();
 

@@ -1,0 +1,40 @@
+name: Refrescar series de FRED
+
+# FRED (fred.stlouisfed.org) responde HTTP 520 a los pedidos que salen de un Worker de Cloudflare, así que la app no puede bajar sus propias series
+# (T-Bills 3M, Treasury 10Y, HY spread, VIX, dólar amplio). Este workflow las baja desde un runner de GitHub y las entrega a
+# /api/cron/fred-ingest, que valida cada CSV antes de guardarlo. Requiere los mismos secrets que refresh-market.yml: APP_URL y CRON_SECRET.
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # cada 6 h (el scheduler de GitHub se retrasa de a horas: la app tolera hasta 13 h)
+  workflow_dispatch:
+
+jobs:
+  fred:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bajar las series de FRED y enviarlas a la app
+        env:
+          APP: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          [ -z "$APP" ] && { echo "::error::APP_URL no configurada — agregá el secret APP_URL en GitHub"; exit 1; }
+          DESDE=$(date -u -d '45 days ago' +%F)   # solo las últimas semanas: el CSV completo pesa cientos de KB
+          BODY='{"series":{}}'
+          for S in DGS10 DGS3MO BAMLH0A0HYM2 VIXCLS DTWEXBGS; do
+            CSV=$(curl -sS --fail --max-time 30 -A "Mozilla/5.0 (compatible; portfolio-inversiones)" "https://fred.stlouisfed.org/graph/fredgraph.csv?id=$S&cosd=$DESDE" || true)
+            if [ -z "$CSV" ]; then echo "::warning::$S: FRED no respondió"; continue; fi
+            echo "$S → $(echo "$CSV" | head -1) … $(echo "$CSV" | tail -1)"
+            BODY=$(echo "$BODY" | jq -c --arg s "$S" --arg c "$CSV" '.series[$s]=$c')
+          done
+          RESP=$(curl -sS --max-time 60 -X POST -H "X-Cron-Secret: $CRON_SECRET" -H "Content-Type: application/json" --data "$BODY" "$APP/api/cron/fred-ingest")
+          echo "Respuesta: $RESP" | head -c 600
+          echo ""
+          case "$RESP" in
+            *'"guardados"'*)
+              case "$RESP" in
+                *'"rechazados":[]'*) echo "✓ las 5 series guardadas" ;;
+                *) echo "::warning::alguna serie no se guardó (ver «rechazados»): FRED no respondió o el CSV no pasó la validación" ;;
+              esac ;;
+            *) echo "::error::la app no devolvió el JSON esperado (¿APP_URL apunta a un deploy sin la Function?)"; exit 1 ;;
+          esac
