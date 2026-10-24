@@ -40,6 +40,17 @@ describe('bonosACSV', () => {
     expect(cols).toContain('100.30'); // Paridad
   });
 
+  it('exporta el estado de verificación; una fila sin dato sale como «Sin verificar», nunca como verificada', () => {
+    const csv = bonosACSV([
+      { ...calc, ref: { ...calc.ref, verificacion: 'secundaria', verificacion_nota: 'Coincide con fuentes externas', verificado_en: '2026-10-24' } },
+      calc,
+    ]);
+    const [header, fila1, fila2] = csv.slice(1).split('\r\n');
+    expect(header).toContain('Verificación;Nota de verificación;Verificado el');
+    expect(fila1).toContain('Verificado · fuente externa;Coincide con fuentes externas;2026-10-24');
+    expect(fila2).toContain('Sin verificar');
+  });
+
   it('escapa campos con el separador o comillas envolviéndolos entre comillas (RFC 4180)', () => {
     const conComa: BonoReferenciaCalc = {
       ...calc,

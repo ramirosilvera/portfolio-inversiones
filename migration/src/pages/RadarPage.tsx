@@ -17,6 +17,8 @@ import type { Rating } from '../engine/score';
 import { calcularBonoReferencia, TIPO_LABEL, LEY_LABEL, LEY_TONE, type BonoReferencia } from '../engine/rentaFija';
 import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
 import { bonosACSV, nombreArchivoCsv } from '../engine/exportRentaFija';
+import { NIVELES, VERIFICACION, nivelDe, esConfiable, rangoVerificacion, resumenVerificacion, type NivelVerificacion } from '../engine/verificacion';
+import { VerificacionBadge } from '../components/VerificacionBadge';
 import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, AMPLITUD_LABEL, AMPLITUD_TONE, type Sector, type AmplitudFoso } from '../lib/companyMoat';
 import { CALIFICADORAS, ETIQUETA_GRADO, type GradoCredito } from '../engine/rating';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
@@ -445,8 +447,10 @@ function RadarRow({ item, riskFree, saved, onRemove, onComputed }: {
 }
 
 // ── Renta fija: catálogo de referencia, búsqueda/filtro + curva TIR-duración ──────────────────
-type SortKeyRF = 'ticker' | 'ley' | 'paridad' | 'tir' | 'duracion' | 'vencimiento';
-const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', ley: 'asc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc' };
+type SortKeyRF = 'ticker' | 'ley' | 'paridad' | 'tir' | 'duracion' | 'vencimiento' | 'verificacion';
+const DEFAULT_DIR_RF: Record<SortKeyRF, 'asc' | 'desc'> = { ticker: 'asc', ley: 'asc', paridad: 'desc', tir: 'desc', duracion: 'asc', vencimiento: 'asc', verificacion: 'asc' };
+// «confiables» = primaria + secundaria + consistente (los que se pueden usar para decidir, ver engine/verificacion.ts).
+type FiltroVerif = 'todos' | 'confiables' | NivelVerificacion;
 type FiltroGrado = 'todos' | GradoCredito | 'sin_calificar';
 type FiltroLey = 'todos' | 'local' | 'extranjera' | 'sin_clasificar';
 // Mismo gris que RatingBadge/BonosPage para "sin calificar" — reusado también para "sin
@@ -499,6 +503,7 @@ function RadarFija() {
   const [filtroTipo, setFiltroTipo] = useState<'todos' | BonoReferencia['tipo']>('todos');
   const [filtroGrado, setFiltroGrado] = useState<FiltroGrado>('todos');
   const [filtroLey, setFiltroLey] = useState<FiltroLey>('todos');
+  const [filtroVerif, setFiltroVerif] = useState<FiltroVerif>('todos');
   // Duración en años (Macaulay) — string, no number, para poder dejar el campo vacío sin que un 0
   // se interprete como "duración exactamente 0" (mismo criterio que `busqueda`). Un bono sin
   // duración calculable (sin cotización de mercado) no puede verificarse contra el rango, así que
@@ -526,6 +531,7 @@ function RadarFija() {
     if (filtroTipo !== 'todos' && b.ref.tipo !== filtroTipo) return false;
     if (filtroGrado !== 'todos' && (filtroGrado === 'sin_calificar' ? b.grado != null : b.grado !== filtroGrado)) return false;
     if (filtroLey !== 'todos' && (filtroLey === 'sin_clasificar' ? b.ref.ley != null : b.ref.ley !== filtroLey)) return false;
+    if (filtroVerif === 'confiables' ? !esConfiable(b.ref) : filtroVerif !== 'todos' && nivelDe(b.ref) !== filtroVerif) return false;
     if (durMin != null || durMax != null) {
       const d = b.duracion?.macaulay;
       if (d == null || !Number.isFinite(d)) return false;
@@ -540,7 +546,9 @@ function RadarFija() {
     const q = busqueda.trim().toUpperCase();
     if (q && !b.ref.ticker.includes(q) && !(b.ref.emisor?.toUpperCase().includes(q)) && !(b.ref.nombre?.toUpperCase().includes(q))) return false;
     return true;
-  }), [bonosCalc, filtroTipo, filtroGrado, filtroLey, durMin, durMax, tirMin, tirMax, busqueda]);
+  }), [bonosCalc, filtroTipo, filtroGrado, filtroLey, filtroVerif, durMin, durMax, tirMin, tirMax, busqueda]);
+  // Conteo sobre el catálogo completo (no el filtrado): son los chips que además sirven de filtro rápido.
+  const resumenVerif = useMemo(() => resumenVerificacion(bonosRef), [bonosRef]);
 
   const handleSortRF = (key: SortKeyRF) => setSortRF(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR_RF[key] });
   const ordenadosPorColumna = useMemo(() => {
@@ -550,6 +558,7 @@ function RadarFija() {
     const val = (b: typeof filtrados[number]): number | string | null => {
       if (key === 'ticker') return b.ref.ticker;
       if (key === 'ley') return b.ref.ley ? LEY_LABEL[b.ref.ley] : null;
+      if (key === 'verificacion') return rangoVerificacion(b.ref);
       if (key === 'paridad') return b.paridad;
       if (key === 'tir') return b.tir;
       if (key === 'duracion') { const m = b.duracion?.macaulay; return m != null && Number.isFinite(m) ? m : null; }
@@ -620,6 +629,13 @@ function RadarFija() {
           <Field label="Ley" hint="Jurisdicción de cobro (local o extranjera)">
             <select value={filtroLey} onChange={e => setFiltroLey(e.target.value as FiltroLey)} className={`${inputCls} w-32`}>
               {(Object.keys(FILTRO_LEY_LABEL) as FiltroLey[]).map(l => <option key={l} value={l}>{FILTRO_LEY_LABEL[l]}</option>)}
+            </select>
+          </Field>
+          <Field label="Datos" hint="Qué tan verificados están los flujos del bono">
+            <select value={filtroVerif} onChange={e => setFiltroVerif(e.target.value as FiltroVerif)} className={`${inputCls} w-48`}>
+              <option value="todos">Todos</option>
+              <option value="confiables">Solo confiables</option>
+              {NIVELES.map(n => <option key={n} value={n}>{VERIFICACION[n].label}</option>)}
             </select>
           </Field>
           <Field label="TIR (%)">
@@ -712,8 +728,20 @@ function RadarFija() {
               <RefreshCw className={`w-4 h-4 ${refreshingRF ? 'animate-spin' : ''}`} /> {refreshingRF ? 'Actualizando…' : 'Refrescar'}
             </Button>
           </div>} />
+        {/* Estado de verificación de los datos: cada chip cuenta el catálogo completo y filtra al tocarlo. */}
+        <div className="px-4 pb-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-ink-600 mr-1">Datos del catálogo</span>
+          {NIVELES.map(n => (
+            <button key={n} type="button" onClick={() => setFiltroVerif(f => f === n ? 'todos' : n)} aria-pressed={filtroVerif === n}
+              title={VERIFICACION[n].descripcion}
+              className={`inline-flex items-center gap-1 rounded-full px-1 py-0.5 ${filtroVerif === n ? 'ring-2 ring-accent' : 'opacity-90 hover:opacity-100'}`}>
+              <VerificacionBadge bono={{ verificacion: n }} />
+              <span className="text-[11px] tnum text-ink-700 pr-1">{resumenVerif[n]}</span>
+            </button>
+          ))}
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[1000px]">
+          <table className="w-full text-sm min-w-[1100px]">
             <thead className="text-[11px] text-ink-600 border-b border-line">
               <tr>
                 <th className="px-2" title="Destacado"><span className="sr-only">Destacado</span></th>
@@ -726,6 +754,7 @@ function RadarFija() {
                 <ThSort<SortKeyRF> label="TIR" sortKey="tir" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Duración" sortKey="duracion" sort={sortRF} onClick={handleSortRF} />
                 <ThSort<SortKeyRF> label="Vencimiento" sortKey="vencimiento" sort={sortRF} onClick={handleSortRF} />
+                <ThSort<SortKeyRF> label="Datos" align="left" sortKey="verificacion" sort={sortRF} onClick={handleSortRF} />
                 <th className="px-3" title="¿Alcanza el volumen reciente para el monto de arriba?">Operable</th>
                 <th className="px-3"></th>
               </tr>
@@ -737,13 +766,13 @@ function RadarFija() {
                   montoOperar={montoOperar} />
               ))}
               {bonosRefError && (
-                <tr><td colSpan={12}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página; si sigue fallando, puede ser un problema de conexión.</Empty></td></tr>
+                <tr><td colSpan={13}><Empty icon={Radar} title="No se pudo cargar el catálogo">Probá recargar la página; si sigue fallando, puede ser un problema de conexión.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length === 0 && (
-                <tr><td colSpan={12}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé en unos días.</Empty></td></tr>
+                <tr><td colSpan={13}><Empty icon={Radar} title="Todavía sin catálogo de renta fija">Se está armando — volvé en unos días.</Empty></td></tr>
               )}
               {!bonosRefLoading && !bonosRefError && bonosRef.length > 0 && ordenados.length === 0 && (
-                <tr><td colSpan={12}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
+                <tr><td colSpan={13}><Empty icon={Search} title="Sin resultados">Probá con otra búsqueda o sacá algún filtro.</Empty></td></tr>
               )}
             </tbody>
           </table>
@@ -805,6 +834,7 @@ function RentaFijaRow({ calc, hoy, onEditarRating, destacado, onToggleDestacado,
       <td className="text-right px-3 tnum">{tir != null ? fmtPct(tir) : '—'}</td>
       <td className="text-right px-3 tnum">{duracion ? `${fmtNum(duracion.macaulay, 1)}a` : '—'}</td>
       <td className="text-right px-3 tnum">{ref.vencimiento}</td>
+      <td className="px-3"><VerificacionBadge bono={ref} /></td>
       <td className="px-3">
         {operable ? (
           <span className="inline-flex items-center gap-1.5" title={`${OPERABLE_LABEL[operable]} · mediana ${fmtUsd(volumen!.medianaUsd, 0)}/día, peor día reciente ${fmtUsd(volumen!.minimoUsd, 0)} (últimas ${volumen!.diasConDatos} ruedas)`}>

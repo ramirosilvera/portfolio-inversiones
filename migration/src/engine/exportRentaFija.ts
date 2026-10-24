@@ -12,6 +12,7 @@
 import type { BonoReferenciaCalc } from './rentaFija';
 import { TIPO_LABEL, LEY_LABEL } from './rentaFija';
 import { ETIQUETA_GRADO } from './rating';
+import { VERIFICACION, nivelDe } from './verificacion';
 
 const SEP = ';';
 
@@ -29,6 +30,7 @@ const HEADERS = [
   'Calificadora', 'Calificación', 'Grado', 'Escala',
   'Paridad (%)', 'TIR (%)', 'Duración Macaulay (años)', 'Rendimiento corriente (%)',
   'Volumen promedio (USD)', 'Volumen mediana (USD)', 'Volumen mínimo reciente (USD)', 'Ruedas con dato',
+  'Verificación', 'Nota de verificación', 'Verificado el',
 ];
 
 // Porcentajes se exportan YA multiplicados por 100 (con el header aclarándolo) — exportar la
@@ -56,6 +58,9 @@ export function bonosACSV(calcs: BonoReferenciaCalc[]): string {
     c.volumen != null ? c.volumen.medianaUsd.toFixed(0) : '',
     c.volumen != null ? c.volumen.minimoUsd.toFixed(0) : '',
     c.volumen != null ? String(c.volumen.diasConDatos) : '',
+    VERIFICACION[nivelDe(c.ref)].label,
+    c.ref.verificacion_nota ?? '',
+    c.ref.verificado_en ?? '',
   ].map(csvField).join(SEP));
 
   // BOM UTF-8: sin esto, Excel muestra mal los tildes/ñ de nombres de emisores/instrumentos al

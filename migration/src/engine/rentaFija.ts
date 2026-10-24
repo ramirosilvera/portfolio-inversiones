@@ -61,6 +61,11 @@ export interface BonoReferencia {
   vol_mediana_usd: number | null;
   vol_minimo_usd: number | null;
   vol_dias_con_datos: number | null;
+  // Estado de verificación de los datos (migración 0061, ver engine/verificacion.ts). Opcionales: una fila anterior a la migración
+  // o un fixture de test no los trae, y nivelDe() lo trata como «sin verificar».
+  verificacion?: string | null;
+  verificacion_nota?: string | null;
+  verificado_en?: string | null;
 }
 
 export const TIPO_LABEL: Record<BonoReferencia['tipo'], string> = {
