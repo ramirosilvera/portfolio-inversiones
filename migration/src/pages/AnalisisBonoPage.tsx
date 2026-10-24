@@ -10,6 +10,8 @@ import { ETIQUETA_GRADO } from '../engine/rating';
 import { evaluarOperabilidad, type OperabilidadNivel } from '../engine/volumenRentaFija';
 import { Card, CardHeader, Stat, Badge, RatingBadge, Button, Field, Empty, inputCls, fmtUsd, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
 import { api } from '../lib/api';
+import { VerificacionBadge } from '../components/VerificacionBadge';
+import { VERIFICACION, esConfiable, nivelDe } from '../engine/verificacion';
 
 const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
 // Mismo criterio de color que RadarPage/MacroPage/TasasPage para las 3 categorías de Luz-like.
@@ -63,7 +65,16 @@ export function AnalisisBonoPage() {
         {ref && <Badge tone={TIPO_TONE[ref.tipo]}>{TIPO_LABEL[ref.tipo]}</Badge>}
         {ref?.amortizable && <Badge tone="warn">amortizable</Badge>}
         {ref && <RatingBadge calificadora={ref.calificadora} calificacion={ref.calificacion} grado={calc?.grado ?? null} escala={calc?.escalaGrado ?? null} />}
+        {ref && <VerificacionBadge bono={ref} largo />}
       </div>
+
+      {/* Si los flujos no son confiables, se dice ANTES de los números: una TIR calculada sobre un cronograma mal cargado parece tan precisa como una buena. */}
+      {ref && !esConfiable(ref) && (
+        <div role="alert" className={`rounded-xl border px-4 py-3 text-sm ${nivelDe(ref) === 'inconsistente' ? 'border-neg/30 bg-neg/10 text-neg' : 'border-warn/30 bg-warn/10 text-warn'}`}>
+          <p className="font-semibold">{VERIFICACION[nivelDe(ref)].label}: no decidas con estos números sin revisarlos.</p>
+          <p className="mt-0.5">{VERIFICACION[nivelDe(ref)].descripcion}{ref.verificacion_nota ? ` ${ref.verificacion_nota}` : ''}</p>
+        </div>
+      )}
 
       {isError && (
         <Card><Empty icon={LineChart} title="No se pudo cargar el catálogo">
