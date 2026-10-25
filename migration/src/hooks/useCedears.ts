@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { usePosiciones, useQuotes } from './usePosiciones';
+import { usePosiciones, useQuotes, useDividendosProyectados } from './usePosiciones';
 import { calcularCedear, type CedearCalc } from '../engine/cedears';
+import { rendimientoDividendos, type RendDividendos } from '../engine/dividendYield';
 
 export type { CedearCalc } from '../engine/cedears';
 export { resumenCedears, type ResumenCedears, alertasCedears } from '../engine/cedears';
+export type { RendDividendos, RendDividendosPosicion } from '../engine/dividendYield';
 
 // Cálculo compartido por CEDEAR (valor de mercado, sector, rol) — mismo criterio que
 // useBonosCalc/useRadarTicker: el fetch vive acá, el cálculo puro vive en engine/cedears.ts.
@@ -18,6 +20,14 @@ export function useCedearsCalc(portfolioId: string | undefined) {
   const cedearsCalc: CedearCalc[] = cedears.map(c => calcularCedear(c, quotes[c.ticker] ?? null));
 
   return { cedears, cedearsCalc, isLoading };
+}
+
+// Rendimiento por dividendos de los CEDEARs (dividendo anualizado ÷ valor de mercado): mismo cálculo en Inicio y en /cedears.
+// `data` es null mientras llega el calendario de dividendos (no se muestra un 0 % provisorio); `error` si el proveedor falló.
+export function useRendimientoDividendos(cedearsCalc: CedearCalc[]): { data: RendDividendos | null; isLoading: boolean; isError: boolean } {
+  const { data: info, isLoading, isError } = useDividendosProyectados(cedearsCalc.map(c => c.pos.ticker));
+  if (!info) return { data: null, isLoading, isError };
+  return { data: rendimientoDividendos(cedearsCalc, info), isLoading: false, isError: false };
 }
 
 // Umbrales PERSONALES de alerta de concentración (sector / estilo Peter Lynch), persistidos en

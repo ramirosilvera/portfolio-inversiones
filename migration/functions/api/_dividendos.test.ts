@@ -35,6 +35,19 @@ describe('proyectarDividendo', () => {
     expect(new Date(r.proximaFecha!).getTime()).toBeGreaterThan(new Date('2026-06-01').getTime());
   });
 
+  it('el próximo pago ya declarado NO cuenta para la frecuencia: trimestral con 4 pasados + 1 futuro = 4, no 5 (caso MSFT)', () => {
+    // hoy 2026-10-25: pasados 2025-11-20, 2026-02-19, 2026-05-21, 2026-08-20 (4) y el declarado 2026-11-19 (futuro).
+    const historial = [ev('2026-11-19'), ev('2026-08-20'), ev('2026-05-21'), ev('2026-02-19'), ev('2025-11-20')];
+    const r = proyectarDividendo(historial, '2026-10-25');
+    expect(r.estado).toBe('declarado');
+    expect(r.frecuenciaAnual).toBe(4);
+  });
+
+  it('si el único pago de la ventana es el declarado (futuro), la frecuencia cae al conteo total en vez de quedar vacía', () => {
+    const r = proyectarDividendo([ev('2026-11-19')], '2026-10-25');
+    expect(r.frecuenciaAnual).toBe(1);
+  });
+
   it('un solo evento muy viejo, sin poder inferir frecuencia (fuera de los últimos 370 días) → sin-dato', () => {
     const r = proyectarDividendo([ev('2020-01-01')], '2026-06-01');
     expect(r.estado).toBe('sin-dato');

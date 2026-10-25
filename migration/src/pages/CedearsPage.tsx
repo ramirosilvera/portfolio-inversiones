@@ -3,12 +3,14 @@ import { Building2, Pencil, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosicionMutations } from '../hooks/usePosiciones';
-import { useCedearsCalc, resumenCedears, useObjetivoConcentracion, DEFAULT_CONCENTRACION_SECTOR_PCT, DEFAULT_CONCENTRACION_ESTILO_PCT } from '../hooks/useCedears';
+import { useCedearsCalc, resumenCedears, useObjetivoConcentracion, useRendimientoDividendos, DEFAULT_CONCENTRACION_SECTOR_PCT, DEFAULT_CONCENTRACION_ESTILO_PCT } from '../hooks/useCedears';
+import { RendDividendosStat } from '../components/RendDividendosStat';
 import { ROL_LABEL, ROLES, ROL_COLOR, SIN_CLASIFICAR_COLOR, CONCENTRACION_POSICION_ALERTA, HHI_SECTOR_ALERTA, alertasCedears } from '../engine/cedears';
 import { Card, CardHeader, Button, Badge, Stat, Field, Empty, NumField, inputCls, fmtUsdCompact, fmtNum, fmtPct, PIE_COLORS, AlertasBanner } from '../components/ui';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useChartTheme } from '../hooks/usePrefs';
 import type { Posicion, AssetRole } from '../types/domain';
+import type { RendDividendosPosicion } from '../engine/dividendYield';
 
 // Lista cerrada (select) estilo GICS en español, igual a la que ya aparece en el seed de ejemplo.
 // `sector` sigue siendo texto libre en la columna (compartida con Posiciones/acción/ETF, que no
@@ -35,6 +37,7 @@ export function CedearsPage() {
   const { sectorPct: concentracionSectorPct, estiloPct: concentracionEstiloPct, setSectorPct: setConcentracionSectorPct, setEstiloPct: setConcentracionEstiloPct } = useObjetivoConcentracion(active?.id);
   const [editPos, setEditPos] = useState<Posicion | null>(null);
   const chart = useChartTheme();
+  const rendDiv = useRendimientoDividendos(cedearsCalc);
 
   if (!active) return null;
 
@@ -73,6 +76,7 @@ export function CedearsPage() {
                 <th className="text-right px-3">Costo</th>
                 <th className="text-right px-3">Valor mercado</th>
                 <th className="text-right px-3">Resultado</th>
+                <th className="text-right px-3" title="Dividendo anualizado (último monto × pagos por año) ÷ valor de mercado, bruto. Estimado con la cadencia histórica.">Div. yield</th>
                 <th className="px-2"></th>
               </tr>
             </thead>
@@ -91,6 +95,7 @@ export function CedearsPage() {
                     <td className="text-right px-3 tnum text-ink-700">{fmtUsdCompact(cc.capital)}</td>
                     <td className="text-right px-3 tnum">{fmtUsdCompact(cc.mkt)}</td>
                     <td className={`text-right px-3 tnum ${cc.res == null ? '' : cc.res >= 0 ? 'text-pos' : 'text-neg'}`}>{cc.res == null ? '—' : `${cc.res >= 0 ? '+' : ''}${fmtUsdCompact(cc.res)}`}</td>
+                    <DivYieldCell rd={rendDiv.data?.porPosicion[p.id] ?? null} cargando={rendDiv.isLoading} />
                     <td className="px-2 text-right">
                       <button onClick={() => setEditPos(p)} className="text-ink-600 hover:text-celeste-600 inline-flex items-center justify-center w-9 h-9" title="Clasificar (sector / estilo)" aria-label="Clasificar sector y estilo"><Pencil className="w-4 h-4" /></button>
                     </td>
@@ -98,8 +103,8 @@ export function CedearsPage() {
                 );
               })}
               {posLoading
-                ? <tr><td colSpan={8}><p className="p-4 text-sm text-ink-600">Cargando…</p></td></tr>
-                : cedears.length === 0 && <tr><td colSpan={8}><Empty icon={Building2} title="Sin CEDEARs">Agregá uno en Posiciones con el tipo "CEDEAR".</Empty></td></tr>}
+                ? <tr><td colSpan={9}><p className="p-4 text-sm text-ink-600">Cargando…</p></td></tr>
+                : cedears.length === 0 && <tr><td colSpan={9}><Empty icon={Building2} title="Sin CEDEARs">Agregá uno en Posiciones con el tipo "CEDEAR".</Empty></td></tr>}
             </tbody>
           </table>
         </div>
@@ -108,7 +113,7 @@ export function CedearsPage() {
       {cedears.length > 0 && (
         <Card>
           <CardHeader title="Indicadores clave" sub="Concentración y diversificación de la renta variable." />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3">
             <Stat label="Capital" value={fmtUsdCompact(totalMkt)} />
             <Stat label="Mayor posición" value={mayorPosicion
               ? <span className={mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA ? 'text-warn' : 'text-ink-900'}>{mayorPosicion.ticker} · {fmtPct(mayorPosicion.pct, 0)}</span>
@@ -120,6 +125,7 @@ export function CedearsPage() {
               ? <span className={hhiSector >= HHI_SECTOR_ALERTA ? 'text-warn' : 'text-ink-900'}>{fmtNum(hhiSector, 2)}</span>
               : <span className="text-ink-500">—</span>}
               hint={`Herfindahl (Σ pesoᵢ²) por sector: 1 = todo en un sector. Desde ${fmtNum(HHI_SECTOR_ALERTA, 2)} (~3 sectores parejos) la concentración es alta.`} />
+            <div className="col-span-2 sm:col-span-1 min-w-0"><RendDividendosStat rd={rendDiv.data} isLoading={rendDiv.isLoading} isError={rendDiv.isError} /></div>
           </div>
         </Card>
       )}
@@ -207,6 +213,20 @@ export function CedearsPage() {
       {editPos && <ClasificarModal pos={editPos} onClose={() => setEditPos(null)}
         onSave={async (patch) => { await update(editPos.id, patch); setEditPos(null); }} />}
     </div>
+  );
+}
+
+// Rendimiento por dividendos de UNA posición: % sobre su valor de mercado y los US$/año que implica (bruto). «≈» = proyectado por
+// cadencia histórica (el proveedor no declaró el próximo pago); sin «≈» = el próximo pago ya está declarado.
+function DivYieldCell({ rd, cargando }: { rd: RendDividendosPosicion | null; cargando: boolean }) {
+  if (!rd) return <td className="text-right px-3 tnum text-ink-500">{cargando ? '…' : '—'}</td>;
+  if (rd.estado === 'sin-info') return <td className="text-right px-3 tnum text-ink-500" title="Sin dato del proveedor (o falta el ratio del CEDEAR): no entra en el promedio.">—</td>;
+  if (rd.estado === 'sin-pago') return <td className="text-right px-3 text-[11px] text-ink-500" title="Sin dividendos registrados en el último año: cuenta como 0 % en el promedio.">no paga</td>;
+  return (
+    <td className="text-right px-3 tnum" title={`${rd.estado === 'declarado' ? 'Próximo pago declarado' : 'Próximo pago estimado por cadencia histórica'} · anualizado, bruto, antes de retención${rd.yieldCosto != null ? ` · sobre tu costo ${fmtPct(rd.yieldCosto, 1)}` : ''}`}>
+      {rd.yieldMercado != null ? `${rd.estado === 'estimado' ? '≈' : ''}${fmtPct(rd.yieldMercado, 1)}` : '—'}
+      <span className="block text-[10px] text-ink-500">{fmtUsdCompact(rd.dividendoAnualUsd)}/año</span>
+    </td>
   );
 }
 
