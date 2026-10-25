@@ -3,10 +3,13 @@ import { usePosiciones, useQuotes, useDividendosProyectados } from './usePosicio
 import { calcularCedear, type CedearCalc } from '../engine/cedears';
 import { rendimientoDividendos, tickersConCobroReciente, type RendDividendos } from '../engine/dividendYield';
 import { useCobros } from './useCobros';
+import { useDcfInputs } from './useDcfInputs';
+import { tasaDescuentoCedears, type TasaDescuentoCartera } from '../engine/tasaDescuento';
 
 export type { CedearCalc } from '../engine/cedears';
 export { resumenCedears, type ResumenCedears, alertasCedears } from '../engine/cedears';
 export type { RendDividendos, RendDividendosPosicion } from '../engine/dividendYield';
+export type { TasaDescuentoCartera, TasaDescuentoPosicion } from '../engine/tasaDescuento';
 
 // Cálculo compartido por CEDEAR (valor de mercado, sector, rol) — mismo criterio que
 // useBonosCalc/useRadarTicker: el fetch vive acá, el cálculo puro vive en engine/cedears.ts.
@@ -32,6 +35,12 @@ export function useRendimientoDividendos(cedearsCalc: CedearCalc[]): { data: Ren
   if (!info) return { data: null, isLoading, isError };
   const conCobro = tickersConCobroReciente(cobros, new Date().toISOString().slice(0, 10));
   return { data: rendimientoDividendos(cedearsCalc, info, conCobro), isLoading: false, isError: false };
+}
+
+// Tasa de descuento (d) guardada en el Radar para cada CEDEAR y ponderada por capital: mismo cálculo en Inicio, /cedears y la tarjeta suelta.
+export function useTasaDescuentoCedears(cedearsCalc: CedearCalc[]): { data: TasaDescuentoCartera; isLoading: boolean } {
+  const { map, isLoading } = useDcfInputs();
+  return { data: tasaDescuentoCedears(cedearsCalc, map), isLoading };
 }
 
 // Umbrales PERSONALES de alerta de concentración (sector / estilo Peter Lynch), persistidos en
