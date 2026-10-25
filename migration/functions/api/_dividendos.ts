@@ -40,7 +40,11 @@ export function proyectarDividendo(historical: DividendEvent[], hoy: string): Di
   // Frecuencia: cuántos pagos hubo en los últimos ~370 días (30 de margen por calendario irregular).
   const corte = new Date(hoy); corte.setDate(corte.getDate() - 370);
   const corteStr = corte.toISOString().slice(0, 10);
-  const enUltimoAnio = ordenados.filter(h => h.date >= corteStr).length;
+  // Se cuentan los pagos YA OCURRIDOS: el próximo, si el proveedor ya lo declaró, está en el futuro y no es parte del ritmo
+  // histórico. Contarlo le sumaba un pago de más a todo pagador trimestral (5 en vez de 4: MSFT y WMT) e inflaba cualquier
+  // proyección a 12 meses ~25 %. Si no hay ningún pago pasado en la ventana (solo el declarado), se cae al conteo total.
+  const pasadosEnUltimoAnio = ordenados.filter(h => h.date >= corteStr && h.date <= hoy).length;
+  const enUltimoAnio = pasadosEnUltimoAnio > 0 ? pasadosEnUltimoAnio : ordenados.filter(h => h.date >= corteStr).length;
   const frecuenciaAnual = enUltimoAnio > 0 ? enUltimoAnio : null;
 
   // Si el pago (o ex-date, si no hay paymentDate) más reciente conocido es futuro o de hasta hace
