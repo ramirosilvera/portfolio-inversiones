@@ -497,8 +497,7 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
   // valor residual y cuotas cargadas). Antes era faceValue × tasa "año completo": inflaba el cupón
   // de un bono amortizado (lo calculaba sobre el 100%) y seguía sumando bonos ya vencidos.
   const anual = useMemo(() => +cal.reduce((s, m) => s + m.total, 0).toFixed(2), [cal]);
-  const divAnual = useMemo(() => dividendoAnualEstimado(divPosiciones, divInfo, now.getFullYear(), now.getMonth() + 1),
-    [divPosiciones, divInfo, now.getFullYear(), now.getMonth()]);
+  const divAnual = useMemo(() => dividendoAnualEstimado(divPosiciones, divInfo), [divPosiciones, divInfo]);
   const capitalBonos = useMemo(() =>
     posiciones.filter(p => p.tipo === 'bono').reduce((s, p) => s + p.precio_compra * p.cantidad, 0),
     [posiciones]);
@@ -540,7 +539,7 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
         <Stat label="Cargados (bonos)" value={`${conCupon}/${totalBonos}`} hint="bonos con datos de cupón / total de bonos" />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Stat label="Dividendos anual (estimado)" value={fmtUsd(divAnual, 0)} hint={`CEDEARs/acciones, bruto — neto estimado ${fmtUsd(netoDiv.neto, 0)} (retención 30 % + depositario ~5,5 %, tasas generales)`} />
+        <Stat label="Dividendos anual (estimado)" value={fmtUsd(divAnual, 0)} hint={`CEDEARs/acciones, anualizado (último monto × pagos por año), bruto — neto estimado ${fmtUsd(netoDiv.neto, 0)} (retención 30 % + depositario ~5,5 %, tasas generales)`} />
         <Stat label="Próximo dividendo" value={proximoDiv ? `${MESES[proximoDiv.month - 1]} ${proximoDiv.year}` : '—'} hint={proximoDiv ? fmtUsd(proximoDiv.total, 0) : undefined} />
         <Stat label="Cargados (dividendos)" value={`${conDividendo}/${equities.length}`} hint="con dato del proveedor / total de CEDEARs-acciones" />
         <Stat label="Total renta 12m" value={fmtUsd(anual + divAnual, 0)} hint={`bruto, sin capital — neto estimado ${fmtUsd(netoProy.neto, 0)} (costos ~${fmtUsd(netoProy.costos, 0)})`} />

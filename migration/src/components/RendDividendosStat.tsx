@@ -1,4 +1,4 @@
-import { Stat, fmtPct } from './ui';
+import { Stat, fmtPct, fmtUsd } from './ui';
 import type { RendDividendos } from '../engine/dividendYield';
 
 // «Rend. dividendos» de los CEDEARs: el equivalente a «Rend. corriente» de los bonos. Un solo componente para Inicio y /cedears:
@@ -14,6 +14,7 @@ export function RendDividendosStat({ rd, isLoading, isError }: { rd: RendDividen
   }
   const partes = [
     'Dividendo anualizado (último monto × pagos por año) ÷ valor de mercado, ponderado por capital (BRUTO, antes de la retención de EE.UU.). Cuentan como 0 % los CEDEARs que no pagan.',
+    `≈ US$ ${fmtUsd(rd.dividendoAnualUsd, 0).replace('US$', '').trim()} al año en total.`,
     `${rd.pagadores} pagan${rd.sinPago > 0 ? `, ${rd.sinPago} no pagan` : ''}${rd.sinInfo > 0 ? `, ${rd.sinInfo} sin dato (fuera del promedio)` : ''}.`,
     rd.yieldCosto != null ? `Sobre tu costo: ${fmtPct(rd.yieldCosto, 1)}.` : '',
     rd.yieldNeto != null ? `Neto estimado de retención y costos: ${fmtPct(rd.yieldNeto, 1)}.` : '',

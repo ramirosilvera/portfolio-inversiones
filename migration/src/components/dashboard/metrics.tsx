@@ -28,7 +28,7 @@ import { Flame } from 'lucide-react';
 import { usePortfolios } from '../../hooks/usePortfolios';
 import { useMacro } from '../../hooks/usePosiciones';
 import { useChartTheme } from '../../hooks/usePrefs';
-import { useCedearsCalc, resumenCedears, useObjetivoConcentracion } from '../../hooks/useCedears';
+import { useCedearsCalc, resumenCedears, useRendimientoDividendos, useObjetivoConcentracion } from '../../hooks/useCedears';
 import { SIN_CLASIFICAR_COLOR, CONCENTRACION_POSICION_ALERTA } from '../../engine/cedears';
 import { PIE_COLORS, Card, CardHeader, Badge, fmtPct } from '../ui';
 import { useBonosCalc, useObjetivoDuracion, resumenBonos } from '../../hooks/useBonos';
@@ -147,6 +147,19 @@ function CedearsMayorPosicionMetric({ viz, titulo, sub, detalleHref, personaliza
         label: `${resumen.mayorPosicion.ticker} · ${fmtPct(resumen.mayorPosicion.pct, 0)}`,
         tone: resumen.mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA ? 'warn' : 'neutral',
       };
+  return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
+}
+
+function CedearsRendDividendosMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
+  const { active } = usePortfolios();
+  const { cedears, cedearsCalc, isLoading } = useCedearsCalc(active?.id);
+  const rd = useRendimientoDividendos(cedearsCalc);
+  // Mismo número que el 5.º dato de la tarjeta de CEDEARs y que /cedears (mismo hook y motor). Sin cotización de dividendos todavía
+  // → «cargando», no un 0 % provisorio; sin porcentaje calculable → vacío con el motivo.
+  const mv: MetricValue = isLoading || (cedears.length > 0 && rd.isLoading) ? { status: 'loading' }
+    : cedears.length === 0 ? { status: 'empty', motivo: 'Sin CEDEARs en este portfolio.' }
+    : !rd.data || rd.data.yieldMercado == null ? { status: 'empty', motivo: 'Sin datos de dividendos para tus CEDEARs todavía.' }
+    : { status: 'ok', shape: 'scalar', value: rd.data.yieldMercado, format: 'pct', dp: 2, label: `${fmtPct(rd.data.yieldMercado, 1)} · US$ ${Math.round(rd.data.dividendoAnualUsd)}/año` };
   return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
 }
 
@@ -488,6 +501,7 @@ export const METRIC_COMPONENTS: Partial<Record<MetricKey, MetricComponent>> = {
   distribucion_tipo_activo: DistribucionTipoActivoMetric,
   cedears_capital: CedearsCapitalMetric,
   cedears_mayor_posicion: CedearsMayorPosicionMetric,
+  cedears_rend_dividendos: CedearsRendDividendosMetric,
   cedears_por_sector: CedearsPorSectorMetric,
   bonos_capital: BonosCapitalMetric,
   bonos_tir_promedio: BonosTirPromedioMetric,

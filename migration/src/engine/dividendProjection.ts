@@ -118,12 +118,28 @@ export function dividendCalendar(
   return buckets;
 }
 
-// Dividendo anual ESTIMADO (suma de 12 meses de calendario) — mismo criterio que el "Cupón anual"
-// de CuponesPage (suma del couponCalendar), para el Stat "Dividendos anual (estimado)".
+// Dividendo ANUALIZADO vigente de UNA posición (USD, bruto): último monto por acción × pagos por año × nominales ÷ ratio. Es la
+// única fórmula de «dividendo anual» de la app (tarjeta de CEDEARs, /cedears y Cupones): el calendario mensual de arriba sirve para
+// ver CUÁNDO cae cada pago, pero sumar «12 meses de calendario» desde el mes en curso deja un pago afuera cuando el próximo está a
+// ~3 meses (WMT, MRK) y daba un total 10–13 % menor que la tarjeta de CEDEARs. null si no se puede calcular: sin dato del
+// proveedor, sin cadencia, sin monto, o un CEDEAR sin ratio confiable (no se inventa un dividendo ×N).
+export function dividendoAnualizado(p: DividendPosicion, info: DividendoInfo | null | undefined): number | null {
+  if (p.tipo === 'bono' || p.tipo === 'cash' || p.tipo === 'accion_ar' || !(p.cantidad > 0)) return null;
+  if (!info || info.estado === 'sin-dato') return null;
+  const monto = info.montoPorAccion, frec = info.frecuenciaAnual;
+  if (monto == null || !(monto > 0) || !frec || !(frec > 0)) return null;
+  let divisor = 1;
+  if (p.tipo === 'cedear') {
+    if (!(p.ratioCedear != null && p.ratioCedear > 0)) return null;
+    divisor = p.ratioCedear;
+  }
+  return (monto * frec * p.cantidad) / divisor;
+}
+
+// Dividendo anual ESTIMADO de todas las posiciones (suma de dividendoAnualizado) — mismo criterio que el «Cupón anual» de CuponesPage
+// en cuanto a ser el flujo de un año, pero anualizado y no la suma de un calendario con ventana de meses enteros.
 export function dividendoAnualEstimado(
   posiciones: DividendPosicion[], infoPorTicker: Record<string, DividendoInfo | null | undefined>,
-  fromYear: number, fromMonth: number,
 ): number {
-  return +dividendCalendar(posiciones, infoPorTicker, fromYear, fromMonth, 12)
-    .reduce((s, m) => s + m.total, 0).toFixed(2);
+  return +posiciones.reduce((s, p) => s + (dividendoAnualizado(p, infoPorTicker[p.ticker.toUpperCase()]) ?? 0), 0).toFixed(2);
 }
