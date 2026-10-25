@@ -159,7 +159,7 @@ function CedearsRendDividendosMetric({ viz, titulo, sub, detalleHref, personaliz
   const mv: MetricValue = isLoading || (cedears.length > 0 && rd.isLoading) ? { status: 'loading' }
     : cedears.length === 0 ? { status: 'empty', motivo: 'Sin CEDEARs en este portfolio.' }
     : !rd.data || rd.data.yieldMercado == null ? { status: 'empty', motivo: 'Sin datos de dividendos para tus CEDEARs todavía.' }
-    : { status: 'ok', shape: 'scalar', value: rd.data.yieldMercado, format: 'pct', dp: 2, label: `${fmtPct(rd.data.yieldMercado, 1)} · US$ ${Math.round(rd.data.dividendoAnualUsd)}/año` };
+    : { status: 'ok', shape: 'scalar', value: rd.data.yieldMercado, format: 'pct', dp: 2, label: fmtPct(rd.data.yieldMercado, 1), sub: `US$ ${Math.round(rd.data.dividendoAnualUsd)}/año` };
   return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
 }
 
@@ -531,6 +531,13 @@ export const METRIC_COMPONENTS: Partial<Record<MetricKey, MetricComponent>> = {
 // fuente — combinar algo de Bonos con algo de Cobros no tiene un único destino razonable) y adentro,
 // en modo 'compacto' (Context), cada métrica se pinta como un tile chico — cada tile usa su propio
 // título de catálogo (no el título de la tarjeta combinada, que es el de la Card entera).
+// «Rend. dividendos (CEDEARs)» → «Rend. dividendos» dentro de una tarjeta de CEDEARs; sin categoría común, el título queda completo.
+function tituloTile(titulo: string, categoria: string | undefined, categoriaComun: string | undefined): string {
+  if (!categoria || categoria !== categoriaComun) return titulo;
+  const sinSufijo = titulo.replace(new RegExp(`\\s*\\(${categoria.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)\\s*$`, 'i'), '');
+  return sinSufijo || titulo;
+}
+
 export function MetricWidgetRenderer({ ctx, metricas, viz, titulo, sub, personalizando }: {
   ctx: MetricContext; metricas: MetricKey[]; viz: DashboardViz; titulo: string; sub?: string; personalizando: boolean;
 }) {
@@ -545,10 +552,14 @@ export function MetricWidgetRenderer({ ctx, metricas, viz, titulo, sub, personal
   const combinables = metricas.filter(k => getMetricDef(k)?.shape === 'scalar');
   const hrefs = new Set(combinables.map(k => getMetricDef(k)?.detalleHref).filter((h): h is string => !!h));
   const href = hrefs.size === 1 ? [...hrefs][0] : undefined;
+  // Si todas las métricas son de la misma categoría, el «(CEDEARs)» del título de cada tile sobra (ya lo dice el de la tarjeta) y le quita lugar al texto.
+  const categorias = new Set(combinables.map(k => getMetricDef(k)?.categoria));
+  const categoriaComun = categorias.size === 1 ? [...categorias][0] : undefined;
+  // 3 tiles: SIEMPRE 3 columnas (una fila también en el celular, para ocupar menos alto); la tipografía del tile se achica en pantallas angostas.
   // grid-cols-4 fijo dejaba huecos con 2 o 3 tiles (mismo criterio que las grillas a mano de
   // CobrosResumen/LiquidezFci en DashboardPage.tsx, que usan grid-cols-3 para 3 tiles, no 4 con un
   // hueco) — acá el conteo es dinámico (1 a MAX_COMBO), así que se resuelve por lookup.
-  const cols = combinables.length <= 2 ? 'grid-cols-2' : combinables.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-4';
+  const cols = combinables.length <= 2 ? 'grid-cols-2' : combinables.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4';
 
   return (
     <Card>
@@ -558,7 +569,7 @@ export function MetricWidgetRenderer({ ctx, metricas, viz, titulo, sub, personal
           {combinables.map(k => {
             const Comp = METRIC_COMPONENTS[k];
             const def = getMetricDef(k);
-            return Comp && def ? <Comp key={k} ctx={ctx} viz="stat" titulo={def.titulo} personalizando={personalizando} /> : null;
+            return Comp && def ? <Comp key={k} ctx={ctx} viz="stat" titulo={tituloTile(def.titulo, def.categoria, categoriaComun)} personalizando={personalizando} /> : null;
           })}
         </div>
       </MetricModoContext.Provider>

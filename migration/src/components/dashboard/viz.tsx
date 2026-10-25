@@ -56,9 +56,11 @@ export function StatCompactoViz({ titulo, mv }: { titulo: string; mv: MetricValu
     : mv.shape !== 'scalar' ? { valor: <span className="text-ink-500">—</span>, sub: undefined, tono: undefined }
     : { valor: mv.label ?? fmtValor(mv.value, mv.format, mv.dp), sub: mv.sub, tono: TONO_CLASE[mv.tone ?? 'neutral'] };
   return (
-    <div className="rounded-2xl border border-line bg-surface shadow-soft px-3 py-3 min-w-0">
-      <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate">{titulo}</p>
-      <p className={`text-lg font-bold font-display tnum mt-1 truncate ${cuerpo.tono ?? 'text-ink-900'}`}>{cuerpo.valor}</p>
+    // px-2 + text-sm en pantallas angostas: con 3 tiles en UNA fila (celular, ~100 px cada uno) el valor tiene que entrar sin cortarse;
+    // desde `sm` vuelven el padding y el tamaño de siempre. `title` en el valor: si igual se cortara, el número completo queda a un toque.
+    <div className="rounded-2xl border border-line bg-surface shadow-soft px-2 sm:px-3 py-3 min-w-0">
+      <p className="text-[10px] uppercase tracking-wide text-ink-600 font-semibold truncate" title={titulo}>{titulo}</p>
+      <p className={`text-sm sm:text-lg font-bold font-display tnum mt-1 truncate ${cuerpo.tono ?? 'text-ink-900'}`} title={typeof cuerpo.valor === 'string' ? cuerpo.valor : undefined}>{cuerpo.valor}</p>
       {cuerpo.sub && <p className="text-[10px] text-ink-500 mt-0.5 truncate" title={cuerpo.sub}>{cuerpo.sub}</p>}
     </div>
   );
