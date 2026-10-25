@@ -1,5 +1,12 @@
-import { useEffect, useState } from 'react';
-import { usePosiciones, useQuotes, useDividendosProyectados } from './usePosiciones';
+import { useEffect, useMemo, useState } from 'react';
+import { useQueries } from '@tanstack/react-query';
+import { api } from '../lib/api';
+import { computeRatios } from '../engine/ratios';
+import { computeDcf } from '../engine/dcf';
+import { margenSeguridadCedears, type MargenCartera } from '../engine/margenSeguridad';
+import { useCikMap } from './useCikMap';
+import type { Fundamentals } from '../types/domain';
+import { usePosiciones, useQuotes, useDividendosProyectados, useMacro } from './usePosiciones';
 import { calcularCedear, type CedearCalc } from '../engine/cedears';
 import { rendimientoDividendos, tickersConCobroReciente, type RendDividendos } from '../engine/dividendYield';
 import { useCobros } from './useCobros';
@@ -9,6 +16,7 @@ import { tasaDescuentoCedears, type TasaDescuentoCartera } from '../engine/tasaD
 export type { CedearCalc } from '../engine/cedears';
 export { resumenCedears, type ResumenCedears, alertasCedears } from '../engine/cedears';
 export type { RendDividendos, RendDividendosPosicion } from '../engine/dividendYield';
+export type { MargenCartera, MargenPosicion } from '../engine/margenSeguridad';
 export type { TasaDescuentoCartera, TasaDescuentoPosicion } from '../engine/tasaDescuento';
 
 // Cálculo compartido por CEDEAR (valor de mercado, sector, rol) — mismo criterio que
@@ -41,6 +49,58 @@ export function useRendimientoDividendos(cedearsCalc: CedearCalc[]): { data: Ren
 export function useTasaDescuentoCedears(cedearsCalc: CedearCalc[]): { data: TasaDescuentoCartera; isLoading: boolean } {
   const { map, isLoading } = useDcfInputs();
   return { data: tasaDescuentoCedears(cedearsCalc, map), isLoading };
+}
+
+// Margen de seguridad del DCF de cada CEDEAR con los supuestos que GUARDASTE en el Radar, ponderado por capital. Mismas queries
+// (fundamentals, beta, cotización) y mismo cálculo que useRadarTicker, así el margen coincide con el del Radar/Análisis y no
+// se vuelve a pedir nada si ya está en caché. Solo entran los tickers con supuestos guardados (su valuación, no una base en silencio).
+export function useMargenSeguridadCedears(cedearsCalc: CedearCalc[]): { data: MargenCartera; isLoading: boolean } {
+  const { map: dcfMap, isLoading: dcfLoading } = useDcfInputs();
+  const { map: cikMap, isLoading: cikLoading } = useCikMap();
+  const { data: macro = {} } = useMacro();
+  const riskFree = ((macro as Record<string, number | null>).dgs10 ?? 4.3) / 100;
+  const tickers = [...new Set(cedearsCalc.map(c => c.pos.ticker.toUpperCase()))].filter(t => dcfMap.has(t));
+  const { data: quotes = {} } = useQuotes(tickers);
+
+  const fund = useQueries({
+    queries: tickers.map(T => {
+      const cik = cikMap.get(T)?.cik;
+      return {
+        queryKey: ['fundamentals', T, cik ?? ''],
+        enabled: !cikLoading,
+        queryFn: () => api.fundamentals(T, cik),
+        staleTime: 12 * 60 * 60_000,
+        retry: 2,
+      };
+    }),
+  });
+  const betas = useQueries({
+    queries: tickers.map(T => ({
+      queryKey: ['beta', T],
+      enabled: dcfMap.get(T)?.beta == null,
+      queryFn: () => api.beta(T),
+      staleTime: 24 * 60 * 60_000,
+    })),
+  });
+
+  const enVuelo = dcfLoading || cikLoading || fund.some(q => q.isLoading) || betas.some(q => q.isLoading);
+  const huella = fund.map(q => q.dataUpdatedAt).join(',') + '|' + betas.map(q => q.dataUpdatedAt).join(',');
+  const margenes = useMemo(() => {
+    const m = new Map<string, number | null>();
+    tickers.forEach((T, i) => {
+      const f = fund[i]?.data as (Fundamentals & { error?: string }) | undefined;
+      const saved = dcfMap.get(T);
+      const price = quotes[T] ?? null;
+      if (!f || f.error || !saved || price == null) { m.set(T, null); return; }
+      const beta = saved.beta ?? (betas[i]?.data as { beta?: number } | undefined)?.beta ?? 1.0;
+      const r = computeRatios(f, price, beta, riskFree);
+      m.set(T, computeDcf(f, price, r.wacc, saved, r.roic).marginOfSafety);
+    });
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickers.join(','), huella, dcfMap, quotes, riskFree]);
+
+  return { data: margenSeguridadCedears(cedearsCalc, margenes), isLoading: enVuelo };
 }
 
 // Umbrales PERSONALES de alerta de concentración (sector / estilo Peter Lynch), persistidos en

@@ -3,9 +3,10 @@ import { Building2, Pencil, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosicionMutations } from '../hooks/usePosiciones';
-import { useCedearsCalc, resumenCedears, useObjetivoConcentracion, useRendimientoDividendos, useTasaDescuentoCedears, DEFAULT_CONCENTRACION_SECTOR_PCT, DEFAULT_CONCENTRACION_ESTILO_PCT } from '../hooks/useCedears';
+import { useCedearsCalc, resumenCedears, useObjetivoConcentracion, useRendimientoDividendos, useTasaDescuentoCedears, useMargenSeguridadCedears, DEFAULT_CONCENTRACION_SECTOR_PCT, DEFAULT_CONCENTRACION_ESTILO_PCT } from '../hooks/useCedears';
 import { RendDividendosStat } from '../components/RendDividendosStat';
 import { TasaDescuentoStat } from '../components/TasaDescuentoStat';
+import { MargenSeguridadStat } from '../components/MargenSeguridadStat';
 import { ROL_LABEL, ROLES, ROL_COLOR, SIN_CLASIFICAR_COLOR, CONCENTRACION_POSICION_ALERTA, HHI_SECTOR_ALERTA, alertasCedears } from '../engine/cedears';
 import { Card, CardHeader, Button, Badge, Stat, Field, Empty, NumField, inputCls, fmtUsdCompact, fmtNum, fmtPct, PIE_COLORS, AlertasBanner } from '../components/ui';
 import { useEscapeClose } from '../hooks/useEscapeClose';
@@ -40,6 +41,7 @@ export function CedearsPage() {
   const chart = useChartTheme();
   const rendDiv = useRendimientoDividendos(cedearsCalc);
   const tasaDesc = useTasaDescuentoCedears(cedearsCalc);
+  const margen = useMargenSeguridadCedears(cedearsCalc);
 
   if (!active) return null;
 
@@ -80,6 +82,7 @@ export function CedearsPage() {
                 <th className="text-right px-3">Resultado</th>
                 <th className="text-right px-3" title="Dividendo anualizado (último monto × pagos por año) ÷ valor de mercado, bruto. Estimado con la cadencia histórica.">Div. yield</th>
                 <th className="text-right px-3" title="Tasa de descuento (d) guardada en el DCF del Radar para este ticker.">Tasa desc.</th>
+                <th className="text-right px-3" title="Margen de seguridad del DCF del Radar con tus supuestos guardados: 1 − precio ÷ valor intrínseco.">Margen seg.</th>
                 <th className="px-2"></th>
               </tr>
             </thead>
@@ -102,6 +105,11 @@ export function CedearsPage() {
                     <td className="text-right px-3 tnum" title="Tasa de descuento guardada en el DCF del Radar">
                       {tasaDesc.data.porPosicion[p.id]?.d != null ? fmtPct(tasaDesc.data.porPosicion[p.id].d, 1) : <span className="text-ink-500" title="Sin supuestos guardados en el Radar: no entra en el promedio">{tasaDesc.isLoading ? '…' : '—'}</span>}
                     </td>
+                    <td className="text-right px-3 tnum">
+                      {margen.data.porPosicion[p.id]?.margen != null
+                        ? <span className={margen.data.porPosicion[p.id].margen! >= 0 ? 'text-pos' : 'text-neg'}>{fmtPct(margen.data.porPosicion[p.id].margen!, 0)}</span>
+                        : <span className="text-ink-500" title="Sin supuestos guardados o sin fundamentals: no entra en el promedio">{margen.isLoading ? '…' : '—'}</span>}
+                    </td>
                     <td className="px-2 text-right">
                       <button onClick={() => setEditPos(p)} className="text-ink-600 hover:text-celeste-600 inline-flex items-center justify-center w-9 h-9" title="Clasificar (sector / estilo)" aria-label="Clasificar sector y estilo"><Pencil className="w-4 h-4" /></button>
                     </td>
@@ -109,8 +117,8 @@ export function CedearsPage() {
                 );
               })}
               {posLoading
-                ? <tr><td colSpan={10}><p className="p-4 text-sm text-ink-600">Cargando…</p></td></tr>
-                : cedears.length === 0 && <tr><td colSpan={10}><Empty icon={Building2} title="Sin CEDEARs">Agregá uno en Posiciones con el tipo "CEDEAR".</Empty></td></tr>}
+                ? <tr><td colSpan={11}><p className="p-4 text-sm text-ink-600">Cargando…</p></td></tr>
+                : cedears.length === 0 && <tr><td colSpan={11}><Empty icon={Building2} title="Sin CEDEARs">Agregá uno en Posiciones con el tipo "CEDEAR".</Empty></td></tr>}
             </tbody>
           </table>
         </div>
@@ -119,7 +127,7 @@ export function CedearsPage() {
       {cedears.length > 0 && (
         <Card>
           <CardHeader title="Indicadores clave" sub="Concentración y diversificación de la renta variable." />
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 p-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
             <Stat label="Capital" value={fmtUsdCompact(totalMkt)} />
             <Stat label="Mayor posición" value={mayorPosicion
               ? <span className={mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA ? 'text-warn' : 'text-ink-900'}>{mayorPosicion.ticker} · {fmtPct(mayorPosicion.pct, 0)}</span>
@@ -133,6 +141,7 @@ export function CedearsPage() {
               hint={`Herfindahl (Σ pesoᵢ²) por sector: 1 = todo en un sector. Desde ${fmtNum(HHI_SECTOR_ALERTA, 2)} (~3 sectores parejos) la concentración es alta.`} />
             <div className="min-w-0"><RendDividendosStat rd={rendDiv.data} isLoading={rendDiv.isLoading} isError={rendDiv.isError} /></div>
             <div className="min-w-0"><TasaDescuentoStat td={tasaDesc.data} isLoading={tasaDesc.isLoading} /></div>
+            <div className="min-w-0"><MargenSeguridadStat mg={margen.data} isLoading={margen.isLoading} /></div>
           </div>
         </Card>
       )}
