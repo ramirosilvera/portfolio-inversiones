@@ -11,7 +11,7 @@
 // =============================================================================
 
 import type { CedearCalc } from './cedears';
-import type { DividendoInfo } from './dividendProjection';
+import { dividendoAnualizado, type DividendoInfo } from './dividendProjection';
 import { netoSobreBruto } from './impuestos';
 
 // declarado: el próximo pago ya lo anunció el proveedor · estimado: se proyecta por cadencia histórica ·
@@ -62,15 +62,14 @@ export function rendimientoDividendos(
     if (info.estado === 'sin-dato') {
       estado = 'sin-pago';
     } else {
-      // Anualizar exige las tres cosas: monto, cadencia y ratio (un CEDEAR sin ratio confiable no se convierte a dividendo por CEDEAR).
-      const monto = info.montoPorAccion, frec = info.frecuenciaAnual, ratio = p.ratio_cedear;
-      const cantidad = Number(p.cantidad) || 0;
-      if (monto == null || !(monto > 0) || !frec || !(frec > 0) || !(ratio != null && ratio > 0) || !(cantidad > 0)) {
+      // Anualizar exige monto, cadencia y (CEDEAR) ratio: sin alguno de los tres no se inventa un dividendo.
+      const anual = dividendoAnualizado({ ticker: p.ticker, tipo: 'cedear', cantidad: Number(p.cantidad) || 0, ratioCedear: p.ratio_cedear ?? null }, info);
+      if (anual == null) {
         sinInfo++;
         porPosicion[p.id] = { ...base, estado: 'sin-info', dividendoAnualUsd: 0, yieldMercado: null, yieldCosto: null };
         continue;
       }
-      dividendoAnualUsd = (monto * frec * cantidad) / ratio;
+      dividendoAnualUsd = anual;
       estado = info.estado === 'declarado' ? 'declarado' : 'estimado';
     }
 

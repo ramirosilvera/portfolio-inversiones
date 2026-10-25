@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dividendEvents, dividendCalendar, dividendoAnualEstimado, type DividendPosicion, type DividendoInfo } from './dividendProjection';
+import { dividendEvents, dividendCalendar, dividendoAnualEstimado, dividendoAnualizado, type DividendPosicion, type DividendoInfo } from './dividendProjection';
 
 const pos = (over: Partial<DividendPosicion> = {}): DividendPosicion =>
   ({ ticker: 'MSFT', tipo: 'cedear', cantidad: 100, ratioCedear: 30, ...over });
@@ -106,15 +106,44 @@ describe('dividendCalendar', () => {
   });
 });
 
+describe('dividendoAnualizado', () => {
+  it('último monto × pagos por año × nominales ÷ ratio (MSFT: 0,91 × 4 × 100 ÷ 30)', () => {
+    const v = dividendoAnualizado(pos({ cantidad: 100, ratioCedear: 30 }), info({ montoPorAccion: 0.91, frecuenciaAnual: 4 }));
+    expect(v).toBeCloseTo((0.91 * 4 * 100) / 30, 8);
+  });
+
+  it('una acción directa (sin ratio) usa divisor 1', () => {
+    expect(dividendoAnualizado(pos({ tipo: 'accion', cantidad: 10, ratioCedear: null }), info({ montoPorAccion: 2, frecuenciaAnual: 4 }))).toBe(80);
+  });
+
+  it('null si falta algo para calcular: ratio de un CEDEAR, cadencia, monto, dato del proveedor o posición cerrada', () => {
+    expect(dividendoAnualizado(pos({ ratioCedear: null }), info())).toBeNull();
+    expect(dividendoAnualizado(pos(), info({ frecuenciaAnual: null }))).toBeNull();
+    expect(dividendoAnualizado(pos(), info({ montoPorAccion: null }))).toBeNull();
+    expect(dividendoAnualizado(pos(), info({ estado: 'sin-dato' }))).toBeNull();
+    expect(dividendoAnualizado(pos(), null)).toBeNull();
+    expect(dividendoAnualizado(pos({ cantidad: 0 }), info())).toBeNull();
+    expect(dividendoAnualizado(pos({ tipo: 'bono' }), info())).toBeNull();
+  });
+});
+
 describe('dividendoAnualEstimado', () => {
-  it('suma los 12 meses del calendario', () => {
-    const total = dividendoAnualEstimado([pos()], { MSFT: info({ frecuenciaAnual: 4 }) }, 2026, 1);
-    const cal = dividendCalendar([pos()], { MSFT: info({ frecuenciaAnual: 4 }) }, 2026, 1, 12);
-    expect(total).toBe(+cal.reduce((s, m) => s + m.total, 0).toFixed(2));
-    expect(total).toBeGreaterThan(0);
+  it('suma el dividendo anualizado de cada posición', () => {
+    const total = dividendoAnualEstimado(
+      [pos({ ticker: 'MSFT', cantidad: 100, ratioCedear: 30 }), pos({ ticker: 'MA', cantidad: 66, ratioCedear: 33 })],
+      { MSFT: info({ montoPorAccion: 0.91, frecuenciaAnual: 4 }), MA: info({ montoPorAccion: 0.87, frecuenciaAnual: 4 }) });
+    expect(total).toBe(+((0.91 * 4 * 100) / 30 + (0.87 * 4 * 66) / 33).toFixed(2));
+  });
+
+  it('NO depende del mes en que cae el próximo pago (regresión: Cupones daba 10–13 % menos que la tarjeta de CEDEARs)', () => {
+    // Pagador trimestral cuyo próximo pago cae a ~3 meses del inicio de la ventana: la suma del calendario de 12 meses dejaba afuera un pago.
+    const cercano = dividendoAnualEstimado([pos()], { MSFT: info({ proximaFecha: '2026-02-15', frecuenciaAnual: 4 }) });
+    const lejano = dividendoAnualEstimado([pos()], { MSFT: info({ proximaFecha: '2026-04-20', frecuenciaAnual: 4 }) });
+    expect(lejano).toBe(cercano);
+    expect(lejano).toBeGreaterThan(0);
   });
 
   it('sin posiciones con dato → 0', () => {
-    expect(dividendoAnualEstimado([], {}, 2026, 1)).toBe(0);
+    expect(dividendoAnualEstimado([], {})).toBe(0);
   });
 });
