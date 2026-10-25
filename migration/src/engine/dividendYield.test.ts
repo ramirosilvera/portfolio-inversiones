@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rendimientoDividendos } from './dividendYield';
+import { rendimientoDividendos, tickersConCobroReciente } from './dividendYield';
 import { calcularCedear } from './cedears';
 import { netoSobreBruto } from './impuestos';
 import type { DividendoInfo } from './dividendProjection';
@@ -107,3 +107,39 @@ describe('rendimientoDividendos', () => {
     expect(r.yieldMercado).not.toBeNull();
   });
 });
+
+describe('DIV-05: el proveedor dice «sin dividendos» pero ya cobraste', () => {
+  it('un ticker con cobro reciente NO se cuenta como «no paga»: queda sin-dato y fuera del promedio', () => {
+    const unh = calcularCedear(pos({ ticker: 'UNH' }), 400);
+    const mrk = calcularCedear(pos({ ticker: 'MRK', id: 'MRK', ratio_cedear: 5, cantidad: 5 }), 400);
+    const r = rendimientoDividendos([unh, mrk], { UNH: trimestral(2.32, '2026-11-10'), MRK: SIN_DATO }, new Set(['MRK']));
+    expect(r.porPosicion['MRK'].estado).toBe('sin-info');
+    expect(r.yieldMercado).toBeCloseTo(9.28 / 400, 6);   // no se diluye con un 0 % falso
+    expect(r.sinPago).toBe(0);
+  });
+
+  it('sin cobros, «sin dividendos» sigue siendo «no paga» (LAC, MELI)', () => {
+    const meli = calcularCedear(pos({ ticker: 'MELI', id: 'MELI', ratio_cedear: 120, cantidad: 120 }), 400);
+    const r = rendimientoDividendos([meli], { MELI: SIN_DATO }, new Set());
+    expect(r.porPosicion['MELI'].estado).toBe('sin-pago');
+  });
+});
+
+describe('tickersConCobroReciente', () => {
+  const cobro = (o: Partial<{ ticker: string; tipo: string; estado: string; fecha: string }>) =>
+    ({ ticker: 'MRK', tipo: 'dividendo', estado: 'disponible', fecha: '2026-07-08', ...o });
+
+  it('cuenta dividendos confirmados (disponible/reinvertido) dentro de la ventana', () => {
+    const s = tickersConCobroReciente([cobro({}), cobro({ ticker: 'ma', estado: 'reinvertido' })], '2026-10-25');
+    expect([...s].sort()).toEqual(['MA', 'MRK']);
+  });
+
+  it('ignora pendientes, descartados, intereses y cobros viejos (> 400 días)', () => {
+    const s = tickersConCobroReciente([
+      cobro({ estado: 'pendiente' }), cobro({ ticker: 'A', estado: 'descartado' }), cobro({ ticker: 'B', tipo: 'interes' }),
+      cobro({ ticker: 'C', fecha: '2025-01-10' }),
+    ], '2026-10-25');
+    expect(s.size).toBe(0);
+  });
+});
+

@@ -127,6 +127,26 @@ describe('dividendoAnualizado', () => {
   });
 });
 
+describe('dividendo especial (DIV-04)', () => {
+  const conEspecial = info({ proximaFecha: '2026-03-12', montoPorAccion: 15, montoRegularPorAccion: 1, frecuenciaAnual: 4, estado: 'declarado' });
+
+  it('el anualizado usa el monto REGULAR: 1 × 4 × 100 ÷ 30, no 15 × 4 × 100 ÷ 30', () => {
+    expect(dividendoAnualizado(pos(), conEspecial)).toBeCloseTo((1 * 4 * 100) / 30, 8);
+  });
+
+  it('el calendario cobra el especial UNA vez (el primero) y repite el regular', () => {
+    const ev = dividendEvents([pos()], { MSFT: conEspecial }, 2026, 1, 12);
+    expect(ev.length).toBeGreaterThanOrEqual(3);
+    expect(ev[0].monto).toBe(+((15 * 100) / 30).toFixed(2));            // el especial declarado
+    expect(ev[1].monto).toBe(+((1 * 100) / 30).toFixed(2));             // los que repiten la cadencia, regulares
+    expect(ev[2].monto).toBe(ev[1].monto);
+  });
+
+  it('sin montoRegular (respuesta vieja) todo sigue como antes', () => {
+    expect(dividendoAnualizado(pos(), info({ montoPorAccion: 0.91 }))).toBeCloseTo((0.91 * 4 * 100) / 30, 8);
+  });
+});
+
 describe('dividendoAnualEstimado', () => {
   it('suma el dividendo anualizado de cada posición', () => {
     const total = dividendoAnualEstimado(

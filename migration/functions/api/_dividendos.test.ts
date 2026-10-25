@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { proyectarDividendo, parseTwelveData, parseEodhd, parseAlphaVantage, type DividendEvent } from './_dividendos';
+import { proyectarDividendo, parseTwelveData, parseEodhd, parseAlphaVantage, consultarProveedores, simboloConGuion, type DividendEvent } from './_dividendos';
 
 const ev = (date: string, over: Partial<DividendEvent> = {}): DividendEvent =>
   ({ date, adjDividend: 1, dividend: 1, paymentDate: null, recordDate: null, declarationDate: null, ...over });
@@ -174,5 +174,93 @@ describe('parseAlphaVantage (fixture: respuesta real de alphavantage.co DIVIDEND
   it('fila sin ex_dividend_date se descarta', () => {
     const r = parseAlphaVantage({ data: [{ amount: '1.69' }, { ex_dividend_date: '2026-08-10', amount: '1.69' }] });
     expect(r).toHaveLength(1);
+  });
+});
+
+// DIV-04 — dividendos especiales: se cobran, pero no se anualizan ni cuentan como un pago más de la cadencia.
+describe('proyectarDividendo con dividendo especial', () => {
+  // hoy 2026-10-25. Costco-like: 4 pagos regulares de 1,16 en el último año + un especial de 15.
+  const regulares = [ev('2025-11-14', { adjDividend: 1.16, dividend: 1.16 }), ev('2026-02-13', { adjDividend: 1.16, dividend: 1.16 }),
+    ev('2026-05-01', { adjDividend: 1.16, dividend: 1.16 }), ev('2026-08-01', { adjDividend: 1.16, dividend: 1.16 })];
+
+  it('especial YA pagado: la frecuencia sigue en 4 (no 5) y el próximo estimado es regular, con el monto regular', () => {
+    const r = proyectarDividendo([...regulares, ev('2026-08-20', { adjDividend: 15, dividend: 15, paymentDate: '2026-09-01' })], '2026-10-25');
+    expect(r.frecuenciaAnual).toBe(4);
+    expect(r.estado).toBe('estimado');
+    expect(r.montoPorAccion).toBe(1.16);
+    expect(r.montoRegularPorAccion).toBe(1.16);
+  });
+
+  it('especial DECLARADO a futuro: se cobra el especial (monto 15) pero lo regular sigue siendo 1,16 y la frecuencia 4', () => {
+    const r = proyectarDividendo([...regulares, ev('2026-11-10', { adjDividend: 15, dividend: 15, paymentDate: '2026-11-20' })], '2026-10-25');
+    expect(r.estado).toBe('declarado');
+    expect(r.montoPorAccion).toBe(15);
+    expect(r.montoRegularPorAccion).toBe(1.16);
+    expect(r.frecuenciaAnual).toBe(4);
+  });
+
+  it('un aumento regular (+15 %) NO es especial', () => {
+    const r = proyectarDividendo([...regulares, ev('2026-11-10', { adjDividend: 1.33, dividend: 1.33, paymentDate: '2026-11-20' })], '2026-10-25');
+    expect(r.montoPorAccion).toBe(1.33);
+    expect(r.montoRegularPorAccion).toBe(1.33);
+    expect(r.frecuenciaAnual).toBe(4);
+  });
+
+  it('con menos de 3 pagos no hay mediana confiable: no se descarta nada', () => {
+    const r = proyectarDividendo([ev('2026-11-10', { adjDividend: 15, dividend: 15, paymentDate: '2026-11-20' }), ev('2026-08-01', { adjDividend: 1.16, dividend: 1.16 })], '2026-10-25');
+    expect(r.montoRegularPorAccion).toBe(15);
+  });
+
+  it('el caso normal (todos regulares) queda igual que antes: monto regular = monto del último', () => {
+    const r = proyectarDividendo(regulares, '2026-10-25');
+    expect(r.montoRegularPorAccion).toBe(r.montoPorAccion);
+    expect(r.frecuenciaAnual).toBe(4);
+  });
+});
+
+// DIV-05 — «sin dividendos» no se acepta con un solo proveedor.
+describe('consultarProveedores', () => {
+  const datos = [ev('2026-06-01')];
+  const resp = (r: DividendEvent[] | null) => async () => r;
+  const falla = async (): Promise<DividendEvent[] | null> => { throw new Error('HTTP 500'); };
+
+  it('un [] del primer proveedor NO frena la cadena: si el segundo trae datos, gana el segundo', async () => {
+    expect(await consultarProveedores([resp([]), resp(datos)])).toEqual(datos);
+  });
+
+  it('dos proveedores que coinciden en vacío lo confirman y no se consulta el resto', async () => {
+    let tercero = 0;
+    const r = await consultarProveedores([resp([]), resp([]), async () => { tercero++; return datos; }]);
+    expect(r).toEqual([]);
+    expect(tercero).toBe(0);
+  });
+
+  it('un solo proveedor respondió vacío (los demás fallan o son null): se acepta ese vacío', async () => {
+    expect(await consultarProveedores([resp([]), falla, resp(null)])).toEqual([]);
+  });
+
+  it('un proveedor caído no cuenta como respuesta: error + [] sigue siendo [] (un solo vacío)', async () => {
+    expect(await consultarProveedores([falla, resp([])])).toEqual([]);
+  });
+
+  it('nadie respondió → null (no se sabe), no []', async () => {
+    expect(await consultarProveedores([falla, resp(null)])).toBeNull();
+    expect(await consultarProveedores([])).toBeNull();
+  });
+
+  it('con datos en el primero, devuelve esos datos sin llamar a los demás', async () => {
+    let segundo = 0;
+    expect(await consultarProveedores([resp(datos), async () => { segundo++; return []; }])).toEqual(datos);
+    expect(segundo).toBe(0);
+  });
+});
+
+describe('simboloConGuion', () => {
+  it('las clases de acciones con punto se escriben con guion (BRK.B → BRK-B)', () => {
+    expect(simboloConGuion('BRK.B')).toBe('BRK-B');
+    expect(simboloConGuion('BF.B')).toBe('BF-B');
+  });
+  it('un ticker sin punto queda igual', () => {
+    expect(simboloConGuion('MSFT')).toBe('MSFT');
   });
 });

@@ -11,6 +11,9 @@
 export interface DividendoInfo {
   proximaFecha: string | null;
   montoPorAccion: number | null;
+  // Monto del último pago REGULAR: igual a montoPorAccion salvo que el próximo pago declarado sea un dividendo especial (se cobra,
+  // pero no se anualiza ni se repite). Ausente en respuestas viejas = montoPorAccion. Ver proyectarDividendo (functions/api/_dividendos.ts).
+  montoRegularPorAccion?: number | null;
   estado: 'declarado' | 'estimado' | 'sin-dato';
   frecuenciaAnual: number | null;
 }
@@ -67,6 +70,9 @@ export function dividendEvents(
     }
     const monto = +((info.montoPorAccion * p.cantidad) / divisor).toFixed(2);
     if (!(monto > 0)) continue;
+    // Si el pago declarado es un especial, el primero lleva ese monto (es lo que se va a cobrar) y los que repiten la cadencia, el regular.
+    const montoRepetido = info.montoRegularPorAccion != null && info.montoRegularPorAccion > 0
+      ? +((info.montoRegularPorAccion * p.cantidad) / divisor).toFixed(2) : monto;
 
     const pasoDias = info.frecuenciaAnual && info.frecuenciaAnual > 0 ? Math.round(365 / info.frecuenciaAnual) : null;
     let fecha = new Date(info.proximaFecha + 'T00:00:00Z');
@@ -82,7 +88,7 @@ export function dividendEvents(
         events.push({
           ym: `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, '0')}`,
           year: fecha.getUTCFullYear(), month: fecha.getUTCMonth() + 1,
-          ticker: p.ticker, monto,
+          ticker: p.ticker, monto: i === 0 ? monto : montoRepetido,
           estado: i === 0 && info.estado === 'declarado' ? 'declarado' : 'estimado',
         });
       }
@@ -126,7 +132,8 @@ export function dividendCalendar(
 export function dividendoAnualizado(p: DividendPosicion, info: DividendoInfo | null | undefined): number | null {
   if (p.tipo === 'bono' || p.tipo === 'cash' || p.tipo === 'accion_ar' || !(p.cantidad > 0)) return null;
   if (!info || info.estado === 'sin-dato') return null;
-  const monto = info.montoPorAccion, frec = info.frecuenciaAnual;
+  // El monto REGULAR: un dividendo especial declarado no se anualiza (DIV-04).
+  const monto = info.montoRegularPorAccion ?? info.montoPorAccion, frec = info.frecuenciaAnual;
   if (monto == null || !(monto > 0) || !frec || !(frec > 0)) return null;
   let divisor = 1;
   if (p.tipo === 'cedear') {

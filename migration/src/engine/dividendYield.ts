@@ -42,6 +42,9 @@ export interface RendDividendos {
 export function rendimientoDividendos(
   cedears: CedearCalc[],
   infoPorTicker: Record<string, DividendoInfo | null | undefined>,
+  // Tickers por los que el usuario YA cobró un dividendo en el último año (cobros confirmados). Si el proveedor dice «sin dividendos» de
+  // uno de ellos, el que está equivocado es el proveedor: pasa a «sin dato» en vez de contarse como «no paga» (DIV-05).
+  conCobroReciente: ReadonlySet<string> = new Set(),
 ): RendDividendos {
   const porPosicion: Record<string, RendDividendosPosicion> = {};
   let divTotal = 0, mktBase = 0, costoBase = 0, pagadores = 0, sinPago = 0, sinInfo = 0;
@@ -60,6 +63,11 @@ export function rendimientoDividendos(
     let dividendoAnualUsd = 0;
     let estado: EstadoDividendo;
     if (info.estado === 'sin-dato') {
+      if (conCobroReciente.has(p.ticker.toUpperCase())) {   // cobraste un dividendo de este ticker y el proveedor dice que no paga
+        sinInfo++;
+        porPosicion[p.id] = { ...base, estado: 'sin-info', dividendoAnualUsd: 0, yieldMercado: null, yieldCosto: null };
+        continue;
+      }
       estado = 'sin-pago';
     } else {
       // Anualizar exige monto, cadencia y (CEDEAR) ratio: sin alguno de los tres no se inventa un dividendo.
@@ -92,4 +100,18 @@ export function rendimientoDividendos(
     yieldNeto: yieldMercado != null ? yieldMercado * netoSobreBruto() : null,
     pagadores, sinPago, sinInfo,
   };
+}
+
+// Tickers con un dividendo CONFIRMADO (ya cobrado) en los últimos `dias` días: insumo del control anterior. `estado` disponible/reinvertido =
+// plata recibida; pendiente y descartado no cuentan.
+export function tickersConCobroReciente(
+  cobros: { ticker: string; tipo: string; estado: string; fecha: string }[], hoy: string, dias = 400,
+): Set<string> {
+  const corte = new Date(hoy); corte.setDate(corte.getDate() - dias);
+  const corteStr = corte.toISOString().slice(0, 10);
+  const out = new Set<string>();
+  for (const c of cobros) {
+    if (c.tipo === 'dividendo' && (c.estado === 'disponible' || c.estado === 'reinvertido') && c.fecha >= corteStr) out.add(c.ticker.toUpperCase());
+  }
+  return out;
 }

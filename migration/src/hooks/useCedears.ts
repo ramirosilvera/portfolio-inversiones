@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { usePosiciones, useQuotes, useDividendosProyectados } from './usePosiciones';
 import { calcularCedear, type CedearCalc } from '../engine/cedears';
-import { rendimientoDividendos, type RendDividendos } from '../engine/dividendYield';
+import { rendimientoDividendos, tickersConCobroReciente, type RendDividendos } from '../engine/dividendYield';
+import { useCobros } from './useCobros';
 
 export type { CedearCalc } from '../engine/cedears';
 export { resumenCedears, type ResumenCedears, alertasCedears } from '../engine/cedears';
@@ -26,8 +27,11 @@ export function useCedearsCalc(portfolioId: string | undefined) {
 // `data` es null mientras llega el calendario de dividendos (no se muestra un 0 % provisorio); `error` si el proveedor falló.
 export function useRendimientoDividendos(cedearsCalc: CedearCalc[]): { data: RendDividendos | null; isLoading: boolean; isError: boolean } {
   const { data: info, isLoading, isError } = useDividendosProyectados(cedearsCalc.map(c => c.pos.ticker));
+  // Los cobros reales de dividendos contradicen un «no paga» del proveedor (mismo query que la tarjeta de Cobros: sin pedido extra).
+  const { data: cobros } = useCobros(cedearsCalc[0]?.pos.portfolio_id);
   if (!info) return { data: null, isLoading, isError };
-  return { data: rendimientoDividendos(cedearsCalc, info), isLoading: false, isError: false };
+  const conCobro = tickersConCobroReciente(cobros, new Date().toISOString().slice(0, 10));
+  return { data: rendimientoDividendos(cedearsCalc, info, conCobro), isLoading: false, isError: false };
 }
 
 // Umbrales PERSONALES de alerta de concentración (sector / estilo Peter Lynch), persistidos en
