@@ -1,6 +1,6 @@
 # Mantenimiento mensual — procedimiento de la tarea programada
 
-**Una sola tarea programada** (día 20 de cada mes, 15:07 UTC = 12:07 ART) que corre DENTRO de la sesión del proyecto: es la única que
+**Una sola tarea programada** (día 20 de cada mes, 12:00 UTC = 9:00 ART) que corre DENTRO de la sesión del proyecto: es la única que
 tiene los conectores `Supabase` e `IOL_inversiones` (una sesión nueva o una rutina creada con `create_trigger` NO los trae). El mensaje
 del disparo es corto a propósito: "ejecutá `docs/rutinas/mantenimiento-mensual.md`". Todo el procedimiento vive acá, versionado; se cambia
 con un commit, no recreando la tarea.
