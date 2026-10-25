@@ -170,7 +170,7 @@ export type SeccionKey =
 
 export type MetricKey =
   | 'distribucion_categoria' | 'distribucion_tipo_activo'
-  | 'cedears_capital' | 'cedears_mayor_posicion' | 'cedears_por_sector' | 'cedears_rend_dividendos'
+  | 'cedears_capital' | 'cedears_mayor_posicion' | 'cedears_por_sector' | 'cedears_rend_dividendos' | 'cedears_tasa_descuento'
   | 'bonos_capital' | 'bonos_tir_promedio' | 'bonos_duracion_promedio' | 'bonos_grado_inversion' | 'bonos_proximo_capital'
   | 'bonos_distribucion_ley'
   | 'radar_compra_agresiva'

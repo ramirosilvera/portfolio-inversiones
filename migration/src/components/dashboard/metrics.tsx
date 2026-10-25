@@ -28,7 +28,7 @@ import { Flame } from 'lucide-react';
 import { usePortfolios } from '../../hooks/usePortfolios';
 import { useMacro } from '../../hooks/usePosiciones';
 import { useChartTheme } from '../../hooks/usePrefs';
-import { useCedearsCalc, resumenCedears, useRendimientoDividendos, useObjetivoConcentracion } from '../../hooks/useCedears';
+import { useCedearsCalc, resumenCedears, useRendimientoDividendos, useTasaDescuentoCedears, useObjetivoConcentracion } from '../../hooks/useCedears';
 import { SIN_CLASIFICAR_COLOR, CONCENTRACION_POSICION_ALERTA } from '../../engine/cedears';
 import { PIE_COLORS, Card, CardHeader, Badge, fmtPct } from '../ui';
 import { useBonosCalc, useObjetivoDuracion, resumenBonos } from '../../hooks/useBonos';
@@ -160,6 +160,18 @@ function CedearsRendDividendosMetric({ viz, titulo, sub, detalleHref, personaliz
     : cedears.length === 0 ? { status: 'empty', motivo: 'Sin CEDEARs en este portfolio.' }
     : !rd.data || rd.data.yieldMercado == null ? { status: 'empty', motivo: 'Sin datos de dividendos para tus CEDEARs todavía.' }
     : { status: 'ok', shape: 'scalar', value: rd.data.yieldMercado, format: 'pct', dp: 2, label: fmtPct(rd.data.yieldMercado, 1), sub: `US$ ${Math.round(rd.data.dividendoAnualUsd)}/año` };
+  return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
+}
+
+function CedearsTasaDescuentoMetric({ viz, titulo, sub, detalleHref, personalizando }: { viz: DashboardViz; titulo: string; sub?: string; detalleHref?: string; personalizando: boolean }) {
+  const { active } = usePortfolios();
+  const { cedears, cedearsCalc, isLoading } = useCedearsCalc(active?.id);
+  const td = useTasaDescuentoCedears(cedearsCalc);
+  // Mismo número que el 6.º dato de la tarjeta de CEDEARs y que /cedears (mismo hook y motor).
+  const mv: MetricValue = isLoading || (cedears.length > 0 && td.isLoading) ? { status: 'loading' }
+    : cedears.length === 0 ? { status: 'empty', motivo: 'Sin CEDEARs en este portfolio.' }
+    : td.data.ponderada == null ? { status: 'empty', motivo: 'Ningún CEDEAR tiene supuestos de DCF guardados en el Radar.' }
+    : { status: 'ok', shape: 'scalar', value: td.data.ponderada, format: 'pct', dp: 2, label: fmtPct(td.data.ponderada, 1), sub: `${td.data.conTasa} de ${td.data.conTasa + td.data.sinTasa} con tasa` };
   return <MetricShell titulo={titulo} sub={sub} right={<VerDetalle href={detalleHref} personalizando={personalizando} />} mv={mv} viz={viz} />;
 }
 
@@ -502,6 +514,7 @@ export const METRIC_COMPONENTS: Partial<Record<MetricKey, MetricComponent>> = {
   cedears_capital: CedearsCapitalMetric,
   cedears_mayor_posicion: CedearsMayorPosicionMetric,
   cedears_rend_dividendos: CedearsRendDividendosMetric,
+  cedears_tasa_descuento: CedearsTasaDescuentoMetric,
   cedears_por_sector: CedearsPorSectorMetric,
   bonos_capital: BonosCapitalMetric,
   bonos_tir_promedio: BonosTirPromedioMetric,
