@@ -22,9 +22,10 @@ import { useCikMap } from '../hooks/useCikMap';
 import { useDcfInputs, type StoredDcf } from '../hooks/useDcfInputs';
 import { useRadarTicker } from '../hooks/useRadarTicker';
 import { useBonosCalc, useObjetivoDuracion, resumenBonos, alertasBonos } from '../hooks/useBonos';
-import { useCedearsCalc, resumenCedears, useObjetivoConcentracion, alertasCedears, useRendimientoDividendos, useTasaDescuentoCedears } from '../hooks/useCedears';
+import { useCedearsCalc, resumenCedears, useObjetivoConcentracion, alertasCedears, useRendimientoDividendos, useTasaDescuentoCedears, useMargenSeguridadCedears } from '../hooks/useCedears';
 import { RendDividendosStat } from '../components/RendDividendosStat';
 import { TasaDescuentoStat } from '../components/TasaDescuentoStat';
+import { MargenSeguridadStat } from '../components/MargenSeguridadStat';
 import { CONCENTRACION_POSICION_ALERTA, HHI_SECTOR_ALERTA } from '../engine/cedears';
 import { categoriaDe, pctRentaFija, alertasDistribucion, CATEGORIA_LABEL, CATEGORIA_COLOR, type CategoriaPatrimonio } from '../engine/distribucion';
 import { useChartTheme } from '../hooks/usePrefs';
@@ -423,6 +424,7 @@ function CedearsResumen({ personalizando }: { personalizando: boolean }) {
   const { sectorPct: concentracionSectorPct } = useObjetivoConcentracion(active?.id);
   const rendDiv = useRendimientoDividendos(cedearsCalc);
   const tasaDesc = useTasaDescuentoCedears(cedearsCalc);
+  const margen = useMargenSeguridadCedears(cedearsCalc);
 
   // "Cargando…" explícito, no null — con null, WidgetGrid no puede distinguir "todavía no sabemos"
   // de "genuinamente sin CEDEARs" y muestra el placeholder de "sin datos" en modo Personalizar
@@ -442,7 +444,7 @@ function CedearsResumen({ personalizando }: { personalizando: boolean }) {
         // Sin link mientras se personaliza el layout — mismo criterio que las tarjetas atómicas: un
         // click acá durante una reordenada navegaría afuera del Dashboard sin querer.
         right={personalizando ? right : <Link to="/cedears" className="inline-flex items-center gap-1.5">{right}</Link>} />
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 p-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
         <Stat label="Capital" value={fmtUsdCompact(totalMkt)} />
         <Stat label="Mayor posición" value={mayorPosicion
           ? <span className={mayorPosicion.pct >= CONCENTRACION_POSICION_ALERTA ? 'text-warn' : 'text-ink-900'}>{mayorPosicion.ticker} · {fmtPct(mayorPosicion.pct, 0)}</span>
@@ -456,6 +458,7 @@ function CedearsResumen({ personalizando }: { personalizando: boolean }) {
           hint="Herfindahl (Σ pesoᵢ²) por sector: 1/N con N sectores parejos, 1 = todo en uno." />
         <div className="min-w-0"><RendDividendosStat rd={rendDiv.data} isLoading={rendDiv.isLoading} isError={rendDiv.isError} /></div>
         <div className="min-w-0"><TasaDescuentoStat td={tasaDesc.data} isLoading={tasaDesc.isLoading} /></div>
+        <div className="min-w-0"><MargenSeguridadStat mg={margen.data} isLoading={margen.isLoading} /></div>
       </div>
     </Card>
   );
