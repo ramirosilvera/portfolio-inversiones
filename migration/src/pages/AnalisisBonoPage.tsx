@@ -12,6 +12,8 @@ import { Card, CardHeader, Stat, Badge, RatingBadge, Button, Field, Empty, input
 import { api } from '../lib/api';
 import { VerificacionBadge } from '../components/VerificacionBadge';
 import { VERIFICACION, esConfiable, nivelDe } from '../engine/verificacion';
+import { CompartirAnalisis } from '../components/CompartirAnalisis';
+import { resumenBono } from '../lib/compartirAnalisis';
 
 const TIPO_TONE: Record<BonoReferencia['tipo'], 'accent' | 'sol' | 'gray'> = { soberano: 'accent', subsoberano: 'sol', on: 'gray' };
 // Mismo criterio de color que RadarPage/MacroPage/TasasPage para las 3 categorías de Luz-like.
@@ -66,6 +68,11 @@ export function AnalisisBonoPage() {
         {ref?.amortizable && <Badge tone="warn">amortizable</Badge>}
         {ref && <RatingBadge calificadora={ref.calificadora} calificacion={ref.calificacion} grado={calc?.grado ?? null} escala={calc?.escalaGrado ?? null} />}
         {ref && <VerificacionBadge bono={ref} largo />}
+        {ref && calc && (
+          <div className="ml-auto">
+            <CompartirAnalisis resumen={resumenBono({ ref, calc, spreadUst: spreadRiskFree, fecha: hoy })} />
+          </div>
+        )}
       </div>
 
       {/* Si los flujos no son confiables, se dice ANTES de los números: una TIR calculada sobre un cronograma mal cargado parece tan precisa como una buena. */}

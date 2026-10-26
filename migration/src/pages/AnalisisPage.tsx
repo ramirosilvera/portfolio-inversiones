@@ -16,6 +16,8 @@ import { useUltimoAnalisis, useSetUltimoAnalisis } from '../hooks/useAnalisisIA'
 import { COMPANY_MOAT, SECTOR_LABEL, FOSO_LABEL, AMPLITUD_LABEL, AMPLITUD_TONE } from '../lib/companyMoat';
 import { Card, CardHeader, Button, Badge, Stat, ViewToggle, NumField, inputCls, fmtUsd, fmtUsdCompact, fmtNum, fmtPct, normalizeAiText } from '../components/ui';
 import type { Fundamentals } from '../types/domain';
+import { CompartirAnalisis } from '../components/CompartirAnalisis';
+import { resumenCedear } from '../lib/compartirAnalisis';
 
 export function AnalisisPage() {
   const { ticker = '' } = useParams();
@@ -224,6 +226,13 @@ export function AnalisisPage() {
     : ` · ${oeVentana[0]}–${oeVentana[oeVentana.length - 1]}`;
   const oeHint = `${oeEtiqueta[oeMetodo]}${oeRango} · ${fmtUsd(dcf.ownerEarningsNorm, 0)}`;
 
+  // Resumen para compartir como imagen / WhatsApp: los mismos números de pantalla, sin datos de la cartera.
+  const resumenCompartible = resumenCedear({
+    ticker: T, nombre: (fund as Fundamentals).entityName ?? null, precio: price, dcf, ratios, d: inp.d, g: inp.g, mosRequerido: inp.mosRequired,
+    fuente: (fund as { fuente?: string }).fuente === 'fmp' ? 'FMP y cotización de mercado' : 'SEC EDGAR y cotización de mercado',
+    fecha: new Date().toISOString().slice(0, 10),
+  });
+
   return (
     <div className="space-y-4">
       <Link to="/analisis" className="inline-flex items-center text-xs text-celeste-600 hover:underline">← Volver a Análisis</Link>
@@ -238,7 +247,10 @@ export function AnalisisPage() {
           ? <Badge tone="warn">datos de FMP, no de EDGAR</Badge>
           : (fund as { warning?: string }).warning && <Badge tone="warn">datos incompletos EDGAR</Badge>}
         {(fund as { stale?: boolean }).stale && <Badge tone="warn">EDGAR no respondió — mostrando la última foto guardada</Badge>}
-        <Button variant="ghost" onClick={actualizar} disabled={refreshing} className="ml-auto">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          <CompartirAnalisis resumen={resumenCompartible} />
+        </div>
+        <Button variant="ghost" onClick={actualizar} disabled={refreshing}>
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} /> {refreshing ? 'Actualizando…' : 'Actualizar datos'}
         </Button>
       </div>
