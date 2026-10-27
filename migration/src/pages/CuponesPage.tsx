@@ -253,11 +253,18 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
 
       <Card>
         <CardHeader title="Historial"
-          sub="Disponible = efectivo cobrado. Reinvertido = lo pusiste en un activo. Con Pasar a Liquidez, el disponible se convierte en efectivo de tu cartera."
+          sub="Disponible = efectivo cobrado que todavía no está en tu Liquidez. En Liquidez = ya suma a ese efectivo. Reinvertido = lo pusiste en un activo."
           right={saldo.pasable > 0.005 ? (
             <Button variant="ghost" onClick={() => { setPanelPase(v => !v); setErrPase(null); }}>
-              <Wallet className="w-4 h-4" /> Pasar a Liquidez · {fmtUsd(saldo.pasable, 0)}
+              <Wallet className="w-4 h-4" /> Pasar a Liquidez · {fmtUsd(saldo.pasable, 2)}
             </Button>
+          ) : saldo.acreditado > 0.005 ? (
+            // Sin saldo para pasar NO es un botón roto: los cobros acreditados al registrarlos ya están sumados a la Liquidez.
+            // Antes el botón desaparecía sin decir por qué y parecía que «no funcionaba».
+            <span title="Los cobros que registraste con «Acreditar en la Liquidez» tildado ya suman a la posición LIQUIDEZ: no hay nada más para pasar."
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-celeste-700 dark:text-celeste-300">
+              <Wallet className="w-4 h-4" /> Ya en Liquidez · {fmtUsd(saldo.acreditado, 2)} — nada para pasar
+            </span>
           ) : undefined} />
         {panelPase && saldo.pasable > 0.005 && (
           <div className="mx-4 mt-3 rounded-xl border border-line bg-canvas px-3 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm items-end">
@@ -305,10 +312,18 @@ function CobradoTab({ portfolioId }: { portfolioId: string }) {
                         </span>) : null; })()}
                     </td>
                     <td className="text-center px-3">
-                      <button onClick={() => marcarEstado(f.c.id, f.c.estado === 'disponible' ? 'reinvertido' : 'disponible')}
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${f.c.estado === 'reinvertido' ? 'bg-celeste-100 text-celeste-700 dark:bg-celeste-500/20 dark:text-celeste-300' : 'bg-warn/10 text-warn'}`}>
-                        {f.c.estado === 'reinvertido' ? 'Reinvertido' : 'Disponible'}
-                      </button>
+                      {(() => {
+                        // Un cobro acreditado al registrarlo ya está en la posición LIQUIDEZ: se rotula así (no «Disponible», que
+                        // se leía como pendiente de pasar) y por eso no suma al saldo del botón «Pasar a Liquidez».
+                        const enLiquidez = f.c.estado === 'disponible' && !!f.c.liquidez_mov_id;
+                        return (
+                          <button onClick={() => marcarEstado(f.c.id, f.c.estado === 'disponible' ? 'reinvertido' : 'disponible')}
+                            title={enLiquidez ? 'Ya suma a la posición LIQUIDEZ de la cartera. Tocá para marcarlo como reinvertido.' : undefined}
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${f.c.estado === 'reinvertido' || enLiquidez ? 'bg-celeste-100 text-celeste-700 dark:bg-celeste-500/20 dark:text-celeste-300' : 'bg-warn/10 text-warn'}`}>
+                            {f.c.estado === 'reinvertido' ? 'Reinvertido' : enLiquidez ? 'En Liquidez' : 'Disponible'}
+                          </button>
+                        );
+                      })()}
                     </td>
                     <td className="px-2 text-right">
                       <button onClick={() => borrarCobro(f.c)} disabled={deletingId === f.c.id}
