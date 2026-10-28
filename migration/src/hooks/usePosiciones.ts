@@ -344,6 +344,17 @@ export function usePosicionMutations(portfolioId: string | null | undefined) {
       }
       invalidate();
     },
+    // Ajusta la Liquidez a mano y, si `registrar`, deja el retiro/aporte de capital en la MISMA transacción (RPC ajustar_liquidez_con_flujo,
+    // 0063): así la ganancia no se distorsiona por el monto movido. registrar=false = corrección de un saldo mal cargado.
+    ajustarLiquidez: async (nueva: number, registrar: boolean) => {
+      if (!portfolioId) return;
+      const { error } = await supabase.rpc('ajustar_liquidez_con_flujo', {
+        p_portfolio: portfolioId, p_nueva: nueva, p_fecha: new Date().toISOString().slice(0, 10), p_registrar: registrar, p_nota: null,
+      });
+      invalidate();
+      qc.invalidateQueries({ queryKey: ['aportes'] });
+      if (error) throw new Error(error.message);
+    },
     // Escribe varios objetivos de una (para sincronizar el plan a 100%) e invalida una sola vez.
     setObjetivos: async (list: { id: string; peso_objetivo: number | null }[]) => {
       const changed = list.filter(x => x.peso_objetivo == null || Number.isFinite(x.peso_objetivo));

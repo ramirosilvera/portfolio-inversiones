@@ -27,7 +27,7 @@ export function PosicionesPage() {
   const { ratios: cedearRatios, saveRatio } = useCedearRatios();
   const { data: catalogoBonos = [] } = useBonosReferencia();
   const { data: posiciones = [], isLoading: posLoading } = usePosiciones(active?.id);
-  const { add, sell, update, remove, setObjetivos } = usePosicionMutations(active?.id);
+  const { add, sell, update, remove, setObjetivos, ajustarLiquidez } = usePosicionMutations(active?.id);
   const { add: addAporte } = useAporteMutations(active?.id);
 
   const equity = posiciones.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker);
@@ -249,7 +249,12 @@ export function PosicionesPage() {
           setSellData(null);
         }} />}
       {editPos && <EditModal pos={editPos} onClose={() => setEditPos(null)}
-        onSave={async (patch) => { await update(editPos.id, patch); setEditPos(null); }} />}
+        onSave={async (patch, liquidez) => {
+          // Liquidez editada a mano: el cambio de cantidad va por la RPC atómica (movimiento + retiro/aporte), el resto por update().
+          if (liquidez) { await ajustarLiquidez(liquidez.nueva, liquidez.registrar); const { cantidad: _c, ...resto } = patch; await update(editPos.id, resto); }
+          else await update(editPos.id, patch);
+          setEditPos(null);
+        }} />}
       {simular && <SimularCompraModal openRows={openRows} totalMkt={totalMkt} cedearRatios={cedearRatios} catalogoBonos={catalogoBonos} mep={mep}
         initial={simular.pos} initialTicker={simular.ticker} onClose={() => setSimular(null)}
         liquidez={liquidez} onEjecutar={async (payload, pagar, orden) => { await add(payload, pagar, orden); }} onAporte={addAporte} />}
@@ -588,7 +593,7 @@ const MESES_E = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 
 
 // Edición/corrección directa de una posición (cantidad, costo promedio, objetivo, sector, ratio,
 // cupón). Es una corrección manual: no genera movimientos (no es una compra/venta real).
-function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => void; onSave: (patch: Partial<Posicion>) => Promise<void> }) {
+function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => void; onSave: (patch: Partial<Posicion>, liquidez?: { nueva: number; registrar: boolean }) => Promise<void> }) {
   useEscapeClose(onClose);
   const { map: cikMap } = useCikMap();
   const [ticker, setTicker] = useState(pos.ticker);
@@ -603,6 +608,10 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
   const [tir, setTir] = useState(pos.tir_esperada != null ? String(pos.tir_esperada * 100) : '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Liquidez: un cambio de cantidad es movimiento de plata real (retiro/aporte) salvo que sea la corrección de un saldo mal cargado.
+  const esLiquidez = pos.tipo === 'cash' && pos.ticker === 'LIQUIDEZ';
+  const deltaLiq = esLiquidez ? +(Number(cantidad) - pos.cantidad).toFixed(2) : 0;
+  const [registrarFlujo, setRegistrarFlujo] = useState(true);
 
   // Bonos licitados: al cargarlos muchas veces todavía no se sabe el ticker definitivo (se asigna
   // después de la licitación) — para el resto de los tipos el ticker es estable y renombrarlo no
@@ -618,7 +627,7 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
     // Antes: `Number(cantidad) || 0` — vaciar el campo, o tipear un negativo, guardaba 0 (la
     // posición "se cierra" sin aviso) o un negativo (peso/valor de mercado negativos, contamina
     // totalMkt de toda la sección). El formulario de alta SÍ valida esto (ver arriba); acá faltaba.
-    if (!(Number(cantidad) > 0)) { setErr('La cantidad debe ser mayor a 0.'); return; }
+    if (esLiquidez ? !(Number(cantidad) >= 0) : !(Number(cantidad) > 0)) { setErr(esLiquidez ? 'La Liquidez no puede ser negativa.' : 'La cantidad debe ser mayor a 0.'); return; }
     if (!(Number(precio) > 0)) { setErr('El costo promedio debe ser mayor a 0.'); return; }
     // Mismo criterio que el alta: un CEDEAR sin ratio se valúa mal (unitValueUSD devuelve null), y
     // acá era posible VACIAR el ratio de un CEDEAR ya cargado sin ningún aviso.
@@ -640,7 +649,7 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
       patch.vencimiento = vto || null;
     }
     if (pos.tipo === 'cash') patch.tir_esperada = tir ? Number(tir) / 100 : null;
-    try { await onSave(patch); }
+    try { await onSave(patch, deltaLiq !== 0 ? { nueva: Number(cantidad), registrar: registrarFlujo } : undefined); }
     catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo guardar'); setBusy(false); }
   };
 
@@ -680,6 +689,16 @@ function EditModal({ pos, onClose, onSave }: { pos: Posicion; onClose: () => voi
               </Field>
             )}
           </div>
+          {deltaLiq !== 0 && (
+            <label className="mx-4 mb-3 flex items-start gap-2 rounded-xl bg-canvas ring-1 ring-inset ring-line px-3 py-2 text-xs text-ink-700 cursor-pointer">
+              <input type="checkbox" checked={registrarFlujo} onChange={e => setRegistrarFlujo(e.target.checked)} className="mt-0.5" />
+              <span>
+                <b>{deltaLiq < 0 ? `Registrar un retiro de US$ ${Math.abs(deltaLiq).toLocaleString('en-US')}` : `Registrar un aporte de US$ ${deltaLiq.toLocaleString('en-US')}`}</b> en Aportes.
+                {' '}Dejalo tildado si {deltaLiq < 0 ? 'sacaste' : 'sumaste'} plata de verdad: si no, el valor de la cartera cambia pero el capital aportado no y la ganancia se desvía por ese monto.
+                {' '}Destildalo solo si el saldo estaba mal cargado (no hubo movimiento de plata).
+              </span>
+            </label>
+          )}
           {dejaCikHuerfano && (
             <p className="px-4 pb-2 text-xs text-warn">
               El CIK de {pos.ticker} cargado en Configuración queda sin usar al cambiar el ticker (no se borra).
