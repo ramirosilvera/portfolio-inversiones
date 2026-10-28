@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff, Pencil, ShoppingCart, Target } from 'lucide-react';
+import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff, Pencil, ShoppingCart, Target, ArrowUpFromLine } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro, type OrdenAltaCostos } from '../hooks/usePosiciones';
 import { ComisionOperacionCampos, useComisionOperacion } from '../components/ComisionOperacion';
@@ -29,6 +29,7 @@ export function PosicionesPage() {
   const { data: posiciones = [], isLoading: posLoading } = usePosiciones(active?.id);
   const { add, sell, update, remove, setObjetivos, ajustarLiquidez } = usePosicionMutations(active?.id);
   const { add: addAporte } = useAporteMutations(active?.id);
+  const [sacarLiq, setSacarLiq] = useState<Posicion | null>(null);
 
   const equity = posiciones.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker);
   const bonds = posiciones.filter(p => p.tipo === 'bono').map(p => p.ticker);
@@ -192,6 +193,9 @@ export function PosicionesPage() {
                     </td>
                     <td className="px-2 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
+                        {p.cantidad > 0 && p.tipo === 'cash' && p.ticker === 'LIQUIDEZ' && (
+                          <button onClick={() => setSacarLiq(p)} className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9" title="Sacar de la cartera (registra el retiro)" aria-label="Sacar efectivo de la cartera"><ArrowUpFromLine className="w-4 h-4" /></button>
+                        )}
                         {p.cantidad > 0 && p.tipo !== 'cash' && (
                           <button onClick={() => setSimular({ pos: p })} className="text-ink-600 hover:text-pos inline-flex items-center justify-center w-9 h-9" title="Comprar / simular" aria-label="Comprar / simular"><ShoppingCart className="w-4 h-4" /></button>
                         )}
@@ -248,6 +252,8 @@ export function PosicionesPage() {
           }
           setSellData(null);
         }} />}
+      {sacarLiq && <SacarLiquidezModal pos={sacarLiq} onClose={() => setSacarLiq(null)}
+        onSacar={async (monto, nota) => { await ajustarLiquidez(+(sacarLiq.cantidad - monto).toFixed(2), true, nota); setSacarLiq(null); }} />}
       {editPos && <EditModal pos={editPos} onClose={() => setEditPos(null)}
         onSave={async (patch, liquidez) => {
           // Liquidez editada a mano: el cambio de cantidad va por la RPC atómica (movimiento + retiro/aporte), el resto por update().
@@ -585,6 +591,51 @@ function TargetCell({ pos, actual, displayPct, onCommit }: { pos: Posicion; actu
           {off > 0 ? '+' : ''}{fmtPct(off, 0)}
         </span>
       )}
+    </div>
+  );
+}
+
+// «Sacar de la cartera»: retira efectivo de la LIQUIDEZ y deja el retiro de capital registrado en Aportes en el mismo paso (RPC atómica
+// ajustar_liquidez_con_flujo, 0063). Así el valor de la cartera y el capital aportado se mueven juntos y la ganancia no se desvía.
+function SacarLiquidezModal({ pos, onClose, onSacar }: { pos: Posicion; onClose: () => void; onSacar: (monto: number, nota: string | null) => Promise<void> }) {
+  useEscapeClose(onClose);
+  const [monto, setMonto] = useState('');
+  const [nota, setNota] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const m = Number(monto) || 0;
+  const quedaria = +(pos.cantidad - m).toFixed(2);
+  const confirmar = async () => {
+    if (!(m > 0)) { setErr('Ingresá un monto mayor a 0.'); return; }
+    if (m - pos.cantidad > 0.005) { setErr(`Ese monto supera tu Liquidez (${fmtUsd(pos.cantidad, 2)}).`); return; }
+    setBusy(true); setErr(null);
+    try { await onSacar(m, nota.trim() || null); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo registrar el retiro'); setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Sacar de la cartera">
+        <Card className="animate-rise">
+          <CardHeader title="Sacar de la cartera" sub={`Liquidez disponible: ${fmtUsd(pos.cantidad, 2)}`}
+            right={<button onClick={onClose} aria-label="Cerrar" className="text-ink-600 hover:text-ink-900 hover:bg-canvas inline-flex items-center justify-center w-9 h-9 rounded-full"><X className="w-4 h-4" /></button>} />
+          <div className="p-4 space-y-3 text-sm">
+            <Field label="Monto a sacar (USD)">
+              <input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} className={inputCls} placeholder="0.00" autoFocus />
+            </Field>
+            <button type="button" onClick={() => setMonto(String(pos.cantidad))} className="text-[11px] text-celeste-600 hover:underline">Sacar todo ({fmtUsd(pos.cantidad, 2)})</button>
+            <Field label="Nota (opcional)"><input value={nota} onChange={e => setNota(e.target.value)} className={inputCls} placeholder="Ej.: transferido a mi cuenta" /></Field>
+            <p className="text-xs text-ink-600">
+              Se descuenta de la Liquidez y se registra como <b>retiro</b> en Aportes (hoy). {m > 0 && m <= pos.cantidad + 0.005 && <>Te quedan <b className="tnum">{fmtUsd(quedaria, 2)}</b> de Liquidez.</>}
+              {' '}Si vendés una posición y querés sacar esa plata, primero registrá la venta (queda en Liquidez) y después sacala acá.
+            </p>
+            {err && <p className="text-xs text-warn">{err}</p>}
+          </div>
+          <div className="px-4 pb-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+            <Button onClick={confirmar} disabled={busy}>{busy ? 'Registrando…' : 'Sacar y registrar retiro'}</Button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
