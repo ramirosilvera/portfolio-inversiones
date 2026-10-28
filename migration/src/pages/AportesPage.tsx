@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Trash2, Wallet } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
 import { useAportes, useAporteMutations } from '../hooks/useAportes';
 import { useMacro } from '../hooks/usePosiciones';
 import { resumenAportes } from '../engine/aportes';
+import { ajustesSinFlujo } from '../engine/ajustesLiquidez';
+import { useMovimientos } from '../hooks/usePosiciones';
 import { Card, CardHeader, Button, Badge, Field, Empty, inputCls, fmtUsd, fmtArs } from '../components/ui';
 import type { Aporte, AporteTipo } from '../types/domain';
 
@@ -43,6 +45,7 @@ export function AportesPage() {
   const { active } = usePortfolios();
   const { data: aportes = [], isLoading } = useAportes(active?.id);
   const { add, remove } = useAporteMutations(active?.id);
+  const { data: movs = [] } = useMovimientos(active?.id, 'LIQUIDEZ');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -76,6 +79,15 @@ export function AportesPage() {
   }, [mep]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { aportado, retirado, neto } = resumenAportes(aportes);
+  // Ajustes manuales de Liquidez sin su retiro/aporte: distorsionan la ganancia por ese monto (ver engine/ajustesLiquidez.ts).
+  const sinFlujo = useMemo(() => ajustesSinFlujo(movs, aportes), [movs, aportes]);
+  const registrarFaltante = async (x: (typeof sinFlujo)[number]) => {
+    setErr(null);
+    try {
+      await add({ monto: Math.abs(x.monto), fecha: x.fecha, tipo: x.falta === 'retiro' ? 'retiro' : 'recurrente',
+        descripcion: `${x.falta === 'retiro' ? 'Retiro' : 'Aporte'} de Liquidez (ajuste manual del ${x.fecha})` });
+    } catch (e) { setErr(e instanceof Error ? e.message : 'No se pudo registrar'); }
+  };
 
   const borrar = async (a: Aporte) => {
     if (!window.confirm(`¿Borrar el aporte de ${fmtUsd(a.monto)} del ${a.fecha}?`)) return;
@@ -90,6 +102,19 @@ export function AportesPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-ink-900 font-display">Aportes · {active.nombre}</h1>
+
+      {sinFlujo.length > 0 && (
+        <div role="alert" className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-ink-800 space-y-2">
+          <p className="font-semibold text-warn">Ajustaste la Liquidez sin registrar el movimiento de capital: la ganancia se desvía por ese monto.</p>
+          {sinFlujo.map((x, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 flex-wrap">
+              <span>{x.fecha}: la Liquidez {x.monto < 0 ? 'bajó' : 'subió'} {fmtUsd(Math.abs(x.monto))} sin {x.falta === 'retiro' ? 'un retiro' : 'un aporte'} asociado.</span>
+              <Button variant="ghost" onClick={() => registrarFaltante(x)}>Registrar {x.falta} de {fmtUsd(Math.abs(x.monto))}</Button>
+            </div>
+          ))}
+          <p className="text-[11px] text-ink-600">Si era la corrección de un saldo mal cargado (no salió ni entró plata), ignorá este aviso.</p>
+        </div>
+      )}
 
       <Card>
         <CardHeader title="Registrar movimiento de capital" sub="Capital que entra (aporte) o sale (retiro). Impacta la TIR del Dashboard." />
