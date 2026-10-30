@@ -11,7 +11,7 @@ do $$
 declare
   a constant uuid := 'a8124780-21e7-485a-b9b1-469033aa80ba';  -- Ahorros
   h constant uuid := '0225d029-1bb7-4bb2-81d4-b0e061dbcefe';  -- Herencia
-  v_iol uuid; v_san uuid; v_cocos uuid; v_hoy date := current_date;
+  v_iol uuid; v_san uuid; v_cocos uuid; v_hoy date := current_date; v_user uuid;
   r record; pa uuid; ph uuid; px numeric; val numeric; tot numeric := 0;
   la uuid; lh uuid; m_la uuid; m_lh uuid; q0 double precision; c0 double precision;
   v_nota text := 'Traspaso Ahorros → Herencia a valor de mercado (salida de IOL de Ahorros, plan 30/10/2026); Herencia pagó con su Liquidez';
@@ -19,11 +19,11 @@ begin
   if exists (select 1 from movimientos m where m.portfolio_id = a and m.nota like 'Traspaso Ahorros → Herencia a valor de mercado%') then
     raise exception 'El traspaso ya está registrado';
   end if;
-  select id into v_iol from brokers where nombre = 'Invertir Online';
+  select id, user_id into v_iol, v_user from brokers where nombre = 'Invertir Online';
   select id into v_san from brokers where nombre = 'Santander';
   select id into v_cocos from brokers where nombre = 'Cocos';
   if v_cocos is null then
-    insert into brokers (nombre) values ('Cocos') returning id into v_cocos;
+    insert into brokers (user_id, nombre) values (v_user, 'Cocos') returning id into v_cocos;
   end if;
   select id into la from posiciones where portfolio_id = a and tipo = 'cash' and ticker = 'LIQUIDEZ';
   select id into lh from posiciones where portfolio_id = h and tipo = 'cash' and ticker = 'LIQUIDEZ';
