@@ -9,6 +9,7 @@ import { useAmortizaciones } from '../hooks/useAmortizaciones';
 import { useChartTheme } from '../hooks/usePrefs';
 import { couponCalendar, capitalCalendar, agruparCuotasPorPosicion, type CouponBond, type CapitalBond } from '../engine/coupons';
 import { dividendCalendar, dividendoAnualEstimado, type DividendPosicion } from '../engine/dividendProjection';
+import { calendarioInteresLiquidez, sumarCalendarios } from '../engine/interesLiquidez';
 import { resumenCobros, saldoInvertible, acreditadoEnLiquidez } from '../engine/cobros';
 import { costosRegistrados, netoEstimado } from '../engine/costosCobros';
 import { CostosCobroEditor, useCostosCobro } from '../components/CostosCobroEditor';
@@ -497,8 +498,16 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
     [equities]);
 
   const now = new Date();
-  const cal = useMemo(() => couponCalendar(bonds, now.getFullYear(), now.getMonth() + 1, 12),
-    [bonds, now.getFullYear(), now.getMonth()]);
+  // Cuenta remunerada del broker: la posición LIQUIDEZ con su TNA cargada (`tir_esperada`) proyecta un interés mensual (se acredita el
+  // primer día del mes siguiente, saldo de hoy × TNA × días ÷ 365). Entra en la serie de cupones/intereses; es una estimación.
+  const liq = posiciones.find((p: Posicion) => p.tipo === 'cash' && p.ticker === 'LIQUIDEZ');
+  const saldoLiq = liq?.cantidad ?? 0;
+  const tasaLiq = Number(liq?.tir_esperada) || 0;
+  const hayInteresLiq = saldoLiq > 0 && tasaLiq > 0;
+  const cal = useMemo(() => sumarCalendarios(
+    couponCalendar(bonds, now.getFullYear(), now.getMonth() + 1, 12),
+    calendarioInteresLiquidez(saldoLiq, tasaLiq, now.getFullYear(), now.getMonth() + 1, 12)),
+    [bonds, saldoLiq, tasaLiq, now.getFullYear(), now.getMonth()]);
   const divCal = useMemo(() => dividendCalendar(divPosiciones, divInfo, now.getFullYear(), now.getMonth() + 1, 12),
     [divPosiciones, divInfo, now.getFullYear(), now.getMonth()]);
   // Capital (amortización + rescate al vencimiento) — SEPARADO de cupón/dividendo a propósito: es
@@ -543,12 +552,12 @@ function ProyectadoTab({ portfolioId }: { portfolioId: string }) {
   // mostrar, y antes eso pasaba de largo el Empty state y renderizaba un chart/tabla en cero. Un
   // bono con vencimiento cargado pero SIN cupón todavía igual tiene algo que proyectar (el rescate
   // de capital), así que capitalAnual también cuenta acá.
-  const sinDatos = conCupon === 0 && conDividendo === 0 && capitalAnual <= 0;
+  const sinDatos = conCupon === 0 && conDividendo === 0 && capitalAnual <= 0 && !hayInteresLiq;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Stat label="Cupón anual" value={fmtUsd(anual, 0)} hint="suma de cupones de 12 meses (proyectado)" />
+        <Stat label="Cupón anual" value={fmtUsd(anual, 0)} hint={`suma de cupones${hayInteresLiq ? ` e intereses de la cuenta remunerada (TNA ${fmtPct(tasaLiq, 2)} sobre ${fmtUsd(saldoLiq, 0)})` : ''} de 12 meses (proyectado)`} />
         <Stat label="Yield s/ costo" value={capitalBonos > 0 ? fmtPct(anual / capitalBonos, 1) : '—'} hint="cupón anual / capital invertido en bonos" />
         <Stat label="Próximo cupón" value={proximo ? `${MESES[proximo.month - 1]} ${proximo.year}` : '—'} hint={proximo ? fmtUsd(proximo.total, 0) : undefined} />
         <Stat label="Cargados (bonos)" value={`${conCupon}/${totalBonos}`} hint="bonos con datos de cupón / total de bonos" />

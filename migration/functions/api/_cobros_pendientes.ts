@@ -4,6 +4,7 @@
 // 'pendiente' — el usuario la revisa y confirma a mano (ver 0012_cobros_pendientes.sql).
 
 import type { DividendoInfo, DividendEvent } from './_dividendos';
+import { interesDevengadoMes } from '../../src/engine/interesLiquidez';
 
 export interface PosicionParaCobro {
   id: string;
@@ -17,6 +18,7 @@ export interface PosicionParaCobro {
   cupon_mes: number | null;
   vencimiento: string | null;
   fecha_compra?: string | null;
+  tir_esperada?: number | null;   // en la posición LIQUIDEZ: TNA de la cuenta remunerada del broker
 }
 
 // Movimiento mínimo para saber cuántas unidades se tenían en una fecha (compra +, venta −, ajuste con su signo).
@@ -97,6 +99,24 @@ function esMesDePago(mes: number, mesRef: number, frecuencia: number): boolean {
   const paso = 12 / frecuencia; // la UI solo ofrece 1/2/4/12, siempre divide 12 exacto
   const diff = ((mes - mesRef) % 12 + 12) % 12;
   return diff % paso === 0;
+}
+
+// Interés de la cuenta remunerada (posición LIQUIDEZ con tasa cargada en `tir_esperada`): IOL acredita el primer día de cada mes lo
+// devengado el mes anterior. La sugerencia queda en el día 1 del mes en curso con el saldo de HOY × TNA × días del mes anterior ÷ 365:
+// es una ESTIMACIÓN (el crédito real depende del saldo de cada día), por eso queda pendiente y se corrige al confirmar.
+export function sugerirInteresLiquidez(pos: PosicionParaCobro, hoy: string): CobroPendienteSugerido | null {
+  if (pos.tipo !== 'cash' || pos.ticker !== 'LIQUIDEZ' || !(pos.cantidad > 0)) return null;
+  const tna = Number(pos.tir_esperada);
+  if (!(tna > 0)) return null;
+  const [anio, mes] = hoy.split('-').map(Number);
+  const prevAbs = anio * 12 + (mes - 1) - 1;
+  const monto = interesDevengadoMes(pos.cantidad, tna, Math.floor(prevAbs / 12), (prevAbs % 12) + 1);
+  if (!(monto > 0)) return null;
+  return {
+    portfolio_id: pos.portfolio_id, posicion_id: pos.id, ticker: pos.ticker, tipo: 'interes',
+    fecha: `${anio}-${String(mes).padStart(2, '0')}-01`, monto,
+    nota: `Sugerido por el cron — interés de la cuenta remunerada en USD (TNA ${(tna * 100).toFixed(2)} % sobre el saldo de hoy, ${pos.cantidad.toFixed(2)}). ESTIMACIÓN: el crédito real del broker depende del saldo de cada día; corregí el monto al confirmar.`,
+  };
 }
 
 // Cupón de bono: el modelo de datos actual (4 campos manuales) solo tiene granularidad de MES, no

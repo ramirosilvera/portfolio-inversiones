@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente, cantidadAlCorte,
-  sugerirDividendosHistoricos, sugerirCuponesHistoricos,
+  sugerirDividendosHistoricos, sugerirCuponesHistoricos, sugerirInteresLiquidez,
   type PosicionParaCobro,
 } from './_cobros_pendientes';
 import type { DividendoInfo, DividendEvent } from './_dividendos';
@@ -295,5 +295,28 @@ describe('sugerirDividendoPendiente con fecha de corte', () => {
   });
   it('sin movimientos conocidos se comporta como antes', () => {
     expect(sugerirDividendoPendiente(cedear, div(), '2026-10-10')!.monto).toBe(+(0.85 * 40 / 5).toFixed(2));
+  });
+});
+
+describe('sugerirInteresLiquidez (cuenta remunerada)', () => {
+  const liq = (over: Partial<PosicionParaCobro> = {}): PosicionParaCobro =>
+    pos({ id: 'l1', ticker: 'LIQUIDEZ', tipo: 'cash', cantidad: 3000, tir_esperada: 0.01, ...over });
+  it('sugiere el día 1 del mes con saldo × TNA × días del mes ANTERIOR ÷ 365 (diciembre acredita noviembre: 30 días)', () => {
+    const r = sugerirInteresLiquidez(liq(), '2026-12-01');
+    expect(r).toMatchObject({ tipo: 'interes', fecha: '2026-12-01', ticker: 'LIQUIDEZ', posicion_id: 'l1' });
+    expect(r!.monto).toBeCloseTo(3000 * 0.01 * 30 / 365, 2);
+  });
+  it('enero acredita diciembre (31 días) y cruza el año', () => {
+    expect(sugerirInteresLiquidez(liq(), '2027-01-15')!.monto).toBeCloseTo(3000 * 0.01 * 31 / 365, 2);
+    expect(sugerirInteresLiquidez(liq(), '2027-01-15')!.fecha).toBe('2027-01-01');
+  });
+  it('sin tasa cargada, sin saldo o que no sea LIQUIDEZ → null', () => {
+    expect(sugerirInteresLiquidez(liq({ tir_esperada: null }), '2026-12-01')).toBeNull();
+    expect(sugerirInteresLiquidez(liq({ cantidad: 0 }), '2026-12-01')).toBeNull();
+    expect(sugerirInteresLiquidez(liq({ ticker: 'OTRA' }), '2026-12-01')).toBeNull();
+    expect(sugerirInteresLiquidez(pos({ tipo: 'cedear', tir_esperada: 0.01 }), '2026-12-01')).toBeNull();
+  });
+  it('el monto es una estimación y la nota lo dice', () => {
+    expect(sugerirInteresLiquidez(liq(), '2026-12-01')!.nota).toMatch(/ESTIMACIÓN/);
   });
 });
