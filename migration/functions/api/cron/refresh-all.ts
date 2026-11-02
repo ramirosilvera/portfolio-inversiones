@@ -1,7 +1,7 @@
 import { type Env, json, preflight, guard, sbSelect, sbRpc, sbUpsert, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
 import {
-  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente,
+  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirInteresLiquidez, sugerirCuponesDeCronograma, cronogramaVigente,
   type PosicionParaCobro, type FlujoCronograma, type CobroPendienteSugerido, type MovCantidad,
 } from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
@@ -46,7 +46,7 @@ export const onRequestGet = guard(async ({ request, env }) => {
   // refrescar cotizaciones, estos mismos campos alimentan la sugerencia de cobros pendientes
   // (paso 4) — una sola consulta para ambos usos.
   const pos = await sbSelect<PosicionParaCobro>(env, 'posiciones',
-    'select=id,portfolio_id,ticker,tipo,cantidad,ratio_cedear,cupon_tasa,cupon_frecuencia,cupon_mes,vencimiento,fecha_compra,precio_compra');
+    'select=id,portfolio_id,ticker,tipo,cantidad,ratio_cedear,cupon_tasa,cupon_frecuencia,cupon_mes,vencimiento,fecha_compra,precio_compra,tir_esperada');
   const uniq = (a: string[]) => [...new Set(a.map(s => s.toUpperCase()).filter(Boolean))];
   // Solo posiciones ABIERTAS: las cerradas (cantidad 0) no necesitan cotización ni fundamentals, y
   // cada una gastaba subrequests del techo de 50 por invocación de Cloudflare.
@@ -180,6 +180,11 @@ export const onRequestGet = guard(async ({ request, env }) => {
       }
       const s = sugerirCuponPendiente(p, hoy);
       if (s && !yaCubierto(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
+      continue;
+    }
+    if (p.tipo === 'cash') {
+      const si = sugerirInteresLiquidez(p, hoy);
+      if (si && !yaCubierto(si.posicion_id, si.tipo, si.fecha) && !yaCubiertoMes(si.posicion_id, si.tipo, si.fecha)) sugerencias.push(si);
       continue;
     }
     const s = sugerirDividendoPendiente(p, divPorTicker[p.ticker.toUpperCase()] ?? null, hoy, movsPorPos.get(p.id));
