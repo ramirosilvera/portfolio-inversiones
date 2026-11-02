@@ -230,11 +230,16 @@ function AsignacionRow({ pos, asignaciones, brokers, onSave }: {
   const [err, setErr] = useState<string | null>(null);
 
   const nombreOf = (id: string) => brokers.find(b => b.id === id)?.nombre ?? 'Broker eliminado';
+  // Un resto de 0,000001 (queda cuando una asignación se vacía) no es una asignación: no se muestra ni se edita; al guardar se limpia.
   const asignado = asignaciones.reduce((s, a) => s + a.cantidad, 0);
-  const sinAsignar = +(pos.cantidad - asignado).toFixed(6);
+  // Diferencias menores a medio centavo son ruido de punto flotante (p. ej. 1130 − 1129,17 = 0,829999…) o un resto de 0,000001: no se avisan.
+  const sinAsignarRaw = +(pos.cantidad - asignado).toFixed(6);
+  const sinAsignar = Math.abs(sinAsignarRaw) < 0.005 ? 0 : sinAsignarRaw;
+  // Muestra cantidades sin ruido de float (0,829999999999927 → 0,83) y sin ceros de más.
+  const fmtQ = (n: number) => +(+n).toFixed(4);
 
   const startEdit = () => {
-    setRows(asignaciones.length ? asignaciones.map(a => ({ ...a })) : [{ brokerId: '', cantidad: pos.cantidad }]);
+    setRows(asignaciones.length ? asignaciones.filter(a => a.cantidad >= 0.005).map(a => ({ ...a, cantidad: Math.round(a.cantidad * 1e6) / 1e6 })) : [{ brokerId: '', cantidad: pos.cantidad }]);
     setErr(null);
     setEditing(true);
   };
@@ -263,7 +268,7 @@ function AsignacionRow({ pos, asignaciones, brokers, onSave }: {
           <span className="text-ink-500 tnum text-xs">{pos.cantidad}u</span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {asignaciones.map((a, i) => <Badge key={i} tone="gray">{nombreOf(a.brokerId)} {a.cantidad}</Badge>)}
+          {asignaciones.filter(a => a.cantidad >= 0.005).map((a, i) => <Badge key={i} tone="gray">{nombreOf(a.brokerId)} {fmtQ(a.cantidad)}</Badge>)}
           {sinAsignar > 0 && <Badge tone="warn">sin asignar {sinAsignar}</Badge>}
           {/* Cantidad vendida después de asignar brokers (ej. venta parcial): las asignaciones viejas
               quedan sumando más que la posición actual — avisar en vez de esconderlo (resumenPorBroker
@@ -282,25 +287,22 @@ function AsignacionRow({ pos, asignaciones, brokers, onSave }: {
         <button onClick={() => setEditing(false)} aria-label="Cerrar" className="text-ink-500 hover:text-ink-900"><X className="w-4 h-4" /></button>
       </div>
       {rows.map((r, i) => (
-        // El select va en su propia línea a ancho completo: un broker con nombre largo (o esta
-        // fila en un celular angosto) competía por espacio con la cantidad y el botón de borrar,
-        // y con flex-1 se terminaba encogiendo hasta casi 0px — el usuario elegía bien un broker
-        // pero no veía QUÉ había elegido (el select se veía vacío, aunque no lo estuviera).
-        <div key={i} className="space-y-1.5">
+        // Cada asignación es UNA tarjeta con tres columnas: broker (flexible, con piso de ancho para que se lea qué se eligió) ·
+        // cantidad (ancho fijo) · quitar. Antes el broker y la cantidad iban en líneas separadas y a un costado el tacho: en el celular
+        // parecían 6 campos sueltos y no se veía qué cantidad era de qué broker.
+        <div key={i} className="grid grid-cols-[minmax(6rem,1fr)_7.5rem_2.25rem] items-center gap-2 rounded-xl bg-surface/60 ring-1 ring-inset ring-line p-2">
           <select value={r.brokerId} onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, brokerId: e.target.value } : x))}
-            className={`${inputCls} appearance-none w-full`} aria-label={`Broker de la fila ${i + 1}`}>
+            className={`${inputCls} appearance-none w-full min-w-0`} aria-label={`Broker de la fila ${i + 1}`}>
             <option value="">Elegí un broker…</option>
             {brokers.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
           </select>
-          <div className="flex items-center gap-2">
-            <NumField value={r.cantidad || null}
-              onChange={n => setRows(rs => rs.map((x, j) => j === i ? { ...x, cantidad: n } : x))}
-              onEmptyBlur={() => setRows(rs => rs.map((x, j) => j === i ? { ...x, cantidad: 0 } : x))}
-              className={`${inputCls} w-24 shrink-0`} aria-label={`Cantidad en broker de la fila ${i + 1}`} />
-            <button onClick={() => setRows(rs => rs.filter((_, j) => j !== i))} className="text-ink-600 hover:text-neg w-9 h-9 inline-flex items-center justify-center shrink-0" aria-label="Quitar fila">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <NumField value={r.cantidad || null}
+            onChange={n => setRows(rs => rs.map((x, j) => j === i ? { ...x, cantidad: n } : x))}
+            onEmptyBlur={() => setRows(rs => rs.map((x, j) => j === i ? { ...x, cantidad: 0 } : x))}
+            className={`${inputCls} w-full min-w-0 !px-2 text-right tnum`} aria-label={`Cantidad en broker de la fila ${i + 1}`} />
+          <button onClick={() => setRows(rs => rs.filter((_, j) => j !== i))} className="text-ink-600 hover:text-neg w-9 h-9 inline-flex items-center justify-center" aria-label="Quitar fila">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       ))}
       <button onClick={() => setRows(rs => [...rs, { brokerId: '', cantidad: 0 }])} className="text-xs text-celeste-600 hover:underline inline-flex items-center gap-1">
