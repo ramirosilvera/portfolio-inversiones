@@ -1,5 +1,7 @@
 import { nuevoEstadoActivos, type FilaMacro } from '../_alertaEstres';
 import { INDICADORES_ESTRES, CLAVE_ACTIVOS } from '../../../src/engine/alertaMacro';
+import { SEMAFOROS } from '../../../src/engine/semaforos';
+import { sanearMacro } from '../../../src/engine/macroRangos';
 import { type Env, json, preflight, guard, sbSelect, sbRpc, sbUpsert, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
 import {
@@ -243,6 +245,17 @@ export const onRequestGet = guard(async ({ request, env }) => {
     const nuevos = nuevoEstadoActivos(filasMacro, CLAVE_ACTIVOS);
     if (nuevos) await sbUpsert(env, 'macro_cache', [{ clave: CLAVE_ACTIVOS, valor: nuevos.length, data_json: nuevos, updated_at: new Date().toISOString() }], 'clave');
   } catch { /* sin estado hoy: el próximo refresco lo reintenta */ }
+
+  // 4e) Serie diaria de los indicadores macro (macro_historico): macro_cache solo guarda el último valor, y sin historia no se puede medir la
+  // volatilidad real para calibrar la alerta de estrés (engine/volatilidadMacro.ts). Un valor por indicador y día (se pisa el del mismo día);
+  // los imposibles (dato corrupto) no se graban. Falla aislada.
+  try {
+    const clavesHist = SEMAFOROS.map(x => x.key);
+    const filasHist = await sbSelect<{ clave: string; valor: number | null }>(env, 'macro_cache', `select=clave,valor&clave=in.(${clavesHist.join(',')})`);
+    const limpio = sanearMacro(Object.fromEntries(filasHist.map(f => [f.clave, f.valor])) as Record<string, number | null>);
+    const rowsHist = Object.entries(limpio).filter(([, v]) => v != null && Number.isFinite(v as number)).map(([clave, valor]) => ({ fecha: hoy, clave, valor }));
+    if (rowsHist.length) await sbUpsert(env, 'macro_historico', rowsHist, 'fecha,clave');
+  } catch { /* sin historial hoy: mañana el cron sigue */ }
 
   // 5) Fundamentals al final (ver orden arriba).
   for (const p of fund) if (await hit(p)) ok++;
