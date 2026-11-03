@@ -35,6 +35,24 @@ export const SALIDA: Record<string, { texto: string; sigue: (v: number) => boole
 export const fechaLocalISO = (d = new Date()): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+// Clave de la fila de `macro_cache` donde el CRON guarda qué indicadores están en alerta (la «banda» de la histéresis): una sola verdad
+// para todos los dispositivos. `data_json` = lista de keys. Solo la escribe el servidor (service-role); la app la lee.
+export const CLAVE_ACTIVOS = 'alerta_estres_activos';
+
+// ¿El indicador está en alerta? En rojo, o (ya estaba en alerta Y todavía no salió de la banda). Única definición: la usan la pantalla y el cron.
+export function enAlerta(key: string, v: number | null | undefined, activos: ReadonlySet<string>): { alerta: boolean; enBanda: boolean } {
+  const def = SEMAFOROS.find(x => x.key === key);
+  if (!def || v == null || !Number.isFinite(v)) return { alerta: false, enBanda: false };
+  const rojo = def.evalua(v) === 'rojo';
+  const enBanda = !rojo && activos.has(key) && !!SALIDA[key]?.sigue(v);
+  return { alerta: rojo || enBanda, enBanda };
+}
+
+// Estado nuevo de la banda a partir de los valores macro actuales y el estado anterior (lo que calcula el cron).
+export function siguienteActivos(macro: Record<string, number | null | undefined>, previos: ReadonlySet<string>): string[] {
+  return INDICADORES_ESTRES.filter(k => enAlerta(k, macro[k], previos).alerta);
+}
+
 export interface PosAlloc { ticker: string; mkt: number; tipo: string }
 
 // Qué parte de la cartera afecta cada indicador (qué activos son sensibles a ese riesgo).
@@ -75,10 +93,8 @@ export function alertasEstres(macro: Record<string, number | null | undefined>, 
   for (const key of INDICADORES_ESTRES) {
     const def: SemaforoDef | undefined = SEMAFOROS.find(s => s.key === key);
     const v = macro[key];
-    if (!def || v == null || !Number.isFinite(v)) continue;
-    const rojo = def.evalua(v) === 'rojo';
-    const enBanda = !rojo && activos.has(key) && SALIDA[key].sigue(v);
-    if (!rojo && !enBanda) continue;
+    const { alerta, enBanda } = enAlerta(key, v, activos);
+    if (!def || v == null || !alerta) continue;
     const exp = EXPOSICION[key];
     const usd = alloc.filter(p => p.mkt > 0 && exp.aplica(p)).reduce((s, p) => s + p.mkt, 0);
     out.push({

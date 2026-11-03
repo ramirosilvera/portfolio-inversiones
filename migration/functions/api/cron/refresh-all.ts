@@ -1,3 +1,5 @@
+import { nuevoEstadoActivos, type FilaMacro } from '../_alertaEstres';
+import { INDICADORES_ESTRES, CLAVE_ACTIVOS } from '../../../src/engine/alertaMacro';
 import { type Env, json, preflight, guard, sbSelect, sbRpc, sbUpsert, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
 import {
@@ -233,6 +235,14 @@ export const onRequestGet = guard(async ({ request, env }) => {
     }, hoy);
     if (filasParam.length) await sbUpsert(env, 'impuestos_parametros', filasParam.map(f => ({ ...f, actualizado: new Date().toISOString() })), 'anio,clave');
   } catch { /* sin parámetros estimados hoy: mañana el cron reintenta */ }
+
+  // 4d) Estado de la alerta de estrés macro (banda de histéresis): qué indicadores están en alerta, guardado en macro_cache para que la app
+  // muestre lo mismo en todos los dispositivos (ver engine/alertaMacro.ts). Solo escribe si cambió. Falla aislada: la app cae a su estado local.
+  try {
+    const filasMacro = await sbSelect<FilaMacro>(env, 'macro_cache', `select=clave,valor,data_json&clave=in.(${[...INDICADORES_ESTRES, CLAVE_ACTIVOS].join(',')})`);
+    const nuevos = nuevoEstadoActivos(filasMacro, CLAVE_ACTIVOS);
+    if (nuevos) await sbUpsert(env, 'macro_cache', [{ clave: CLAVE_ACTIVOS, valor: nuevos.length, data_json: nuevos, updated_at: new Date().toISOString() }], 'clave');
+  } catch { /* sin estado hoy: el próximo refresco lo reintenta */ }
 
   // 5) Fundamentals al final (ver orden arriba).
   for (const p of fund) if (await hit(p)) ok++;
