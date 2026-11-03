@@ -52,17 +52,17 @@ describe('histéresis', () => {
       expect(SALIDA[k].sigue(UMBRAL_ROJO[k].valorRojo)).toBe(true);   // en rojo, sigue
     }
   });
-  it('riesgo país 790 sin alerta previa NO alerta; con alerta previa SÍ (banda 770–800) y lo marca', () => {
+  it('riesgo país 790 sin alerta previa NO alerta; con alerta previa SÍ (banda 750–800) y lo marca', () => {
     expect(alertasEstres({ riesgo_pais: 790 }, alloc, patrimonio)).toEqual([]);
     const [a] = alertasEstres({ riesgo_pais: 790 }, alloc, patrimonio, new Set(['riesgo_pais']));
-    expect(a).toMatchObject({ key: 'riesgo_pais', enBanda: true, salida: 'bajar de 770 pb' });
+    expect(a).toMatchObject({ key: 'riesgo_pais', enBanda: true, salida: 'bajar de 750 pb' });
   });
-  it('riesgo país 760 con alerta previa se apaga (salió de la banda)', () => {
-    expect(alertasEstres({ riesgo_pais: 760 }, alloc, patrimonio, new Set(['riesgo_pais']))).toEqual([]);
+  it('riesgo país 740 con alerta previa se apaga (salió de la banda)', () => {
+    expect(alertasEstres({ riesgo_pais: 740 }, alloc, patrimonio, new Set(['riesgo_pais']))).toEqual([]);
   });
-  it('el ADR YPF (rojo hacia abajo) sigue en alerta hasta pasar US$ 26', () => {
+  it('el ADR YPF (rojo hacia abajo) sigue en alerta hasta pasar US$ 27', () => {
     expect(alertasEstres({ adr_ypf: 25.5 }, alloc, patrimonio, new Set(['adr_ypf']))[0].enBanda).toBe(true);
-    expect(alertasEstres({ adr_ypf: 26.5 }, alloc, patrimonio, new Set(['adr_ypf']))).toEqual([]);
+    expect(alertasEstres({ adr_ypf: 27.5 }, alloc, patrimonio, new Set(['adr_ypf']))).toEqual([]);
   });
   it('un indicador en rojo de verdad no queda marcado como «en banda»', () => {
     expect(alertasEstres({ vix: 35 }, alloc, patrimonio, new Set(['vix']))[0].enBanda).toBe(false);

@@ -23,12 +23,13 @@ export const UMBRAL_ROJO: Record<string, { texto: string; valorRojo: number }> =
 // Histéresis: un indicador que ya estaba en alerta sigue en alerta hasta que sale de la banda (un valor que oscila alrededor del umbral,
 // p. ej. riesgo país 799/805/798, no prende y apaga la alerta cada día). Ver `sigueEnAlerta`.
 export const SALIDA: Record<string, { texto: string; sigue: (v: number) => boolean }> = {
-  riesgo_pais:  { texto: 'bajar de 770 pb', sigue: v => v >= 770 },
-  vix:          { texto: 'bajar de 28', sigue: v => v >= 28 },
-  hy_spread:    { texto: 'bajar de 5,7 %', sigue: v => v >= 5.7 },
-  dollar_index: { texto: 'bajar de 125', sigue: v => v >= 125 },
-  dgs3mo:       { texto: 'bajar de 4,8 %', sigue: v => v >= 4.8 },
-  adr_ypf:      { texto: 'subir de US$ 26', sigue: v => v <= 26 },
+  // Banda ≈ lo que el indicador se mueve en 1–2 ruedas (más ancha en los volátiles: VIX, riesgo país, YPF; más angosta en los lentos).
+  riesgo_pais:  { texto: 'bajar de 750 pb', sigue: v => v >= 750 },       // 6 % bajo el umbral de 800
+  vix:          { texto: 'bajar de 26', sigue: v => v >= 26 },            // 13 % bajo el umbral de 30 (el VIX se mueve 5–8 % por día)
+  hy_spread:    { texto: 'bajar de 5,5 %', sigue: v => v >= 5.5 },        // 8 % bajo el umbral de 6
+  dollar_index: { texto: 'bajar de 124', sigue: v => v >= 124 },          // 1,6 % bajo el umbral de 126 (índice lento)
+  dgs3mo:       { texto: 'bajar de 4,75 %', sigue: v => v >= 4.75 },      // 5 % bajo el umbral de 5
+  adr_ypf:      { texto: 'subir de US$ 27', sigue: v => v <= 27 },        // 8 % sobre el umbral de 25 (YPF se mueve 2–3 % por día)
 };
 
 // Fecha LOCAL (no UTC): con toISOString() a partir de las 21:00 en Argentina ya es «mañana» y una alerta descartada reaparecía de noche.
@@ -75,7 +76,7 @@ export interface AlertaEstres {
   expuestoPct: number | null;   // fracción 0..1 del patrimonio; null si no hay patrimonio
   expuestoEtiqueta: string;
   enBanda: boolean;          // true = ya no cruza el umbral de rojo pero sigue en alerta por histéresis
-  salida: string;            // qué tiene que pasar para que se apague («bajar de 770 pb»)
+  salida: string;            // qué tiene que pasar para que se apague («bajar de 750 pb»)
 }
 
 const SIGNIFICADO_ROJO: Record<string, string> = {
