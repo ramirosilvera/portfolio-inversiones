@@ -5,6 +5,7 @@ import { alertasEstres, claveAlertaDia, fechaLocalISO, INDICADORES_ESTRES, type 
 import { SEMAFOROS } from '../engine/semaforos';
 import { fmtPct, fmtUsdCompact } from './ui';
 import { useAlertaEstresActivos } from '../hooks/useAlertaEstresActivos';
+import { useAlertaDescartada } from '../hooks/useAlertaDescartada';
 
 const LS_KEY = 'macro.alertaEstres.descartada';
 const leer = (): string | null => { try { return localStorage.getItem(LS_KEY); } catch { return null; } };
@@ -27,15 +28,17 @@ export function AlertaMacroEstres({ macro, alloc, patrimonio }: { macro: Record<
   const macroCargado = INDICADORES_ESTRES.some(k => macro[k] != null);
   useEffect(() => { if (macroCargado) guardarActivos(alertas.map(a => a.key)); }, [macroCargado, alertas]);
   const clave = claveAlertaDia(fechaLocalISO(), alertas);
-  const [descartada, setDescartada] = useState<string | null>(leer);
-  if (alertas.length === 0 || descartada === clave) return null;
+  // El descarte se guarda por usuario en el servidor (vale en todos los dispositivos); el estado local es el respaldo y lo que se ve al instante.
+  const { servidor: descartadaServidor, descartar } = useAlertaDescartada();
+  const [descartadaLocal, setDescartada] = useState<string | null>(leer);
+  if (alertas.length === 0 || descartadaLocal === clave || descartadaServidor === clave) return null;
   const fmt = (key: string, v: number) => SEMAFOROS.find(s => s.key === key)?.fmt?.(v) ?? String(v);
   return (
     <div role="alert" className="rounded-xl bg-neg/10 ring-1 ring-inset ring-neg/25 px-3 py-2.5 text-[11px] text-ink-800 space-y-1.5">
       <div className="flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 shrink-0 text-neg mt-0.5" />
         <p className="font-semibold flex-1">Estrés macro: {alertas.length === 1 ? '1 indicador en alerta' : `${alertas.length} indicadores en alerta`}</p>
-        <button onClick={() => { guardar(clave); setDescartada(clave); }} aria-label="Descartar por hoy" title="Descartar por hoy"
+        <button onClick={() => { guardar(clave); setDescartada(clave); void descartar(clave); }} aria-label="Descartar por hoy" title="Descartar por hoy"
           className="text-ink-600 hover:text-ink-900 -m-2 inline-flex items-center justify-center w-9 h-9 shrink-0"><X className="w-4 h-4" /></button>
       </div>
       <ul className="space-y-1.5 pl-6">
