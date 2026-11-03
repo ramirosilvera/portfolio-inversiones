@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { alertasEstres, claveAlertaDia, INDICADORES_ESTRES, UMBRAL_ROJO } from './alertaMacro';
+import { alertasEstres, claveAlertaDia, fechaLocalISO, INDICADORES_ESTRES, UMBRAL_ROJO, SALIDA } from './alertaMacro';
 import { SEMAFOROS } from './semaforos';
 
 const alloc = [
@@ -42,5 +42,33 @@ describe('alertasEstres', () => {
     const a = alertasEstres({ vix: 40 }, alloc, patrimonio), b = alertasEstres({ vix: 40, riesgo_pais: 900 }, alloc, patrimonio);
     expect(claveAlertaDia('2026-11-03', a)).not.toBe(claveAlertaDia('2026-11-03', b));
     expect(claveAlertaDia('2026-11-03', a)).toBe(claveAlertaDia('2026-11-03', a));
+  });
+});
+
+describe('histéresis', () => {
+  it('el umbral de salida es más permisivo que el de entrada y todos los indicadores lo tienen', () => {
+    for (const k of INDICADORES_ESTRES) {
+      expect(SALIDA[k]).toBeDefined();
+      expect(SALIDA[k].sigue(UMBRAL_ROJO[k].valorRojo)).toBe(true);   // en rojo, sigue
+    }
+  });
+  it('riesgo país 790 sin alerta previa NO alerta; con alerta previa SÍ (banda 770–800) y lo marca', () => {
+    expect(alertasEstres({ riesgo_pais: 790 }, alloc, patrimonio)).toEqual([]);
+    const [a] = alertasEstres({ riesgo_pais: 790 }, alloc, patrimonio, new Set(['riesgo_pais']));
+    expect(a).toMatchObject({ key: 'riesgo_pais', enBanda: true, salida: 'bajar de 770 pb' });
+  });
+  it('riesgo país 760 con alerta previa se apaga (salió de la banda)', () => {
+    expect(alertasEstres({ riesgo_pais: 760 }, alloc, patrimonio, new Set(['riesgo_pais']))).toEqual([]);
+  });
+  it('el ADR YPF (rojo hacia abajo) sigue en alerta hasta pasar US$ 26', () => {
+    expect(alertasEstres({ adr_ypf: 25.5 }, alloc, patrimonio, new Set(['adr_ypf']))[0].enBanda).toBe(true);
+    expect(alertasEstres({ adr_ypf: 26.5 }, alloc, patrimonio, new Set(['adr_ypf']))).toEqual([]);
+  });
+  it('un indicador en rojo de verdad no queda marcado como «en banda»', () => {
+    expect(alertasEstres({ vix: 35 }, alloc, patrimonio, new Set(['vix']))[0].enBanda).toBe(false);
+  });
+  it('la fecha es LOCAL, no UTC (21:30 en Argentina sigue siendo el mismo día)', () => {
+    expect(fechaLocalISO(new Date(2026, 10, 3, 21, 30))).toBe('2026-11-03');
+    expect(fechaLocalISO(new Date(2026, 0, 5, 0, 5))).toBe('2026-01-05');
   });
 });
