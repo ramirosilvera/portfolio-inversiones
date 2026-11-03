@@ -4,6 +4,7 @@ import { AlertTriangle, X } from 'lucide-react';
 import { alertasEstres, claveAlertaDia, fechaLocalISO, INDICADORES_ESTRES, type PosAlloc } from '../engine/alertaMacro';
 import { SEMAFOROS } from '../engine/semaforos';
 import { fmtPct, fmtUsdCompact } from './ui';
+import { useAlertaEstresActivos } from '../hooks/useAlertaEstresActivos';
 
 const LS_KEY = 'macro.alertaEstres.descartada';
 const leer = (): string | null => { try { return localStorage.getItem(LS_KEY); } catch { return null; } };
@@ -16,7 +17,11 @@ const guardarActivos = (keys: string[]) => { try { localStorage.setItem(LS_ACTIV
 // Alerta en Inicio cuando un indicador de estrés REAL del contexto macro está en rojo: dato clave, qué implica y cuánto de tu cartera está
 // expuesto. Visible mientras dure; se puede descartar por hoy y vuelve mañana, o ya hoy si aparece otro indicador en rojo.
 export function AlertaMacroEstres({ macro, alloc, patrimonio }: { macro: Record<string, number | null | undefined>; alloc: PosAlloc[]; patrimonio: number }) {
-  const [activos] = useState(leerActivos);
+  // La banda de histéresis la calcula el cron y es la misma en todos los dispositivos; el estado local (este navegador) es solo el respaldo
+  // mientras el servidor no tenga fila o no se pueda leer.
+  const { data: servidor } = useAlertaEstresActivos();
+  const [local] = useState(leerActivos);
+  const activos = useMemo(() => (servidor ? new Set(servidor) : local), [servidor, local]);
   const alertas = useMemo(() => alertasEstres(macro, alloc, patrimonio, activos), [macro, alloc, patrimonio, activos]);
   // Solo se recuerdan los activos cuando el macro YA cargó (si no, una recarga con datos pendientes borraba la histéresis).
   const macroCargado = INDICADORES_ESTRES.some(k => macro[k] != null);
