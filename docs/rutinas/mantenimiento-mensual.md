@@ -31,8 +31,9 @@ Si falta WebSearch, seguir solo con los controles de IOL y decirlo.
 | E. Altas de tickers nuevos | enero, abril, julio y octubre | agrega bonos que faltan, verificados |
 | F. Parámetros de Bienes Personales | enero a abril | carga la tabla oficial de ARCA |
 | G. Control del cron de INDEC | noviembre | confirma que el cron creó la fila estimada del año |
+| H. Calibración de la alerta de estrés | todos los meses (solo informa) | mide la volatilidad real de `macro_historico` y compara con las bandas `SALIDA` |
 
-Orden de ejecución: chequeos → A → B → C → D → (E) → (F) → (G) → reporte.
+Orden de ejecución: chequeos → A → B → C → D → (E) → (F) → (G) → H → reporte.
 
 ## Chequeos previos (SQL)
 
@@ -139,6 +140,15 @@ automotores de ARCA. Si en enero ARCA aún no publicó: decirlo y no cargar nada
 El paso 4c de `refresh-all` (`functions/api/_impuestosParametros.ts`) pide el IPC de octubre a INDEC (sale a mediados de noviembre) y guarda la fila **estimada** del año.
 `select anio, clave, estimado, left(fuente,60) from public.impuestos_parametros order by anio, clave;` Debe existir `anio = año actual`, `estimado = true`, para `bp_params`
 y `bp_escala`. Si no existe: reportar (y revisar el log del cron). Nunca crear la fila a mano.
+
+## Parte H — Calibración de la alerta de estrés (solo informa, no cambia código)
+
+Las bandas de salida (`SALIDA` en `migration/src/engine/alertaMacro.ts`) son estimaciones; el cron graba la serie diaria en `macro_historico` (migración 0065, desde 2026-11-03).
+`select clave, count(*) dias, min(fecha), max(fecha) from public.macro_historico group by clave order by clave;` Si algún indicador tiene < 21 días: decir «aún sin datos suficientes
+(n días)» y seguir. Con ≥ 21 días: traer la serie (`select fecha, valor from public.macro_historico where clave=… order by fecha`) y calcular con el criterio de
+`engine/volatilidadMacro.ts#salidaSugerida` (movimiento diario P75 × 2 ruedas, tope 50 %, sobre el umbral de rojo: riesgo_pais 800 sube, vix 30, hy_spread 6, dollar_index 126, dgs3mo 5, adr_ypf 25 baja).
+Reportar por indicador: salida actual vs. sugerida; si difieren > 25 % proponer el cambio al usuario. **Nunca editar `SALIDA` por cuenta propia** (es una decisión del usuario).
+Si una clave no tiene filas en absoluto pasado el mes 1: reportar que el paso 4e del cron no está grabando (revisar el log).
 
 ## Reporte
 
