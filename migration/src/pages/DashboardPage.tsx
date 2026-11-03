@@ -227,7 +227,7 @@ export function DashboardPage() {
 
       <AlertaSnapshotServidor snaps={snaps} posiciones={posiciones} hoy={hoy} listo={qSnaps.isSuccess && qPos.isSuccess} />
       <AlertaImpuestos />
-      <AlertaMacroEstres macro={macro as Record<string, number | null>} alloc={alloc} patrimonio={patrimonio} hoy={hoy} />
+      <AlertaMacroEstres macro={macro as Record<string, number | null>} alloc={alloc} patrimonio={patrimonio} />
 
       <AlertasResumen alloc={alloc} patrimonio={patrimonio}
         objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct} />

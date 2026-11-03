@@ -20,6 +20,21 @@ export const UMBRAL_ROJO: Record<string, { texto: string; valorRojo: number }> =
   adr_ypf:      { texto: 'rojo bajo US$ 25', valorRojo: 24.99 },
 };
 
+// Histéresis: un indicador que ya estaba en alerta sigue en alerta hasta que sale de la banda (un valor que oscila alrededor del umbral,
+// p. ej. riesgo país 799/805/798, no prende y apaga la alerta cada día). Ver `sigueEnAlerta`.
+export const SALIDA: Record<string, { texto: string; sigue: (v: number) => boolean }> = {
+  riesgo_pais:  { texto: 'bajar de 770 pb', sigue: v => v >= 770 },
+  vix:          { texto: 'bajar de 28', sigue: v => v >= 28 },
+  hy_spread:    { texto: 'bajar de 5,7 %', sigue: v => v >= 5.7 },
+  dollar_index: { texto: 'bajar de 125', sigue: v => v >= 125 },
+  dgs3mo:       { texto: 'bajar de 4,8 %', sigue: v => v >= 4.8 },
+  adr_ypf:      { texto: 'subir de US$ 26', sigue: v => v <= 26 },
+};
+
+// Fecha LOCAL (no UTC): con toISOString() a partir de las 21:00 en Argentina ya es «mañana» y una alerta descartada reaparecía de noche.
+export const fechaLocalISO = (d = new Date()): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export interface PosAlloc { ticker: string; mkt: number; tipo: string }
 
 // Qué parte de la cartera afecta cada indicador (qué activos son sensibles a ese riesgo).
@@ -41,6 +56,8 @@ export interface AlertaEstres {
   expuestoUsd: number;
   expuestoPct: number | null;   // fracción 0..1 del patrimonio; null si no hay patrimonio
   expuestoEtiqueta: string;
+  enBanda: boolean;          // true = ya no cruza el umbral de rojo pero sigue en alerta por histéresis
+  salida: string;            // qué tiene que pasar para que se apague («bajar de 770 pb»)
 }
 
 const SIGNIFICADO_ROJO: Record<string, string> = {
@@ -53,17 +70,21 @@ const SIGNIFICADO_ROJO: Record<string, string> = {
 };
 
 // Indicadores de estrés en ROJO hoy, con su exposición. Un indicador sin dato no alerta (nunca se asume). Orden: más expuesto primero.
-export function alertasEstres(macro: Record<string, number | null | undefined>, alloc: PosAlloc[], patrimonio: number): AlertaEstres[] {
+export function alertasEstres(macro: Record<string, number | null | undefined>, alloc: PosAlloc[], patrimonio: number, activos: ReadonlySet<string> = new Set()): AlertaEstres[] {
   const out: AlertaEstres[] = [];
   for (const key of INDICADORES_ESTRES) {
     const def: SemaforoDef | undefined = SEMAFOROS.find(s => s.key === key);
     const v = macro[key];
-    if (!def || v == null || !Number.isFinite(v) || def.evalua(v) !== 'rojo') continue;
+    if (!def || v == null || !Number.isFinite(v)) continue;
+    const rojo = def.evalua(v) === 'rojo';
+    const enBanda = !rojo && activos.has(key) && SALIDA[key].sigue(v);
+    if (!rojo && !enBanda) continue;
     const exp = EXPOSICION[key];
     const usd = alloc.filter(p => p.mkt > 0 && exp.aplica(p)).reduce((s, p) => s + p.mkt, 0);
     out.push({
       key, label: def.label, valor: v, umbral: UMBRAL_ROJO[key].texto, significado: SIGNIFICADO_ROJO[key],
       expuestoUsd: +usd.toFixed(2), expuestoPct: patrimonio > 0 ? usd / patrimonio : null, expuestoEtiqueta: exp.etiqueta,
+      enBanda, salida: SALIDA[key].texto,
     });
   }
   return out.sort((a, b) => b.expuestoUsd - a.expuestoUsd);
