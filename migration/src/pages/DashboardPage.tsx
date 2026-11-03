@@ -45,6 +45,7 @@ import type { MetricContext } from '../components/dashboard/metrics';
 import { UpdatedAt } from '../components/UpdatedAt';
 import { AlertaSnapshotServidor } from '../components/AlertaSnapshotServidor';
 import { AlertaImpuestos } from '../components/AlertaImpuestos';
+import { AlertaMacroEstres } from '../components/AlertaMacroEstres';
 import { useImpuestos } from '../hooks/useImpuestos';
 import { ImpuestosResumenVista } from '../components/ImpuestosResumenCard';
 import { useDesempeno } from '../hooks/useDesempeno';
@@ -226,6 +227,7 @@ export function DashboardPage() {
 
       <AlertaSnapshotServidor snaps={snaps} posiciones={posiciones} hoy={hoy} listo={qSnaps.isSuccess && qPos.isSuccess} />
       <AlertaImpuestos />
+      <AlertaMacroEstres macro={macro as Record<string, number | null>} alloc={alloc} patrimonio={patrimonio} hoy={hoy} />
 
       <AlertasResumen alloc={alloc} patrimonio={patrimonio}
         objetivoFijaPct={objetivoDistribucion.objetivoPct} toleranciaDistribucionPct={objetivoDistribucion.toleranciaPct} />
