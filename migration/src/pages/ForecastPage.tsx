@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones, useQuotes } from '../hooks/usePosiciones';
+import { usePosiciones, useQuotes, useFactorCedear } from '../hooks/usePosiciones';
 import { useChartTheme } from '../hooks/usePrefs';
 import { useProyeccionInputs, type ProyeccionInputs } from '../hooks/useProyeccionInputs';
 import { project } from '../engine/projection';
@@ -25,10 +25,11 @@ export function ForecastPage() {
   const bonds = posiciones.filter(p => p.tipo === 'bono').map(p => p.ticker);
   const arStocks = posiciones.filter(p => p.tipo === 'accion_ar').map(p => p.ticker);
   const { data: quotes = {} } = useQuotes(equity, bonds, arStocks);
+  const factor = useFactorCedear();
 
   const valorActual = useMemo(
-    () => posiciones.reduce((s, p) => s + (marketValueUSD(p, quotes[p.ticker] ?? null) ?? costUSD(p)), 0),
-    [posiciones, quotes]);
+    () => posiciones.reduce((s, p) => s + (marketValueUSD(p, quotes[p.ticker] ?? null, factor) ?? costUSD(p)), 0),
+    [posiciones, quotes, factor]);
 
   // Rendimiento real por año (el de la tarjeta de rendimiento): evidencia para elegir el retorno que se asume acá.
   const { porAnio } = useRendimientoAnual(active?.id);

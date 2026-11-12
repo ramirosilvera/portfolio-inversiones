@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Layers, Info } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { useAllPosiciones, useQuotes } from '../hooks/usePosiciones';
+import { useAllPosiciones, useQuotes, useFactorCedear } from '../hooks/usePosiciones';
 import { useChartTheme } from '../hooks/usePrefs';
 import { PortfolioReview } from '../components/PortfolioReview';
 import { Card, CardHeader, Stat, Badge, fmtUsd, fmtUsdCompact, fmtPct, Empty, PIE_COLORS } from '../components/ui';
@@ -21,12 +21,13 @@ export function ConsolidadoPage() {
   const bonds = [...new Set(posiciones.filter(p => p.tipo === 'bono').map(p => p.ticker))];
   const arStocks = [...new Set(posiciones.filter(p => p.tipo === 'accion_ar').map(p => p.ticker))];
   const { data: quotes = {} } = useQuotes(equity, bonds, arStocks);
+  const factor = useFactorCedear();
 
   const pfName = useMemo(() => new Map(portfolios.map(p => [p.id, p.nombre])), [portfolios]);
 
   const { porPortfolio, porTicker, total } = useMemo(() => {
     const mv = (p: Posicion) => {
-      const u = unitUSD(p, quotes[p.ticker] ?? null);
+      const u = unitUSD(p, quotes[p.ticker] ?? null, factor);
       return u != null ? u * p.cantidad : p.precio_compra * p.cantidad;
     };
     const porPortfolio = new Map<string, number>();
@@ -40,7 +41,7 @@ export function ConsolidadoPage() {
       t.total += v; t.portfolios.add(p.portfolio_id); porTicker.set(p.ticker, t);
     }
     return { porPortfolio, porTicker, total };
-  }, [posiciones, quotes]);
+  }, [posiciones, quotes, factor]);
 
   const tickersOrdenados = [...porTicker.entries()].sort((a, b) => b[1].total - a[1].total);
 

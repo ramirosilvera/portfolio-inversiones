@@ -29,7 +29,7 @@ export interface ValuacionPortfolio {
 export const MAX_EDAD_PRECIO_MS = 5 * 24 * 60 * 60 * 1000;
 
 export function valuarPortfolio(
-  portfolioId: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, ahora: number,
+  portfolioId: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, ahora: number, factorCedear = 1,
 ): ValuacionPortfolio {
   let valor = 0, costo = 0;
   const faltan: string[] = [];
@@ -49,7 +49,7 @@ export function valuarPortfolio(
       const px = precios.get(p.ticker.toUpperCase());
       const fresco = px && Number.isFinite(px.precio) && px.precio > 0 && ahora - Date.parse(px.updated_at) <= MAX_EDAD_PRECIO_MS;
       if (fresco) {
-        if (p.tipo === 'cedear') v = p.ratio_cedear && p.ratio_cedear > 0 ? (px.precio / p.ratio_cedear) * cant : null;
+        if (p.tipo === 'cedear') v = p.ratio_cedear && p.ratio_cedear > 0 ? (px.precio / p.ratio_cedear) * factorCedear * cant : null;
         else v = px.precio * cant;
       }
     }
@@ -83,7 +83,7 @@ export interface FilaSnapshot {
 
 // Arma las filas a grabar (solo carteras completas). `omitidas` lista las carteras salteadas y por qué, para loguear sin filtrar montos.
 export function armarSnapshots(
-  hoy: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, aportes: AporteMin[], ahora: number,
+  hoy: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, aportes: AporteMin[], ahora: number, factorCedear = 1,
 ): { filas: FilaSnapshot[]; omitidas: { portfolio_id: string; faltan: string[] }[] } {
   const porPf = new Map<string, PosicionValuable[]>();
   for (const p of posiciones) (porPf.get(p.portfolio_id) ?? porPf.set(p.portfolio_id, []).get(p.portfolio_id)!).push(p);
@@ -91,7 +91,7 @@ export function armarSnapshots(
   const omitidas: { portfolio_id: string; faltan: string[] }[] = [];
 
   for (const [pf, pos] of porPf) {
-    const v = valuarPortfolio(pf, pos, precios, ahora);
+    const v = valuarPortfolio(pf, pos, precios, ahora, factorCedear);
     if (!v.completo || !(v.valor > 0)) { omitidas.push({ portfolio_id: pf, faltan: v.faltan }); continue; }
     const aportesPf = aportes.filter(a => a.portfolio_id === pf);
     filas.push({

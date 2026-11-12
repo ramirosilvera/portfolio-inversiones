@@ -73,3 +73,18 @@ describe('armarSnapshots', () => {
     expect(r.omitidas).toEqual([{ portfolio_id: 'b', faltan: ['RARO'] }]);
   });
 });
+
+describe('valuarPortfolio: CEDEARs en dólar MEP (factor CCL ÷ MEP)', () => {
+  it('aplica el factor solo a los CEDEARs', () => {
+    const ahora = Date.parse('2026-11-12T12:00:00Z');
+    const precios = new Map([['MSFT', { ticker: 'MSFT', precio: 521.125, updated_at: '2026-11-12T11:00:00Z' }], ['DNC7D', { ticker: 'DNC7D', precio: 0.994, updated_at: '2026-11-12T11:00:00Z' }]]);
+    const pos = [
+      { portfolio_id: 'p', tipo: 'cedear', ticker: 'MSFT', cantidad: 30, precio_compra: 17, ratio_cedear: 30 },
+      { portfolio_id: 'p', tipo: 'bono', ticker: 'DNC7D', cantidad: 1000, precio_compra: 1, ratio_cedear: null },
+    ] as never;
+    const base = valuarPortfolio('p', pos, precios as never, ahora);
+    const mep = valuarPortfolio('p', pos, precios as never, ahora, 1.0549);
+    expect(base.valor).toBeCloseTo(521.125 + 994, 1);
+    expect(mep.valor).toBeCloseTo(521.125 * 1.0549 + 994, 1);
+  });
+});

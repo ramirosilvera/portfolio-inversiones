@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff, Pencil, ShoppingCart, Target, ArrowUpFromLine, ArrowDownToLine } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro, type OrdenAltaCostos } from '../hooks/usePosiciones';
+import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro, useFactorCedear, type OrdenAltaCostos } from '../hooks/usePosiciones';
 import { ComisionOperacionCampos, useComisionOperacion } from '../components/ComisionOperacion';
 import { useCedearRatios } from '../hooks/useCedearRatios';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
@@ -40,16 +40,17 @@ export function PosicionesPage() {
   // solo una vista de conversión para tipear más cómodo.
   const { data: macro = {} } = useMacro();
   const mep = (macro as Record<string, number | null>).dolar_mep ?? (macro as Record<string, number | null>).dolar_ccl ?? null;
+  const factor = useFactorCedear();
 
   const rows = useMemo(() => posiciones.map(p => {
     const live = quotes[p.ticker] ?? null;
-    const unit = unitValueUSD(p, live);
+    const unit = unitValueUSD(p, live, factor);
     const mkt = unit != null ? unit * p.cantidad : null;
     const cost = p.precio_compra * p.cantidad;
     const pnl = mkt != null ? mkt - cost : null;
     const pnlPct = mkt != null && cost > 0 ? mkt / cost - 1 : null;
     return { p, live, unit, mkt, cost, pnl, pnlPct };
-  }), [posiciones, quotes]);
+  }), [posiciones, quotes, factor]);
 
   const totalMkt = rows.reduce((s, r) => s + (r.mkt ?? r.cost), 0);
   const pnlNoReal = rows.reduce((s, r) => s + (r.pnl ?? 0), 0);

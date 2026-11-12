@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, Flame, LayoutGrid, Plus, Check, Star } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { useMacro, useDrawdowns, useBonosPrecios } from '../hooks/usePosiciones';
+import { useMacro, useDrawdowns, useBonosPrecios, useFactorCedear } from '../hooks/usePosiciones';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { useBonosDestacados } from '../hooks/useBonosDestacados';
 import { calcularBonoReferencia } from '../engine/rentaFija';
@@ -1010,12 +1010,13 @@ function PatrimonioBrokers({ posiciones, quotes, isLoading, personalizando }: {
   const { data: asignacionesAll = [], isLoading: asigLoading } = usePosicionBrokers();
 
   const abiertas = useMemo(() => posiciones.filter(p => p.cantidad > 0), [posiciones]);
+  const factor = useFactorCedear();
   // Mismo criterio de valuación que Posiciones/Brokers (unitUSD, fallback a costo sin cotización).
   const posValuadas = useMemo(() => abiertas.map(p => {
-    const unit = unitUSD(p, quotes[p.ticker] ?? null);
+    const unit = unitUSD(p, quotes[p.ticker] ?? null, factor);
     const valorUsd = unit != null ? unit * p.cantidad : p.precio_compra * p.cantidad;
     return { id: p.id, cantidad: p.cantidad, valorUsd };
-  }), [abiertas, quotes]);
+  }), [abiertas, quotes, factor]);
   const asignaciones = useMemo(() => {
     const ids = new Set(abiertas.map(p => p.id));
     return asignacionesAll.filter(a => ids.has(a.posicion_id))

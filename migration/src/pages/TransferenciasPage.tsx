@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowRightLeft } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones, useQuotes } from '../hooks/usePosiciones';
+import { usePosiciones, useQuotes, useFactorCedear } from '../hooks/usePosiciones';
 import { unitValueUSD } from '../lib/valuation';
 import { useTransferencias, useTransferirPosicion } from '../hooks/useTransferencias';
 import { useOrdenes } from '../hooks/useOrdenes';
@@ -29,9 +29,10 @@ export function TransferenciasPage() {
     abiertas.filter(p => p.tipo === 'cedear' || p.tipo === 'accion' || p.tipo === 'etf').map(p => p.ticker),
     abiertas.filter(p => p.tipo === 'bono').map(p => p.ticker),
     abiertas.filter(p => p.tipo === 'accion_ar').map(p => p.ticker));
+  const factor = useFactorCedear();
   const transferir = (posicionId: string, portfolioDestino: string, cantidad: number, nota?: string, llevarCosto = false) => {
     const pos = abiertas.find(p => p.id === posicionId);
-    const unit = pos ? unitValueUSD(pos, quotes[pos.ticker] ?? null) : null;
+    const unit = pos ? unitValueUSD(pos, quotes[pos.ticker] ?? null, factor) : null;
     const traslado = llevarCosto && pos && active
       ? { ticker: pos.ticker, cantidadPosicion: pos.cantidad, origenNombre: active.nombre, destinoNombre: portfolios.find(p => p.id === portfolioDestino)?.nombre ?? 'otro portfolio' }
       : undefined;
