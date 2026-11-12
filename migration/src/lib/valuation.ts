@@ -9,11 +9,17 @@ import type { Posicion } from '../types/domain';
 // dos dólares o con una brecha imposible (< 0,95 o > 1,25) devuelve 1 (no se corrige: mejor el valor por paridad que uno inventado).
 export const FACTOR_MEP_MIN = 0.95;
 export const FACTOR_MEP_MAX = 1.25;
-export function factorMepCcl(mep: number | null | undefined, ccl: number | null | undefined): number {
+// `null` = NO se pudo calcular (falta un dólar o la brecha es imposible): quien GRABA algo (snapshot, transferencia, precio de venta) no debe usar
+// el 1 de reemplazo, porque dejaría un valor ≈ 5,5 % bajo persistido (revisión independiente 2026-11-12).
+export function factorMepCclOrNull(mep: number | null | undefined, ccl: number | null | undefined): number | null {
   const m = Number(mep), c = Number(ccl);
-  if (!(Number.isFinite(m) && m > 0 && Number.isFinite(c) && c > 0)) return 1;
+  if (!(Number.isFinite(m) && m > 0 && Number.isFinite(c) && c > 0)) return null;
   const f = c / m;
-  return f >= FACTOR_MEP_MIN && f <= FACTOR_MEP_MAX ? f : 1;
+  return f >= FACTOR_MEP_MIN && f <= FACTOR_MEP_MAX ? f : null;
+}
+// Para MOSTRAR: con 1 los CEDEARs se valúan por paridad (al CCL) en vez de quedar sin valor.
+export function factorMepCcl(mep: number | null | undefined, ccl: number | null | undefined): number {
+  return factorMepCclOrNull(mep, ccl) ?? 1;
 }
 
 export function unitValueUSD(p: Posicion, live: number | null, factorCedear = 1): number | null {

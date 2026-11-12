@@ -1,7 +1,6 @@
 import { nuevoEstadoActivos, type FilaMacro } from '../_alertaEstres';
 import { INDICADORES_ESTRES, CLAVE_ACTIVOS } from '../../../src/engine/alertaMacro';
 import { SEMAFOROS } from '../../../src/engine/semaforos';
-import { factorMepCcl } from '../../../src/lib/valuation';
 import { sanearMacro } from '../../../src/engine/macroRangos';
 import { type Env, json, preflight, guard, sbSelect, sbRpc, sbUpsert, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
@@ -10,7 +9,7 @@ import {
   type PosicionParaCobro, type FlujoCronograma, type CobroPendienteSugerido, type MovCantidad,
 } from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
-import { armarSnapshots, type PosicionValuable, type PrecioCache, type AporteMin } from '../_snapshots';
+import { armarSnapshots, factorDesdeMacroCache, type PosicionValuable, type PrecioCache, type AporteMin } from '../_snapshots';
 import { filasEstimadas, urlIPC } from '../_impuestosParametros';
 
 // GET /api/cron/refresh-all
@@ -225,12 +224,12 @@ export const onRequestGet = guard(async ({ request, env }) => {
     }
     const aportesSnap = await sbSelect<AporteMin>(env, 'aportes', 'select=portfolio_id,fecha,monto,tipo');
     // CEDEARs en dólar MEP (= como los valúa la app, lib/valuation.ts#factorMepCcl): subyacente ÷ ratio × CCL ÷ MEP.
-    const fxVal = await sbSelect<{ clave: string; valor: number }>(env, 'macro_cache', 'select=clave,valor&clave=in.(dolar_mep,dolar_ccl)');
-    const factorSnap = factorMepCcl(fxVal.find(f => f.clave === 'dolar_mep')?.valor, fxVal.find(f => f.clave === 'dolar_ccl')?.valor);
+    // Con dólares faltantes, viejos o desfasados el factor es null: las carteras con CEDEARs NO se graban ese día (mejor un hueco declarado que un valor ≈ 5,5 % bajo).
+    const fx = await sbSelect<{ clave: string; valor: number; updated_at: string }>(env, 'macro_cache', 'select=clave,valor,updated_at&clave=in.(dolar_mep,dolar_ccl)');
+    const factorSnap = factorDesdeMacroCache(fx, Date.now());
     const { filas: filasSnap } = armarSnapshots(hoy, abiertasSnap, precios, aportesSnap, Date.now(), factorSnap);
     if (filasSnap.length) { await sbUpsert(env, 'portfolio_snapshots', filasSnap, 'portfolio_id,fecha'); snapshots = filasSnap.length; }
 
-    const fx = await sbSelect<{ clave: string; valor: number }>(env, 'macro_cache', 'select=clave,valor&clave=in.(dolar_mep,dolar_ccl)');
     const mep = fx.find(f => f.clave === 'dolar_mep')?.valor ?? null, ccl = fx.find(f => f.clave === 'dolar_ccl')?.valor ?? null;
     if (mep != null || ccl != null) await sbUpsert(env, 'fx_historico', [{ fecha: hoy, mep, ccl, fuente: 'cron' }], 'fecha');
   } catch { /* sin snapshot hoy: la app lo graba al abrirse y mañana el cron reintenta */ }

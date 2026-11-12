@@ -4,7 +4,7 @@
 // que CedearsPage y (si se agrega después) un resumen del Dashboard puedan compartir.
 // =============================================================================
 
-import { unitValueUSD, marketValueUSD, costUSD } from '../lib/valuation';
+import { marketValueUSD, costUSD } from '../lib/valuation';
 import type { Alerta } from './alertas';
 import type { Posicion, AssetRole } from '../types/domain';
 
@@ -146,5 +146,4 @@ export function alertasCedears(r: ResumenCedears, concentracionSectorPct: number
   return alertas;
 }
 
-// unitValueUSD se reexporta por conveniencia (paridad/precio unitario en la tabla de CedearsPage).
-export { unitValueUSD };
+

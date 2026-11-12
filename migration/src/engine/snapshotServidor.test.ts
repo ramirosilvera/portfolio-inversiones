@@ -34,3 +34,12 @@ describe('filaSnapshotApp', () => {
   });
   it('sin detalle manda null', () => { expect(filaSnapshotApp('pf', '2026-10-17', 1, 1).detalle).toBeNull(); });
 });
+
+import { filaSnapshotApp as _fila } from './snapshotServidor';
+describe('filaSnapshotApp guarda el factor de CEDEARs', () => {
+  it('incluye factor_cedear (null si no hay CEDEARs) y nunca toca fuente', () => {
+    expect(_fila('p', '2026-11-12', 100, 90, undefined, 1.0549)).toMatchObject({ factor_cedear: 1.0549 });
+    expect(_fila('p', '2026-11-12', 100, 90).factor_cedear).toBeNull();
+    expect('fuente' in _fila('p', '2026-11-12', 100, 90)).toBe(false);
+  });
+});

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, LineChart, Table2, History, X, TrendingDown, Eye, EyeOff, Pencil, ShoppingCart, Target, ArrowUpFromLine, ArrowDownToLine } from 'lucide-react';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro, useFactorCedear, type OrdenAltaCostos } from '../hooks/usePosiciones';
+import { usePosiciones, usePosicionMutations, useQuotes, useMovimientos, useMacro, useFactorCedearInfo, type OrdenAltaCostos } from '../hooks/usePosiciones';
 import { ComisionOperacionCampos, useComisionOperacion } from '../components/ComisionOperacion';
 import { useCedearRatios } from '../hooks/useCedearRatios';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
@@ -20,7 +20,8 @@ import { UpdatedAt } from '../components/UpdatedAt';
 import { unitValueUSD } from '../lib/valuation';
 import type { Posicion } from '../types/domain';
 
-type Row = { p: Posicion; live: number | null; unit: number | null; mkt: number | null; cost: number; pnl: number | null; pnlPct: number | null };
+// `unitSug`: precio unitario que se PRECARGA al vender/comprar. Un CEDEAR sin factor MEP/CCL real (macro sin cargar o dólares faltantes) no se precarga: el precio saldría por paridad (≈ 5,5 % bajo) y quedaría grabado si se acepta.
+type Row = { p: Posicion; live: number | null; unit: number | null; unitSug: number | null; mkt: number | null; cost: number; pnl: number | null; pnlPct: number | null };
 
 export function PosicionesPage() {
   const { active } = usePortfolios();
@@ -40,7 +41,7 @@ export function PosicionesPage() {
   // solo una vista de conversión para tipear más cómodo.
   const { data: macro = {} } = useMacro();
   const mep = (macro as Record<string, number | null>).dolar_mep ?? (macro as Record<string, number | null>).dolar_ccl ?? null;
-  const factor = useFactorCedear();
+  const { factor, valido: factorValido } = useFactorCedearInfo();
 
   const rows = useMemo(() => posiciones.map(p => {
     const live = quotes[p.ticker] ?? null;
@@ -49,8 +50,9 @@ export function PosicionesPage() {
     const cost = p.precio_compra * p.cantidad;
     const pnl = mkt != null ? mkt - cost : null;
     const pnlPct = mkt != null && cost > 0 ? mkt / cost - 1 : null;
-    return { p, live, unit, mkt, cost, pnl, pnlPct };
-  }), [posiciones, quotes, factor]);
+    const unitSug = p.tipo === 'cedear' && !factorValido ? null : unit;
+    return { p, live, unit, unitSug, mkt, cost, pnl, pnlPct };
+  }), [posiciones, quotes, factor, factorValido]);
 
   const totalMkt = rows.reduce((s, r) => s + (r.mkt ?? r.cost), 0);
   const pnlNoReal = rows.reduce((s, r) => s + (r.pnl ?? 0), 0);
@@ -166,7 +168,7 @@ export function PosicionesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {visibleRows.map(({ p, unit, mkt, pnl, pnlPct }) => {
+              {visibleRows.map(({ p, unitSug, unit, mkt, pnl, pnlPct }) => {
                 const pesoAct = mkt != null && totalMkt > 0 ? mkt / totalMkt : null;
                 return (
                   <tr key={p.id} className="hover:bg-canvas">
@@ -204,7 +206,7 @@ export function PosicionesPage() {
                           <button onClick={() => setSimular({ pos: p })} className="text-ink-600 hover:text-pos inline-flex items-center justify-center w-9 h-9" title="Comprar / simular" aria-label="Comprar / simular"><ShoppingCart className="w-4 h-4" /></button>
                         )}
                         {p.cantidad > 0 && p.tipo !== 'cash' && (
-                          <button onClick={() => setSellData({ pos: p, sugerido: unit ?? p.precio_compra })} className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9" title="Vender" aria-label="Vender"><TrendingDown className="w-4 h-4" /></button>
+                          <button onClick={() => setSellData({ pos: p, sugerido: unitSug ?? p.precio_compra })} className="text-ink-600 hover:text-neg inline-flex items-center justify-center w-9 h-9" title="Vender" aria-label="Vender"><TrendingDown className="w-4 h-4" /></button>
                         )}
                         <button onClick={() => setEditPos(p)} className="text-ink-600 hover:text-celeste-600 inline-flex items-center justify-center w-9 h-9" title="Editar" aria-label="Editar posición"><Pencil className="w-4 h-4" /></button>
                         <button onClick={() => setHistTicker(p.ticker)} className="text-ink-600 hover:text-celeste-600 inline-flex items-center justify-center w-9 h-9" title="Historial de movimientos" aria-label="Historial de movimientos"><History className="w-4 h-4" /></button>
@@ -939,7 +941,7 @@ const usdFromArs = (ars: number, mep: number | null): string => (mep && ars > 0 
 function nuevaSim(usadas: Set<string>, comprables: Row[], mep: number | null): SimDraft {
   const disponibles = comprables.filter(r => !usadas.has(r.p.id));
   const sel = disponibles[0];
-  const precioIni = sel ? (sel.unit ?? sel.p.precio_compra) : null;
+  const precioIni = sel ? (sel.unitSug ?? sel.p.precio_compra) : null;
   return {
     key: crypto.randomUUID(),
     modo: disponibles.length > 0 ? 'existente' : 'nuevo',
@@ -970,7 +972,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
     if (!initial && initialTicker) return [{ ...nuevaSim(new Set(), [], mep), nTicker: initialTicker }];
     if (!initial) return [nuevaSim(new Set(), comprables, mep)];
     const selInicial = comprables.find(r => r.p.id === initial.id);
-    const precioIni = selInicial?.unit ?? initial.precio_compra;
+    const precioIni = selInicial?.unitSug ?? initial.precio_compra;
     return [{
       key: crypto.randomUUID(), modo: 'existente', selId: initial.id,
       nTicker: '', nTipo: 'cedear', nRatio: '',
@@ -1012,7 +1014,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
   // Elegir una posición puntual del <select>: precarga precio y objetivo de ESE activo.
   const elegirPosicion = (key: string, selId: string) => {
     const sel = comprables.find(r => r.p.id === selId);
-    const precioIni = sel ? (sel.unit ?? sel.p.precio_compra) : null;
+    const precioIni = sel ? (sel.unitSug ?? sel.p.precio_compra) : null;
     patchSim(key, {
       modo: 'existente', selId,
       precio: precioIni != null ? precioStr(precioIni) : '',
@@ -1027,7 +1029,7 @@ function SimularCompraModal({ openRows, totalMkt, cedearRatios, catalogoBonos, m
     if (s.key !== key || s.modo === 'existente') return s;
     const usadas = new Set(prev.filter(o => o.key !== key && o.modo === 'existente').map(o => o.selId));
     const sel = comprables.find(r => !usadas.has(r.p.id));
-    const precioIni = sel ? (sel.unit ?? sel.p.precio_compra) : null;
+    const precioIni = sel ? (sel.unitSug ?? sel.p.precio_compra) : null;
     return {
       ...s, modo: 'existente', selId: sel?.p.id ?? '',
       precio: precioIni != null ? precioStr(precioIni) : '',

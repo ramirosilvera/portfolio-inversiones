@@ -30,7 +30,8 @@ export function estadoSnapshotServidor(
 // si el cron ya grabó el día (fuente='cron') el navegador solo actualiza valor/aportado/detalle y NO le cambia el origen — antes lo pisaba con
 // 'app', y la alerta de «el servidor no graba» (estadoSnapshotServidor arriba, que cuenta solo filas del cron) saltaba aunque el cron estuviera
 // funcionando. Si la fila no existe, entra con los defaults de la tabla (fuente 'app', completo true).
-export function filaSnapshotApp(portfolioId: string, fecha: string, valor: number, aportado: number, detalle?: { t: string; c: number; v: number }[]) {
-  return { portfolio_id: portfolioId, fecha, valor, aportado, detalle: detalle ?? null };
+export function filaSnapshotApp(portfolioId: string, fecha: string, valor: number, aportado: number, detalle?: { t: string; c: number; v: number }[], factorCedear: number | null = null) {
+  // `factor_cedear`: factor CCL÷MEP con el que se valuaron los CEDEARs (null = sin CEDEARs o valuado por paridad). Ver migración 0066.
+  return { portfolio_id: portfolioId, fecha, valor, aportado, detalle: detalle ?? null, factor_cedear: factorCedear };
 }
 

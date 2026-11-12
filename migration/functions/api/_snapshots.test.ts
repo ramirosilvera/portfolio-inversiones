@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { valuarPortfolio, aportadoNeto, armarSnapshots, MAX_EDAD_PRECIO_MS, type PosicionValuable, type PrecioCache } from './_snapshots';
+import { valuarPortfolio, aportadoNeto, armarSnapshots, factorDesdeMacroCache, MAX_EDAD_PRECIO_MS, type PosicionValuable, type PrecioCache } from './_snapshots';
 
 const AHORA = Date.parse('2026-10-16T22:00:00Z');
 const fresco = '2026-10-16T21:49:00Z';
@@ -86,5 +86,36 @@ describe('valuarPortfolio: CEDEARs en dólar MEP (factor CCL ÷ MEP)', () => {
     const mep = valuarPortfolio('p', pos, precios as never, ahora, 1.0549);
     expect(base.valor).toBeCloseTo(521.125 + 994, 1);
     expect(mep.valor).toBeCloseTo(521.125 * 1.0549 + 994, 1);
+  });
+});
+
+describe('factor de CEDEARs en el cron: faltante o inválido no se graba', () => {
+  const AHORA = Date.parse('2026-11-12T12:00:00Z');
+  const px = new Map([['MSFT', { ticker: 'MSFT', precio: 540, updated_at: '2026-11-12T11:00:00Z' }]]);
+  const pos = [{ portfolio_id: 'p', tipo: 'cedear', ticker: 'MSFT', cantidad: 30, precio_compra: 17, ratio_cedear: 30 }] as never;
+  it('armarSnapshots pasa el factor y lo guarda en la fila', () => {
+    const r1 = armarSnapshots('2026-11-12', pos, px as never, [], AHORA, 1);
+    const r2 = armarSnapshots('2026-11-12', pos, px as never, [], AHORA, 1.05);
+    expect(r2.filas[0].valor / r1.filas[0].valor).toBeCloseTo(1.05, 6);
+    expect(r2.filas[0].factor_cedear).toBe(1.05);
+  });
+  it('con factor null la cartera con CEDEARs queda omitida (no se graba un valor a paridad)', () => {
+    const r = armarSnapshots('2026-11-12', pos, px as never, [], AHORA, null);
+    expect(r.filas).toHaveLength(0);
+    expect(r.omitidas[0].faltan).toContain('MSFT');
+  });
+  it('una cartera SIN CEDEARs se graba igual con factor null', () => {
+    const bonos = [{ portfolio_id: 'p', tipo: 'bono', ticker: 'DNC7D', cantidad: 1000, precio_compra: 1, ratio_cedear: null }] as never;
+    const r = armarSnapshots('2026-11-12', bonos, new Map([['DNC7D', { ticker: 'DNC7D', precio: 1, updated_at: '2026-11-12T11:00:00Z' }]]) as never, [], AHORA, null);
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0].factor_cedear).toBeNull();
+  });
+  it('factorDesdeMacroCache: ok, faltante, viejo y desfasado', () => {
+    const ok = [{ clave: 'dolar_mep', valor: 1578.3, updated_at: '2026-11-12T09:53:44Z' }, { clave: 'dolar_ccl', valor: 1664.9, updated_at: '2026-11-12T09:53:44Z' }];
+    expect(factorDesdeMacroCache(ok, AHORA)).toBeCloseTo(1.0549, 4);
+    expect(factorDesdeMacroCache([ok[0]], AHORA)).toBeNull();
+    expect(factorDesdeMacroCache(ok, AHORA + 6 * 86_400_000)).toBeNull();                                            // > 5 días
+    expect(factorDesdeMacroCache([ok[0], { ...ok[1], updated_at: '2026-11-09T09:53:44Z' }], AHORA)).toBeNull();     // desfase > 1 día
+    expect(factorDesdeMacroCache([ok[0], { ...ok[1], valor: 100 }], AHORA)).toBeNull();                              // brecha imposible
   });
 });

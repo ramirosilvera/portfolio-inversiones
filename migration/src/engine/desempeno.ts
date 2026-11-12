@@ -11,7 +11,8 @@
 import { xirr, type CashFlow } from './irr';
 import { RATIO_MIN_DIETZ } from './rendimiento';
 
-export interface PuntoValor { fecha: string; valor: number }
+// `puente`: valor de este punto expresado en el método de valuación POSTERIOR (ver engine/metodoValuacion.ts); el tramo que sale de este punto usa el puente como base.
+export interface PuntoValor { fecha: string; valor: number; puente?: number }
 export interface FlujoFechado { fecha: string; monto: number }      // firmado: aporte +, retiro −
 export interface PuntoSp { f: string; c: number }                    // cierre ajustado (retorno total) del benchmark
 
@@ -49,21 +50,22 @@ export function indiceTwr(puntos: PuntoValor[], flujos: FlujoFechado[]): { serie
     const b = pts[i];
     if (b.fecha === base.fecha) continue;
     const F = flujos.filter(f => f.fecha > base.fecha && f.fecha <= b.fecha).reduce((s, f) => s + f.monto, 0);
+    const baseVal = base.puente ?? base.valor;
     // Aporte MAYOR que el valor previo (el capital se duplica o más en un día): con valores diarios no se puede medir el rendimiento de
     // ese tramo — el costo de ejecutar la compra (spread, comisiones, movimiento del día) caería sobre un capital previo diminuto y
     // se leería como una caída enorme. Se RE-ANCLA el índice en este valor (sin inventar retorno) y se cuenta para avisarlo.
-    if (F > base.valor) {
+    if (F > baseVal) {
       serie.push({ fecha: b.fecha, indice: serie[serie.length - 1].indice });
       base = b; diferidos = 0; reanclados++;
       continue;
     }
     const neto = b.valor - F;
-    const absurdo = F !== 0 && Math.abs(F) > 0.1 * base.valor && Math.abs(neto / base.valor - 1) > 0.2;   // flujo grande + retorno extremo
+    const absurdo = F !== 0 && Math.abs(F) > 0.1 * baseVal && Math.abs(neto / baseVal - 1) > 0.2;   // flujo grande + retorno extremo
     // Valor IDÉNTICO al anterior con un flujo de por medio: el snapshot se grabó antes de acreditar el movimiento (un mercado no repite el
     // valor al centavo el mismo día que entra o sale plata). Se difiere igual que un tramo absurdo.
     const desfasado = F !== 0 && Math.abs(b.valor - base.valor) < 0.005;
     if (!(neto > 0) || absurdo || desfasado) { diferidos++; continue; }
-    serie.push({ fecha: b.fecha, indice: serie[serie.length - 1].indice * (neto / base.valor) });
+    serie.push({ fecha: b.fecha, indice: serie[serie.length - 1].indice * (neto / baseVal) });
     base = b;
     diferidos = 0;
   }

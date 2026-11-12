@@ -7,7 +7,7 @@ import { consolidarCompra, reconstruirTenencia, movimientoConciliacion } from '.
 import type { DividendoInfo } from '../engine/dividendProjection';
 import { leerObjetivos, reajustarObjetivosTrasCierre } from '../lib/objetivos';
 import type { Posicion, Movimiento } from '../types/domain';
-import { factorMepCcl } from '../lib/valuation';
+import { factorMepCclOrNull } from '../lib/valuation';
 
 // Historial de movimientos de un portfolio (opcionalmente filtrado por ticker).
 export function useMovimientos(portfolioId: string | null | undefined, ticker?: string) {
@@ -448,10 +448,15 @@ export function useDrawdowns() {
 }
 
 // Factor CCL ÷ MEP para valuar los CEDEARs en dólar MEP (ver lib/valuation.ts#factorMepCcl). 1 mientras el macro no cargó.
-export function useFactorCedear(): number {
+export function useFactorCedearInfo(): { factor: number; valido: boolean } {
   const { data: macro } = useMacro();
   const m = (macro ?? {}) as Record<string, number | null>;
-  return factorMepCcl(m.dolar_mep, m.dolar_ccl);
+  const f = factorMepCclOrNull(m.dolar_mep, m.dolar_ccl);
+  // `valido` = hay un factor real MEP/CCL. Con false, los CEDEARs se muestran por paridad (CCL) y NADA que se persista debe depender de ese valor.
+  return { factor: f ?? 1, valido: f != null };
+}
+export function useFactorCedear(): number {
+  return useFactorCedearInfo().factor;
 }
 
 export function useMacro() {

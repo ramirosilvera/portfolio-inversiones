@@ -4,6 +4,8 @@
 // hace el snapshot INCOMPLETO y no se graba: un valor armado a medias (cayendo a costo) ensucia el histórico de rendimiento y de
 // máxima caída para siempre, y un hueco se ve y se declara; un número equivocado no.
 
+import { factorMepCclOrNull } from '../../src/lib/valuation';
+
 export interface PosicionValuable {
   portfolio_id: string;
   ticker: string;
@@ -29,7 +31,7 @@ export interface ValuacionPortfolio {
 export const MAX_EDAD_PRECIO_MS = 5 * 24 * 60 * 60 * 1000;
 
 export function valuarPortfolio(
-  portfolioId: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, ahora: number, factorCedear = 1,
+  portfolioId: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, ahora: number, factorCedear: number | null = 1,
 ): ValuacionPortfolio {
   let valor = 0, costo = 0;
   const faltan: string[] = [];
@@ -49,7 +51,8 @@ export function valuarPortfolio(
       const px = precios.get(p.ticker.toUpperCase());
       const fresco = px && Number.isFinite(px.precio) && px.precio > 0 && ahora - Date.parse(px.updated_at) <= MAX_EDAD_PRECIO_MS;
       if (fresco) {
-        if (p.tipo === 'cedear') v = p.ratio_cedear && p.ratio_cedear > 0 ? (px.precio / p.ratio_cedear) * factorCedear * cant : null;
+        // Sin factor real (null) un CEDEAR NO se valúa: el snapshot queda incompleto y no se graba (un valor ≈ 5,5 % bajo persistido ensucia el histórico).
+        if (p.tipo === 'cedear') v = p.ratio_cedear && p.ratio_cedear > 0 && factorCedear != null ? (px.precio / p.ratio_cedear) * factorCedear * cant : null;
         else v = px.precio * cant;
       }
     }
@@ -79,11 +82,12 @@ export function aportadoNeto(aportes: AporteMin[], hasta: string, costoFallback:
 export interface FilaSnapshot {
   portfolio_id: string; fecha: string; valor: number; aportado: number; fuente: 'cron'; completo: true;
   detalle: { t: string; c: number; v: number }[];
+  factor_cedear: number | null;   // factor CCL÷MEP con el que se valuaron los CEDEARs (null si la cartera no tiene CEDEARs)
 }
 
 // Arma las filas a grabar (solo carteras completas). `omitidas` lista las carteras salteadas y por qué, para loguear sin filtrar montos.
 export function armarSnapshots(
-  hoy: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, aportes: AporteMin[], ahora: number, factorCedear = 1,
+  hoy: string, posiciones: PosicionValuable[], precios: Map<string, PrecioCache>, aportes: AporteMin[], ahora: number, factorCedear: number | null = 1,
 ): { filas: FilaSnapshot[]; omitidas: { portfolio_id: string; faltan: string[] }[] } {
   const porPf = new Map<string, PosicionValuable[]>();
   for (const p of posiciones) (porPf.get(p.portfolio_id) ?? porPf.set(p.portfolio_id, []).get(p.portfolio_id)!).push(p);
@@ -97,7 +101,23 @@ export function armarSnapshots(
     filas.push({
       portfolio_id: pf, fecha: hoy, valor: v.valor, aportado: aportadoNeto(aportesPf, hoy, v.costo),
       fuente: 'cron', completo: true, detalle: v.detalle,
+      factor_cedear: pos.some(p => p.tipo === 'cedear' && Number(p.cantidad) > 0) ? factorCedear : null,
     });
   }
   return { filas, omitidas };
+}
+
+// Factor CCL÷MEP desde las filas de macro_cache (dolar_mep, dolar_ccl). null si falta alguna, si alguna tiene más de 5 días (MAX_EDAD_PRECIO_MS) o si
+// MEP y CCL se actualizaron con más de 1 día de diferencia (un MEP de hoy con un CCL viejo da un factor sin cota), o si la brecha es imposible.
+export const MAX_DESFASE_DOLARES_MS = 24 * 60 * 60 * 1000;
+export function factorDesdeMacroCache(
+  filas: { clave: string; valor: number | null; updated_at?: string | null }[], ahora: number,
+): number | null {
+  const mep = filas.find(f => f.clave === 'dolar_mep'), ccl = filas.find(f => f.clave === 'dolar_ccl');
+  if (!mep || !ccl) return null;
+  const tm = Date.parse(String(mep.updated_at)), tc = Date.parse(String(ccl.updated_at));
+  if (!Number.isFinite(tm) || !Number.isFinite(tc)) return null;
+  if (ahora - tm > MAX_EDAD_PRECIO_MS || ahora - tc > MAX_EDAD_PRECIO_MS) return null;
+  if (Math.abs(tm - tc) > MAX_DESFASE_DOLARES_MS) return null;
+  return factorMepCclOrNull(mep.valor, ccl.valor);
 }
