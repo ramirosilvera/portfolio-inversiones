@@ -43,7 +43,7 @@ export interface CobroPendienteSugerido {
   portfolio_id: string;
   posicion_id: string;
   ticker: string;
-  tipo: 'dividendo' | 'interes';
+  tipo: 'dividendo' | 'interes' | 'amortizacion';
   fecha: string;
   monto: number;
   nota: string;
@@ -254,6 +254,31 @@ export function sugerirCuponesDeCronograma(
     out.push({
       portfolio_id: pos.portfolio_id, posicion_id: pos.id, ticker: pos.ticker, tipo: 'interes', fecha, monto,
       nota: `Sugerido por el cron — cupón del cronograma de la emisión, fecha exacta de pago (${pos.cantidad} nominales × ${(f.interes * 100).toFixed(4)}%).`,
+    });
+  }
+  return out;
+}
+
+// Capital al VENCIMIENTO (rescate total): el flujo del cronograma con `amortizacion` ≈ 1 (100 % del nominal original) y saldo residual 0.
+// Antes el cron solo sugería cupones: al vencer MIC3D (11/11/2026) IOL pagó US$ 2.442 de capital + el cupón, la app solo mostró el cupón y la
+// posición siguió abierta. Solo se sugiere el rescate TOTAL (ahí las dos convenciones —nominal reducido o valor residual— coinciden: la posición
+// queda en 0); las amortizaciones PARCIALES siguen por registrar_amortizacion / registrar_amortizacion_vr (dependen de la convención del broker).
+// Confirmarla en Cobros llama a registrar_amortizacion (baja los nominales a 0, anota el cobro y acredita la Liquidez).
+export function sugerirRescatesDeCronograma(
+  pos: PosicionParaCobro, crono: FlujoCronograma[], desde: string, hasta: string,
+): CobroPendienteSugerido[] {
+  if (pos.tipo !== 'bono' || !(pos.cantidad > 0)) return [];
+  const out: CobroPendienteSugerido[] = [];
+  for (const f of crono) {
+    const fecha = soloFecha(f.fecha);
+    if (fecha < desde || fecha > hasta) continue;
+    if (!(Number(f.amortizacion) >= 0.9999)) continue;
+    if (pos.fecha_compra && fecha < pos.fecha_compra) continue;
+    const monto = +(pos.cantidad * Number(f.amortizacion)).toFixed(2);
+    if (!(monto > 0)) continue;
+    out.push({
+      portfolio_id: pos.portfolio_id, posicion_id: pos.id, ticker: pos.ticker, tipo: 'amortizacion', fecha, monto,
+      nota: `Sugerido por el cron — capital al vencimiento del cronograma de la emisión (${pos.cantidad} nominales × 100 %). Al confirmar, los nominales pasan a 0 y el capital se acredita (si lo tildás) en Liquidez.`,
     });
   }
   return out;

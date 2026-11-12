@@ -105,6 +105,24 @@ export function useCobros(portfolioId: string | null | undefined) {
     // dividendo especial). Nunca en lote — uno a la vez, a propósito, para que se revise cada uno.
     confirmarPendiente: async (id: string, montoFinal: number, acreditar = false, costos?: CostosAlta) => {
       if (!(montoFinal > 0)) throw new Error('El monto debe ser mayor a 0.');
+      // Capital al vencimiento sugerido por el cron: no basta con marcarlo 'disponible' (los nominales seguirían abiertos). Se registra con la
+      // MISMA RPC que la amortización manual (baja los nominales, anota el cobro y acredita la Liquidez en una transacción) y la sugerencia
+      // queda 'descartado' (no se borra: su fila es la marca de dedupe del cron).
+      const { data: pend, error: pendErr } = await supabase.from('cobros').select('posicion_id, ticker, tipo, fecha, estado, movimiento_id').eq('id', id).single();
+      if (pendErr) throw pendErr;
+      if (pend.tipo === 'amortizacion' && pend.estado === 'pendiente' && !pend.movimiento_id && pend.posicion_id) {
+        const { data: pos, error: posErr } = await supabase.from('posiciones').select('cantidad').eq('id', pend.posicion_id).single();
+        if (posErr) throw posErr;
+        await asegurarHistorial(pend.posicion_id);
+        const { error: rpcErr } = await supabase.rpc('registrar_amortizacion', {
+          p_posicion_id: pend.posicion_id, p_fecha: pend.fecha, p_monto: montoFinal, p_nominales: Number(pos.cantidad),
+          p_nota: 'Capital al vencimiento (sugerido por el cron)', p_acreditar: !!acreditar,
+        });
+        if (rpcErr) { invalidate(); throw new Error(rpcErr.message); }
+        await supabase.from('cobros').update({ estado: 'descartado', nota: 'Registrado como amortización (capital al vencimiento).' }).eq('id', id);
+        invalidate();
+        return;
+      }
       const { data: c, error } = await supabase.from('cobros').update({ estado: 'disponible', monto: montoFinal, ...(costos ? costosCols(costos) : {}) })
         .eq('id', id).select('portfolio_id, ticker, tipo, fecha').single();
       if (error) throw error;

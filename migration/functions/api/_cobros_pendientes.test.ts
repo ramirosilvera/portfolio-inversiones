@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, cronogramaVigente, cantidadAlCorte,
+  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirCuponesDeCronograma, sugerirRescatesDeCronograma, cronogramaVigente, cantidadAlCorte,
   sugerirDividendosHistoricos, sugerirCuponesHistoricos, sugerirInteresLiquidez,
   type PosicionParaCobro,
 } from './_cobros_pendientes';
@@ -318,5 +318,21 @@ describe('sugerirInteresLiquidez (cuenta remunerada)', () => {
   });
   it('el monto es una estimación y la nota lo dice', () => {
     expect(sugerirInteresLiquidez(liq(), '2026-12-01')!.nota).toMatch(/ESTIMACIÓN/);
+  });
+});
+
+describe('sugerirRescatesDeCronograma (capital al vencimiento)', () => {
+  const pos = { portfolio_id: 'p1', id: 'pos1', ticker: 'MIC3D', tipo: 'bono', cantidad: 2442, fecha_compra: '2026-09-10', vencimiento: '2026-11-11' } as never;
+  it('sugiere el rescate total con monto = nominales × 100 % (caso MIC3D, US$ 2.442)', () => {
+    const r = sugerirRescatesDeCronograma(pos, [{ fecha: '2026-11-11', interes: 0.02125, amortizacion: 1 }], '2026-10-07', '2026-11-11');
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ tipo: 'amortizacion', fecha: '2026-11-11', monto: 2442 });
+  });
+  it('no sugiere amortizaciones parciales (dependen de la convención del broker)', () => {
+    expect(sugerirRescatesDeCronograma(pos, [{ fecha: '2026-11-11', interes: 0.01, amortizacion: 0.33 }], '2026-10-07', '2026-11-11')).toEqual([]);
+  });
+  it('fuera de la ventana o sin posición no sugiere', () => {
+    expect(sugerirRescatesDeCronograma(pos, [{ fecha: '2026-11-11', interes: 0, amortizacion: 1 }], '2026-11-12', '2026-11-20')).toEqual([]);
+    expect(sugerirRescatesDeCronograma({ ...(pos as object), cantidad: 0 } as never, [{ fecha: '2026-11-11', interes: 0, amortizacion: 1 }], '2026-10-07', '2026-11-11')).toEqual([]);
   });
 });

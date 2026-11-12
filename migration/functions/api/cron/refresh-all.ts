@@ -5,7 +5,7 @@ import { sanearMacro } from '../../../src/engine/macroRangos';
 import { type Env, json, preflight, guard, sbSelect, sbRpc, sbUpsert, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
 import {
-  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirInteresLiquidez, sugerirCuponesDeCronograma, cronogramaVigente,
+  sugerirDividendoPendiente, sugerirCuponPendiente, sugerirInteresLiquidez, sugerirCuponesDeCronograma, sugerirRescatesDeCronograma, cronogramaVigente,
   type PosicionParaCobro, type FlujoCronograma, type CobroPendienteSugerido, type MovCantidad,
 } from '../_cobros_pendientes';
 import type { DividendoInfo } from '../_dividendos';
@@ -149,7 +149,10 @@ export const onRequestGet = guard(async ({ request, env }) => {
     try {
       const filas = await sbSelect<{ ticker: string; cronograma: FlujoCronograma[] | null }>(env, 'bonos_referencia',
         `select=ticker,cronograma&ticker=in.(${bonosTickers.join(',')})`);
-      for (const f of filas) if (cronogramaVigente(f.cronograma, hoy)) cronoPorTicker.set(f.ticker.toUpperCase(), f.cronograma);
+      // Vigente = algún flujo dentro de la ventana de 35 días hacia atrás o a futuro: el día del vencimiento (y las semanas siguientes) el
+      // cronograma ya no tiene flujos futuros y antes caía al cálculo sintético, perdiendo el cupón/capital final.
+      const desdeVig = new Date(Date.parse(hoy) - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      for (const f of filas) if (cronogramaVigente(f.cronograma, desdeVig)) cronoPorTicker.set(f.ticker.toUpperCase(), f.cronograma);
     } catch { /* sin catálogo: todos los bonos van por el cálculo sintético */ }
   }
   // Ventana de 35 días hacia atrás: si el cron no corrió un día no se pierde un cupón, y `fecha_compra` descarta los anteriores
@@ -179,6 +182,9 @@ export const onRequestGet = guard(async ({ request, env }) => {
       if (crono) {
         for (const s of sugerirCuponesDeCronograma(p, crono, desdeCupon, hoy)) {
           if (!yaCubierto(s.posicion_id, s.tipo, s.fecha) && !yaCubiertoMes(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
+        }
+        for (const s of sugerirRescatesDeCronograma(p, crono, desdeCupon, hoy)) {
+          if (!yaCubierto(s.posicion_id, s.tipo, s.fecha)) sugerencias.push(s);
         }
         continue;
       }
