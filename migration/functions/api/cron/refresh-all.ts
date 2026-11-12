@@ -1,6 +1,7 @@
 import { nuevoEstadoActivos, type FilaMacro } from '../_alertaEstres';
 import { INDICADORES_ESTRES, CLAVE_ACTIVOS } from '../../../src/engine/alertaMacro';
 import { SEMAFOROS } from '../../../src/engine/semaforos';
+import { factorMepCcl } from '../../../src/lib/valuation';
 import { sanearMacro } from '../../../src/engine/macroRangos';
 import { type Env, json, preflight, guard, sbSelect, sbRpc, sbUpsert, tokenInterno, requireCronSecret } from '../_shared';
 import { DEFAULT_CIK } from '../_edgar';
@@ -223,7 +224,10 @@ export const onRequestGet = guard(async ({ request, env }) => {
       for (const f of filas) precios.set(f.ticker.toUpperCase(), f);
     }
     const aportesSnap = await sbSelect<AporteMin>(env, 'aportes', 'select=portfolio_id,fecha,monto,tipo');
-    const { filas: filasSnap } = armarSnapshots(hoy, abiertasSnap, precios, aportesSnap, Date.now());
+    // CEDEARs en dólar MEP (= como los valúa la app, lib/valuation.ts#factorMepCcl): subyacente ÷ ratio × CCL ÷ MEP.
+    const fxVal = await sbSelect<{ clave: string; valor: number }>(env, 'macro_cache', 'select=clave,valor&clave=in.(dolar_mep,dolar_ccl)');
+    const factorSnap = factorMepCcl(fxVal.find(f => f.clave === 'dolar_mep')?.valor, fxVal.find(f => f.clave === 'dolar_ccl')?.valor);
+    const { filas: filasSnap } = armarSnapshots(hoy, abiertasSnap, precios, aportesSnap, Date.now(), factorSnap);
     if (filasSnap.length) { await sbUpsert(env, 'portfolio_snapshots', filasSnap, 'portfolio_id,fecha'); snapshots = filasSnap.length; }
 
     const fx = await sbSelect<{ clave: string; valor: number }>(env, 'macro_cache', 'select=clave,valor&clave=in.(dolar_mep,dolar_ccl)');

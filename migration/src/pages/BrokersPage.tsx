@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Landmark, Plus, Trash2, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { usePosiciones, useQuotes } from '../hooks/usePosiciones';
+import { usePosiciones, useQuotes, useFactorCedear } from '../hooks/usePosiciones';
 import { useBrokers } from '../hooks/useBrokers';
 import { usePosicionBrokers } from '../hooks/usePosicionBrokers';
 import { useChartTheme } from '../hooks/usePrefs';
@@ -31,13 +31,14 @@ export function BrokersPage() {
   const arStocks = abiertas.filter(p => p.tipo === 'accion_ar').map(p => p.ticker);
   const { data: quotes = {} } = useQuotes(equity, bonds, arStocks);
 
+  const factor = useFactorCedear();
   // Mismo criterio de valuación que Posiciones (unitValueUSD, fallback a costo sin cotización).
   const posValuadas = useMemo(() => abiertas.map(p => {
     const live = quotes[p.ticker] ?? null;
-    const unit = unitValueUSD(p, live);
+    const unit = unitValueUSD(p, live, factor);
     const valorUsd = unit != null ? unit * p.cantidad : p.precio_compra * p.cantidad;
     return { id: p.id, cantidad: p.cantidad, valorUsd };
-  }), [abiertas, quotes]);
+  }), [abiertas, quotes, factor]);
 
   const asignaciones = useMemo(() => {
     const ids = new Set(abiertas.map(p => p.id));

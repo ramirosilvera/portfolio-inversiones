@@ -6,7 +6,7 @@ import { usePortfolios } from './usePortfolios';
 import { usePatrimonioOtros } from './usePatrimonioOtros';
 import { useParametrosImpuestos } from './useParametrosImpuestos';
 import { useAllPosiciones, useQuotes, useMacro } from './usePosiciones';
-import { unitValueUSD } from '../lib/valuation';
+import { unitValueUSD, factorMepCcl } from '../lib/valuation';
 import {
   paramsBP, escalaBP, patrimonioImponible, evaluarBienesPersonales, calcularBienesPersonales, patrimonioOtrosArs,
   gananciasPorAnio, proximaDDJJ, alertasImpuestos, proyectarLlegadaMinimo, escenariosLlegada, type FuenteProyeccion,
@@ -61,13 +61,14 @@ export function useImpuestos() {
   const anioActual = Number(hoy.slice(0, 4));
   const m = macro as Record<string, number | null>;
   const mep = m.dolar_mep ?? m.dolar_ccl ?? null;
+  const factor = factorMepCcl(m.dolar_mep, m.dolar_ccl);
 
   return useMemo(() => {
     // Mismo criterio de valuación que Consolidado/Patrimonio: mercado si hay precio, costo si no (y se avisa).
     const porPortfolio = new Map<string, number>();
     const sinPrecio: string[] = [];
     const items = posiciones.map(p => {
-      const u = unitValueUSD(p, quotes[p.ticker] ?? null);
+      const u = unitValueUSD(p, quotes[p.ticker] ?? null, factor);
       if (u == null && p.cantidad > 0 && p.tipo !== 'cash') sinPrecio.push(p.ticker);
       const valorUsd = u != null ? u * p.cantidad : p.precio_compra * p.cantidad;
       porPortfolio.set(p.portfolio_id, (porPortfolio.get(p.portfolio_id) ?? 0) + valorUsd);
@@ -107,5 +108,5 @@ export function useImpuestos() {
       cargando: cargandoPos || cargandoCobros || qQuotes.isLoading || otros.isLoading,
       preciosPendientes: qQuotes.isFetching && Object.keys(quotes).length === 0,
     };
-  }, [posiciones, quotes, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching, otros.data, otros.isLoading, param.params, param.escalas, param.verificado, proyecciones]);
+  }, [posiciones, quotes, factor, cobros, mep, hoy, anioActual, portfolios, cargandoPos, cargandoCobros, qQuotes.isLoading, qQuotes.isFetching, otros.data, otros.isLoading, param.params, param.escalas, param.verificado, proyecciones]);
 }

@@ -6,7 +6,7 @@ import { computeDcf } from '../engine/dcf';
 import { margenSeguridadCedears, type MargenCartera } from '../engine/margenSeguridad';
 import { useCikMap } from './useCikMap';
 import type { Fundamentals } from '../types/domain';
-import { usePosiciones, useQuotes, useDividendosProyectados, useMacro } from './usePosiciones';
+import { usePosiciones, useQuotes, useDividendosProyectados, useMacro, useFactorCedear } from './usePosiciones';
 import { calcularCedear, type CedearCalc } from '../engine/cedears';
 import { rendimientoDividendos, tickersConCobroReciente, type RendDividendos } from '../engine/dividendYield';
 import { useCobros } from './useCobros';
@@ -29,7 +29,8 @@ export function useCedearsCalc(portfolioId: string | undefined) {
   const cedears = posiciones.filter(p => p.tipo === 'cedear' && (Number(p.cantidad) || 0) > 0);
   const { data: quotes = {} } = useQuotes(cedears.map(c => c.ticker), [], []);
 
-  const cedearsCalc: CedearCalc[] = cedears.map(c => calcularCedear(c, quotes[c.ticker] ?? null));
+  const factor = useFactorCedear();
+  const cedearsCalc: CedearCalc[] = cedears.map(c => calcularCedear(c, quotes[c.ticker] ?? null, factor));
 
   return { cedears, cedearsCalc, isLoading };
 }

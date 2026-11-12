@@ -53,8 +53,8 @@ export interface CedearCalc {
 }
 
 // Un solo CEDEAR: valor de mercado (via unitValueUSD, que ya divide por ratio_cedear) y resultado.
-export function calcularCedear(pos: Posicion, live: number | null): CedearCalc {
-  const mkt = marketValueUSD(pos, live);
+export function calcularCedear(pos: Posicion, live: number | null, factorCedear = 1): CedearCalc {
+  const mkt = marketValueUSD(pos, live, factorCedear);
   const capital = costUSD(pos);
   const res = mkt != null ? mkt - capital : null;
   return { pos, mkt, capital, res, capitalUsado: mkt ?? capital };

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { usePosiciones, useQuotes } from './usePosiciones';
+import { usePosiciones, useQuotes, useFactorCedear } from './usePosiciones';
 import { useAportes } from './useAportes';
 import { useSnapshots } from './useSnapshots';
 import { unitValueUSD as unitUSD } from '../lib/valuation';
@@ -20,6 +20,7 @@ export function usePortfolioPatrimonio(portfolioId: string | undefined) {
   const arStocks = posiciones.filter(p => p.tipo === 'accion_ar').map(p => p.ticker);
   const qQuotes = useQuotes(equity, bonds, arStocks);
   const quotes = qQuotes.data ?? {};
+  const factor = useFactorCedear();
   const sinTickers = equity.length + bonds.length + arStocks.length === 0;
 
   const { patrimonio, costo, pnl, alloc, sinPrecio } = useMemo(() => {
@@ -29,7 +30,7 @@ export function usePortfolioPatrimonio(portfolioId: string | undefined) {
     // el patrimonio no es "de mercado". Hay que decirlo (y no grabar ese valor en el histórico).
     const sinPrecio: string[] = [];
     for (const p of posiciones) {
-      const u = unitUSD(p, quotes[p.ticker] ?? null);
+      const u = unitUSD(p, quotes[p.ticker] ?? null, factor);
       const mkt = u != null ? u * p.cantidad : p.precio_compra * p.cantidad;
       if (u == null && p.cantidad > 0 && p.tipo !== 'cash') sinPrecio.push(p.ticker);
       patrimonio += mkt;
@@ -38,7 +39,7 @@ export function usePortfolioPatrimonio(portfolioId: string | undefined) {
     }
     parts.sort((a, b) => b.mkt - a.mkt);
     return { patrimonio, costo, pnl: patrimonio - costo, alloc: parts, sinPrecio };
-  }, [posiciones, quotes]);
+  }, [posiciones, quotes, factor]);
 
   // Separado en dos señales a propósito — "todavía no sabemos" (preciosPendientes) NO es lo mismo
   // que "sabemos que falta un precio" (sinPrecio.length > 0): mientras las cotizaciones están en
