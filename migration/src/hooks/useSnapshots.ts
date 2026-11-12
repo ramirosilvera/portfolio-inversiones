@@ -14,7 +14,7 @@ export function useSnapshots(portfolioId: string | null | undefined) {
     staleTime: 60 * 60_000,
     queryFn: async (): Promise<Punto[]> => {
       const { data, error } = await supabase.from('portfolio_snapshots')
-        .select('fecha, valor, aportado, fuente').eq('portfolio_id', portfolioId).order('fecha', { ascending: true });
+        .select('fecha, valor, aportado, fuente, factor_cedear, detalle').eq('portfolio_id', portfolioId).order('fecha', { ascending: true });
       if (error) throw error;
       return (data ?? []) as Punto[];
     },
@@ -26,9 +26,9 @@ export function useSnapshots(portfolioId: string | null | undefined) {
 export function useRecordSnapshot() {
   const qc = useQueryClient();
   // `detalle`: composición de ese día [{t: ticker, c: cantidad, v: valor USD}] — para auditar el valor y hacer atribución a futuro.
-  return async (portfolioId: string, fecha: string, valor: number, aportado: number, detalle?: { t: string; c: number; v: number }[]) => {
+  return async (portfolioId: string, fecha: string, valor: number, aportado: number, detalle?: { t: string; c: number; v: number }[], factorCedear: number | null = null) => {
     const { error } = await supabase.from('portfolio_snapshots')
-      .upsert(filaSnapshotApp(portfolioId, fecha, valor, aportado, detalle), { onConflict: 'portfolio_id,fecha' });
+      .upsert(filaSnapshotApp(portfolioId, fecha, valor, aportado, detalle, factorCedear), { onConflict: 'portfolio_id,fecha' });
     if (error) throw error;
     qc.invalidateQueries({ queryKey: ['snapshots', portfolioId] });
   };

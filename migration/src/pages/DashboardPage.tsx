@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, Flame, LayoutGrid, Plus, Check, Star } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { usePortfolios } from '../hooks/usePortfolios';
-import { useMacro, useDrawdowns, useBonosPrecios, useFactorCedear } from '../hooks/usePosiciones';
+import { useMacro, useDrawdowns, useBonosPrecios, useFactorCedear, useFactorCedearInfo } from '../hooks/usePosiciones';
 import { useBonosReferencia } from '../hooks/useBonosReferencia';
 import { useBonosDestacados } from '../hooks/useBonosDestacados';
 import { calcularBonoReferencia } from '../engine/rentaFija';
@@ -67,7 +67,10 @@ export function DashboardPage() {
   } = useRendimientoAnual(active?.id);
   // Tickers tenidos (sin efectivo) — para el aviso de precios viejos de <UpdatedAt>.
   const tickersTenidos = useMemo(() => posiciones.filter(p => p.cantidad > 0 && p.tipo !== 'cash').map(p => p.ticker), [posiciones]);
-  const { data: macro = {} } = useMacro();
+  const { data: macro = {}, isFetched: macroResuelto } = useMacro();
+  // Factor CCL÷MEP de los CEDEARs: sin un factor real (macro sin cargar, o dólares faltantes/desfasados) NO se graba el snapshot del día.
+  const { factor: factorCedear, valido: factorValido } = useFactorCedearInfo();
+  const hayCedears = useMemo(() => posiciones.some(p => p.tipo === 'cedear' && Number(p.cantidad) > 0), [posiciones]);
   const { data: flujo = [] } = useFlujo();
   const { data: cobros = [] } = useCobros(active?.id);
   // Ganancia de la cartera: la MISMA que muestra Desempeño (valor + retiros − capital puesto, con comisiones y dividendos adentro), medida desde el primer valor
@@ -132,7 +135,7 @@ export function DashboardPage() {
   // El snapshot solo es fiable cuando TODO resolvió: si se graba antes de que lleguen las
   // cotizaciones, el patrimonio cae a costo; y si se graba antes que los aportes, `aportadoNeto`
   // usa el fallback de costo. Cualquiera de las dos cosas ensucia el histórico de rendimiento.
-  const datosListos = qPos.isSuccess && qAportes.isSuccess && qSnaps.isSuccess && valuacionDeMercado;
+  const datosListos = qPos.isSuccess && qAportes.isSuccess && qSnaps.isSuccess && valuacionDeMercado && (!hayCedears || factorValido);
 
   // Registra el snapshot de hoy (idempotente por día). El lock incluye el valor grabado, así que si
   // el patrimonio se corrige (llegan cotizaciones frescas) el snapshot del día se actualiza en vez
@@ -158,9 +161,9 @@ export function DashboardPage() {
         porTicker.set(a.ticker, { t: a.ticker, c: prev ? prev.c : cant, v: +((prev?.v ?? 0) + a.mkt).toFixed(2) });
       }
       const detalle = [...porTicker.values()];
-      void record(active.id, hoy, patrimonio, aportadoNeto, detalle).catch(() => { recordedRef.current = ''; });
+      void record(active.id, hoy, patrimonio, aportadoNeto, detalle, hayCedears ? factorCedear : null).catch(() => { recordedRef.current = ''; });
     }
-  }, [active?.id, datosListos, patrimonio, aportadoNeto, snaps, hoy, record, alloc, posiciones]);
+  }, [active?.id, datosListos, patrimonio, aportadoNeto, snaps, hoy, record, alloc, posiciones, hayCedears, factorCedear]);
 
   // ── Dashboard personalizable: agregar/quitar/reordenar tarjetas ───────────────
   const { widgets: layout, agregar, agregarSeccion, actualizar, eliminar, mover, restaurarDefault } = useDashboardLayout();
@@ -227,6 +230,11 @@ export function DashboardPage() {
 
       <AlertaSnapshotServidor snaps={snaps} posiciones={posiciones} hoy={hoy} listo={qSnaps.isSuccess && qPos.isSuccess} />
       <AlertaImpuestos />
+      {hayCedears && macroResuelto && !factorValido && (
+        <div role="status" className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2 text-xs text-ink-700">
+          No hay dólar MEP/CCL válido: los CEDEARs se muestran por paridad (al CCL, ≈ 5 % menos) y hoy no se graba el valor diario de la cartera.
+        </div>
+      )}
       <AlertaMacroEstres macro={macro as Record<string, number | null>} alloc={alloc} patrimonio={patrimonio} />
 
       <AlertasResumen alloc={alloc} patrimonio={patrimonio}
