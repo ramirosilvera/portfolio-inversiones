@@ -1,3 +1,4 @@
+-- YA APLICADO el 2026-11-12 (con sentencias sueltas por el conector de Supabase: el bloque DO pedía una aprobación que no llegaba). No volver a ejecutar.
 -- Boletos REALES de BBVA de la cuota 2/4 de Ahorros (12/11/2026): reemplazan la estimación (comisión 1,148 %).
 -- Pegar y ejecutar UNA sola vez en el SQL Editor de Supabase (proyecto wyedmgxngqdgnxmbencl). Todo o nada (una transacción).
 --   GOOGL ref. 234.100.264: 28 × 5,42  bruto 151,76  neto 153,69  (estimado 153,50, +0,19)
