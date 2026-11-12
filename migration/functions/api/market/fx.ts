@@ -21,7 +21,8 @@ export const onRequestGet = guardAuth(async ({ env }) => {
     await Promise.all(stale.map(async (t) => {
       try {
         const d = await fetchJson<{ venta?: number; compra?: number }>(`https://dolarapi.com/v1/dolares/${t}`);
-        const val = d.venta ?? d.compra ?? null;
+        // Siempre el lado «venta»: mezclar compra de una serie con venta de otra sesgaba la brecha CCL÷MEP (1–3 %) que usa la valuación de CEDEARs. Sin venta → último valor conocido.
+        const val = typeof d.venta === 'number' && d.venta > 0 ? d.venta : null;
         if (val != null) { out[CLAVE[t]] = val; rows.push({ clave: CLAVE[t], valor: val, updated_at: new Date().toISOString() }); }
         else out[CLAVE[t]] = (await cacheLast<{ valor: number }>(env, 'macro_cache', 'clave', CLAVE[t]))?.valor ?? null;
       } catch {
