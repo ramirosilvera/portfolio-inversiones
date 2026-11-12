@@ -22,3 +22,17 @@ Total tanda 1 (cuota 6/12): US$ 496,72. Total tanda 2 (excedente de MIC3O): US$ 
 Resultado en Herencia (= cuenta de IOL): MA 245, MSFT 242, WMT 509, MELI 279, MRK 74, LAC 539; Liquidez 5.707,41 − 2.995,91 = **2.711,50** (= saldo disponible de IOL en US$).
 
 Nota de proceso: al descontar la Liquidez por SQL la fila de `posicion_brokers` quedó 684,00 por debajo (el trigger de escalado ya había ajustado una vez); se corrigió a 2.711,50. En futuras cargas por SQL, actualizar `posicion_brokers` de la LIQUIDEZ DESPUÉS de verificar la suma contra `posiciones.cantidad`.
+
+## Ahorros — cuota 2/4 en BBVA (doc del Drive «Plan Maestro - Ahorros - Ejecución Cuota 2-4 BBVA», registrada el 12/11)
+
+Prevista el lunes 09/11 (feriado), ejecutada por Ramiro en BBVA. SIN boleto: precio promedio informado + comisión ESTIMADA 1,148 % (la de los boletos reales de la cuota 1/4). Las posiciones (cantidad y costo promedio con comisión) ya las había actualizado otra sesión; faltaba el resto, que se completó acá:
+
+| Ticker | Nominales | Precio prom. US$ | Bruto US$ | Comisión est. US$ | Con cargo US$ |
+|---|---|---|---|---|---|
+| GOOGL | 28 | 5,42 | 151,76 | 1,74 | 153,50 |
+| MA | 10 | 21,48 | 214,80 | 2,47 | 217,27 |
+| MELI | 20 | 13,21 | 264,20 | 3,03 | 267,23 |
+
+Registrado: movimiento de compra por ticker (precio = con cargo ÷ nominales) con su `venta` de Liquidez; Liquidez de Ahorros −638,00 (BBVA 1.921,54 → 1.283,54; total 2.429,37 → 1.791,37); asignación BBVA +28/+10/+20 (GOOGL 58, MA 121, MELI 88); órdenes `origen='estimada'` en `/ordenes`. **Pendiente**: reemplazar por el boleto real de BBVA cuando llegue (comisión/derechos/impuestos exactos; corregir el costo si difiere). Quedan 2 cuotas (16/11 y 23/11).
+
+Nota técnica: bajar `posiciones.cantidad` de la LIQUIDEZ dispara un trigger que reescala `posicion_brokers` proporcionalmente; hay que fijar después las filas por broker al valor correcto y verificar que la suma coincida con la cantidad.
