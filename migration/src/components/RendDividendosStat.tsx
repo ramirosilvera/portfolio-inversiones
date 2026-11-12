@@ -13,7 +13,7 @@ export function RendDividendosStat({ rd, isLoading, isError }: { rd: RendDividen
       hint="Sin datos de dividendos para tus CEDEARs (el proveedor no respondió o falta el ratio)." />;
   }
   const partes = [
-    'Dividendo anualizado (último monto × pagos por año) ÷ valor de mercado, ponderado por capital (BRUTO, antes de la retención de EE.UU.). Cuentan como 0 % los CEDEARs que no pagan.',
+    'Dividendo anualizado (último monto × pagos por año) ÷ valor de mercado en dólar MEP (el mismo con que se valúa la cartera), ponderado por capital (BRUTO, antes de la retención de EE.UU.). Cuentan como 0 % los CEDEARs que no pagan.',
     `≈ US$ ${fmtUsd(rd.dividendoAnualUsd, 0).replace('US$', '').trim()} al año en total.`,
     `${rd.pagadores} pagan${rd.sinPago > 0 ? `, ${rd.sinPago} no pagan` : ''}${rd.sinInfo > 0 ? `, ${rd.sinInfo} sin dato (fuera del promedio)` : ''}.`,
     rd.yieldCosto != null ? `Sobre tu costo: ${fmtPct(rd.yieldCosto, 1)}.` : '',
